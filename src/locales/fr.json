@@ -141,7 +141,9 @@
   "stats": {
     "title": "Statistiques",
     "lead": "Top 10 des applications les plus ouvertes",
-    "clicksTip": "Statistiques de clics cumulés, pour geek",
+    "leadVisible": "Top 10 parmi les cartes visibles",
+    "clicksTip": "Stats de clics sur tout le portail, pour geek",
+    "clicksTipVisible": "Top 10 parmi les cartes visibles, pour geek",
     "topApps": "Top des applications",
     "showAll": "Afficher toutes les cartes",
     "showDown": "Afficher uniquement les sondes hors service",
@@ -548,8 +550,11 @@
     "hs": "Sondes HS",
     "removeHs": "Retirer le filtre sondes HS",
     "statsIcon": "Icône d’ouverture des statistiques d’usage",
-    "statsHint": "Ouvre le top 10 des applications les plus cliquées, dans la barre du bas. Le jour est toujours affiché. La semaine apparaît dès qu’il y a plus d’un jour d’historique, le mois après une semaine, l’année après un mois.",
+    "statsHint": "L’icône ouvre le top 10 des applications les plus cliquées. Le jour est toujours affiché dans la barre. La semaine apparaît dès qu’il y a plus d’un jour d’historique, le mois après une semaine, l’année après un mois.",
     "statsHintHidden": "La barre d’information est masquée dans Présentation.",
+    "geek": "Bulle geek",
+    "geekHint": "Courte note au survol de l’icône de clics.",
+    "resetKicker": "Compteurs",
     "resetHint": "Vide tous les compteurs de clics des cartes. La barre d’information et le top 10 repartent de zéro.",
     "resetAction": "Réinitialiser les compteurs",
     "resetConfirm": "Remettre tous les compteurs de clics à zéro ?"
@@ -609,6 +614,9 @@
     "openVersion": "Ouvrir la version {v}",
     "offline": "Pas de connexion",
     "tech": "Technologies",
+    "stackApp": "App",
+    "stackUi": "Interface",
+    "stackData": "Données",
     "createdOn": "26 août 2026"
   },
   "oidc": {
@@ -1000,6 +1008,8 @@
     "memory": "Mémoire",
     "prune": "Supprimer une étiquette dès qu’aucune carte ne l’utilise",
     "pruneHint": "Sinon elles restent en mémoire, même après la destruction de la dernière carte.",
+    "alpha": "Trier les étiquettes par ordre alphabétique",
+    "alphaHint": "S’applique à la liste, aux filtres de recherche et aux pastilles sur les cartes.",
     "count": "{n} étiquette",
     "count_other": "{n} étiquettes",
     "none": "Aucune étiquette",

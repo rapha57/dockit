@@ -179,7 +179,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.04.4";
+var PORTAL_VERSION = "2026.09.04.5";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -379,7 +379,7 @@ function typingTarget(el) {
   if (el.isContentEditable) return true;
   return Boolean(el.closest("input, textarea, select, [contenteditable='true']"));
 }
-function collectTags(catalog, tagColors) {
+function collectTags(catalog, tagColors, alpha) {
   const map = new Map();
   for (const tab of catalog ?? [])
     for (const cat of tab.categories)
@@ -404,7 +404,14 @@ function collectTags(catalog, tagColors) {
         count: 0,
       });
   }
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, localeTag()));
+  const rows = [...map.values()];
+  if (alpha === false) return rows;
+  return rows.sort((a, b) => a.name.localeCompare(b.name, localeTag(), { sensitivity: "base" }));
+}
+function orderedTags(names, alpha) {
+  const list = Array.isArray(names) ? [...names] : [];
+  if (alpha === false) return list;
+  return list.sort((a, b) => String(a).localeCompare(String(b), localeTag(), { sensitivity: "base" }));
 }
 function lookupTagColor(name, colors) {
   if (!colors) return void 0;
@@ -426,9 +433,10 @@ var ITEM_GRID = "item-grid";
 function fmtCount(n) {
   return Math.max(0, Math.floor(Number(n) || 0)).toLocaleString(localeTag());
 }
-function StatsBar({ stats, infoBar, downCount, downOn, probeBlink, onDown, onStats }) {
+function StatsBar({ stats, infoBar, geekTip, downCount, downOn, probeBlink, onDown, onStats }) {
   const span = Number(stats?.spanDays) || 0;
-  const metrics = infoBar
+  const fullCatalog = stats?.fullCatalog !== false;
+  const metrics = infoBar && fullCatalog
     ? [
         {
           key: "today",
@@ -471,10 +479,14 @@ function StatsBar({ stats, infoBar, downCount, downOn, probeBlink, onDown, onSta
           <div className="info-metrics" tabIndex={0}>
             {" "}
             <MousePointerClick className="info-click-ico" aria-hidden />
-            <span className="info-tip" role="tooltip">
-              {t("stats.clicksTip")}
-              <Smile className="info-tip-smile" aria-hidden />
-            </span>
+            {geekTip !== false ? (
+              <span className="info-tip" role="tooltip">
+                <span className="info-tip-text">
+                  {t(fullCatalog ? "stats.clicksTip" : "stats.clicksTipVisible")}
+                </span>
+                <Smile className="info-tip-smile" aria-hidden />
+              </span>
+            ) : null}
             {metrics.map((m, i) => (
               <span key={m.key} className="info-metric" title={m.hint}>
                 {i > 0 ? <span className="info-dot" aria-hidden /> : null}
@@ -811,6 +823,7 @@ function Home() {
       month: 0,
       year: 0,
       spanDays: 0,
+      fullCatalog: true,
     },
   );
   const [ui, setUi] = useState(DEFAULT_UI_PREFS);
@@ -1645,17 +1658,22 @@ function Home() {
         })),
       };
     });
-    setClickStats((cur) => ({
-      all: (cur.all || 0) + 1,
-      today: (cur.today || 0) + 1,
-      week: (cur.week || 0) + 1,
-      month: (cur.month || 0) + 1,
-      year: (cur.year || 0) + 1,
-      spanDays: cur.spanDays || 0,
-    }));
+    setClickStats((cur) => {
+      if (cur.fullCatalog === false) return cur;
+      return {
+        ...cur,
+        all: (cur.all || 0) + 1,
+        today: (cur.today || 0) + 1,
+        week: (cur.week || 0) + 1,
+        month: (cur.month || 0) + 1,
+        year: (cur.year || 0) + 1,
+        spanDays: cur.spanDays || 0,
+      };
+    });
     recordClick({
       data: {
         id: app.id,
+        token,
       },
     })
       .then((row) => {
@@ -1838,8 +1856,8 @@ function Home() {
       .filter((t) => t.categories.length > 0);
   }, [data.catalog, query, tagFilter, downFilter, downIds]);
   const allTags = useMemo(
-    () => collectTags(data.catalog, data.settings.tagColors),
-    [data.catalog, data.settings.tagColors],
+    () => collectTags(data.catalog, data.settings.tagColors, data.settings.tagsAlpha !== false),
+    [data.catalog, data.settings.tagColors, data.settings.tagsAlpha],
   );
   const tagMatches = useMemo(() => {
     const s = fold(query.trim());
@@ -2779,6 +2797,7 @@ function Home() {
                           onTag={toggleTag}
                           activeTags={tagFilter}
                           tagColors={data.settings.tagColors}
+                          tagsAlpha={data.settings.tagsAlpha !== false}
                           health={data.settings.healthChecks ? health[app.id] : void 0}
                           healthPending={
                             data.settings.healthChecks && app.check !== "off" && !health[app.id]
@@ -2958,6 +2977,7 @@ function Home() {
                           onTag={toggleTag}
                           activeTags={tagFilter}
                           tagColors={data.settings.tagColors}
+                          tagsAlpha={data.settings.tagsAlpha !== false}
                           health={data.settings.healthChecks ? health[app.id] : void 0}
                           healthPending={
                             data.settings.healthChecks && app.check !== "off" && !health[app.id]
@@ -3167,6 +3187,7 @@ function Home() {
                           onTag={toggleTag}
                           activeTags={tagFilter}
                           tagColors={data.settings.tagColors}
+                          tagsAlpha={data.settings.tagsAlpha !== false}
                           health={data.settings.healthChecks ? health[app.id] : void 0}
                           healthPending={
                             data.settings.healthChecks && app.check !== "off" && !health[app.id]
@@ -3259,6 +3280,7 @@ function Home() {
         }
         downOn={downFilter}
         probeBlink={Boolean(data.settings.probeBlink)}
+        geekTip={data.settings.infoGeek !== false}
         onDown={() => setDownFilter((v) => !v)}
         onStats={
           data.settings.infoBar !== false && data.settings.infoStats !== false
@@ -3278,7 +3300,8 @@ function Home() {
             modal.kind === "history" ||
             modal.kind === "users" ||
             modal.kind === "tab" ||
-            modal.kind === "category"
+            modal.kind === "category" ||
+            modal.kind === "favs"
           }
           onClose={() => {
             setBusy(false);
@@ -3387,6 +3410,7 @@ function Home() {
           {modal.kind === "stats" && (
             <StatsPanel
               catalog={data.catalog}
+              scoped={clickStats.fullCatalog === false}
               onClose={() =>
                 setModal({
                   kind: "none",
@@ -3907,6 +3931,7 @@ function AppCard({
   className,
   activeTags,
   tagColors,
+  tagsAlpha,
   health,
   healthPending,
   showHealth,
@@ -3969,7 +3994,7 @@ function AppCard({
   const tagRow =
     kind === "app" ? (
       <div className="card-tags">
-        {(app.tags ?? []).map((tag) => {
+        {orderedTags(app.tags ?? [], tagsAlpha !== false).map((tag) => {
           const on = (activeTags ?? []).some((t) => t.toLowerCase() === tag.toLowerCase());
           const paint = tagPaint(tag, tagColors);
           return (
@@ -4418,7 +4443,6 @@ function settingsSections() {
     ["info", MousePointerClick],
     ["backup", Download],
     ["about", BadgeInfo],
-    ["reset", RotateCcw],
   ].map(([id, icon]) => ({
     id,
     icon,
@@ -4458,13 +4482,13 @@ function historyCountLabel(n) {
   if (!n) return "";
   return tp("history.cardCount", n);
 }
-function historyRowIcon(row) {
-  if (row?.icon) return row.icon;
-  if (row?.scope === "tab") return "Layers";
-  if (row?.scope === "category") return "AppWindow";
-  if (row?.kind === "note") return "FileText";
-  if (row?.kind === "embed") return "AppWindow";
-  return "Link";
+function historyMatches(needle, parts) {
+  if (!needle) return true;
+  return parts
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .includes(needle);
 }
 function HistoryPanel({ token, tab, onClose, onRestored }) {
   const [pane, setPane] = useState(tab === "audit" ? "audit" : "recovery");
@@ -4476,6 +4500,7 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [q, setQ] = useState("");
   async function reload() {
     const res = await listHistory({
       data: {
@@ -4496,7 +4521,28 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
       toast.error(te(err));
     });
   }, [token]);
-  const shown = filter === "all" ? trash : trash.filter((row) => row.scope === filter);
+  const needle = q.trim().toLowerCase();
+  const trashRows = (filter === "all" ? trash : trash.filter((row) => row.scope === filter)).filter((row) =>
+    historyMatches(needle, [
+      row.label,
+      row.path,
+      row.actor,
+      historyScopeLabel(row.scope, row.kind),
+      historyCountLabel(row.count),
+      formatHistoryWhen(row.at),
+    ]),
+  );
+  const auditRows = audit
+    .filter((row) => filter === "all" || String(row.type || "").startsWith(`${filter}.`))
+    .filter((row) =>
+      historyMatches(needle, [
+        t(`audit.${row.type}`),
+        row.label,
+        row.path,
+        row.actor,
+        formatHistoryWhen(row.at),
+      ]),
+    );
   async function restore(row) {
     if (busy) return;
     setBusy(true);
@@ -4585,19 +4631,26 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
           label: t("history.recovery"),
           lead: t("history.recoveryLead"),
         };
+  const emptyText =
+    needle || filter !== "all"
+      ? t("empty.noResults")
+      : pane === "audit"
+        ? t("history.noAudit")
+        : t("history.nothing");
+  const rows = pane === "audit" ? auditRows : trashRows;
   return (
-    <div className="settings-frame">
-      {" "}
+    <div className="settings-frame is-wide is-access">
       <nav className="settings-nav" aria-label={t("history.sectionsAria")}>
-        {" "}
         <p className="menu-title">{t("history.title")}</p>
         {canRestore ? (
           <button
             type="button"
             className={`settings-nav-item ${pane === "recovery" ? "is-on" : ""}`}
-            onClick={() => setPane("recovery")}
+            onClick={() => {
+              setPane("recovery");
+              setQ("");
+            }}
           >
-            {" "}
             <Undo2 className="size-4 shrink-0" />
             {t("history.recovery")}
           </button>
@@ -4606,179 +4659,171 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
           <button
             type="button"
             className={`settings-nav-item ${pane === "audit" ? "is-on" : ""}`}
-            onClick={() => setPane("audit")}
+            onClick={() => {
+              setPane("audit");
+              setQ("");
+            }}
           >
-            {" "}
             <ScrollText className="size-4 shrink-0" />
             {t("history.audit")}
           </button>
         ) : null}
-      </nav>{" "}
+      </nav>
       <div className="settings-body">
-        {" "}
         <div className="settings-head">
-          {" "}
           <div className="settings-head-copy">
-            {" "}
             <h3 className="dialog-title">{current.label}</h3>
             <p className="settings-lead">{current.lead}</p>
-          </div>{" "}
-          <div className="settings-head-actions">
-            {pane === "recovery" && canPurge ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-9"
-                disabled={busy || trash.length === 0}
-                onClick={() => void purge()}
-              >
-                {" "}
-                <Trash2 className="size-4" />
-                {t("actions.emptyTrash")}
-              </Button>
-            ) : null}
-            {pane === "audit" ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-9"
-                disabled={busy || !ready}
-                onClick={() => void downloadAudit()}
-              >
-                {" "}
-                <Download className="size-4" />
-                {t("actions.exportCsv")}
-              </Button>
-            ) : null}{" "}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={onClose}
-              aria-label={t("actions.close")}
-            >
-              {" "}
-              <X className="size-4" />
-            </Button>
           </div>
-        </div>{" "}
-        <div className="settings-pane">
-          {pane === "recovery" ? (
-            <>
-              {" "}
-              <div className="history-toolbar">
-                {" "}
-                <div className="history-filters">
-                  {[
-                    ["all", t("history.all"), LayoutGrid],
-                    ["card", t("history.cards"), AppWindow],
-                    ["category", t("history.categories"), Folder],
-                    ["tab", t("history.spaces"), Layers],
-                  ].map(([id, label, Icon]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={filter === id ? "is-on" : ""}
-                      onClick={() => setFilter(id)}
-                    >
-                      {" "}
-                      <Icon className="size-3.5" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label={t("actions.close")}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+        <div className="settings-pane is-access">
+          <div className="am-work">
+            <div className="am-toolbar">
+              <label className="am-search">
+                <Search className="size-3.5" aria-hidden />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder={t("nav.search")}
+                  aria-label={t("nav.search")}
+                />
+              </label>
+              <div className="am-filters" role="tablist" aria-label={t("access.filterAll")}>
+                {[
+                  ["all", t("access.filterAll")],
+                  ["card", t("history.cards")],
+                  ["category", t("history.categories")],
+                  ["tab", t("history.spaces")],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={filter === id}
+                    className={filter === id ? "is-on" : ""}
+                    onClick={() => setFilter(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-              {!ready ? (
-                <div
-                  className="flex flex-col gap-2"
-                  aria-busy="true"
-                  aria-label={t("history.loading")}
+              {pane === "recovery" && canPurge ? (
+                <button
+                  type="button"
+                  className="am-text-btn is-danger shrink-0 ml-auto"
+                  disabled={busy || trash.length === 0}
+                  onClick={() => void purge()}
                 >
-                  <Skeleton className="h-14 w-full" />
-                  <Skeleton className="h-14 w-full" />
-                  <Skeleton className="h-14 w-full" />
-                </div>
-              ) : shown.length === 0 ? (
-                <p className="history-empty">{t("history.nothing")}</p>
-              ) : (
-                <ul className="history-list">
-                  {shown.map((row) => (
-                    <li key={`${row.id}:${row.scope}:${row.targetId}`} className="history-row">
-                      {" "}
-                      <span className="history-row-ico" aria-hidden>
-                        {" "}
-                        <PortalIcon name={historyRowIcon(row)} className="size-4" />
-                      </span>{" "}
-                      <div className="history-row-main">
-                        {" "}
-                        <p className="history-title">
-                          {row.label}
-                          <span className="history-scope">
-                            {historyScopeLabel(row.scope, row.kind)}
-                          </span>
-                        </p>{" "}
-                        <p className="history-meta">
-                          {[
-                            row.path,
-                            historyCountLabel(row.count),
-                            formatHistoryWhen(row.at),
-                            row.actor,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
-                      </div>{" "}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-9 shrink-0"
-                        disabled={busy}
-                        onClick={() => void restore(row)}
-                      >
-                        {" "}
-                        <Undo2 className="size-4" />
-                        {t("actions.restore")}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : !ready ? (
-            <div className="flex flex-col gap-2" aria-busy="true" aria-label={t("history.loading")}>
-              <Skeleton className="h-14 w-full" />
-              <Skeleton className="h-14 w-full" />
-              <Skeleton className="h-14 w-full" />
+                  {t("actions.emptyTrash")}
+                </button>
+              ) : null}
+              {pane === "audit" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="am-create shrink-0"
+                  disabled={busy || !ready}
+                  onClick={() => void downloadAudit()}
+                >
+                  <Download className="size-3.5" />
+                  {t("actions.exportCsv")}
+                </Button>
+              ) : null}
             </div>
-          ) : audit.length === 0 ? (
-            <p className="history-empty">{t("history.noAudit")}</p>
-          ) : (
-            <ul className="history-list">
-              {audit.map((row) => (
-                <li key={row.id} className="history-row">
-                  {" "}
-                  <div className="history-row-main">
-                    {" "}
-                    <p className="history-title">{t(`audit.${row.type}`)}</p>
-                    <p className="history-meta">
-                      {[row.label, row.path, formatHistoryWhen(row.at), row.actor]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
+            <div className="am-list-wrap">
+              {!ready ? (
+                <div className="am-list" aria-busy="true" aria-label={t("history.loading")}>
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-full" />
+                </div>
+              ) : !rows.length ? (
+                <EmptyState compact icon={pane === "audit" ? ScrollText : Undo2} text={emptyText} />
+              ) : (
+                <div className="am-list is-history" role="list">
+                  <div className="am-list-head" aria-hidden>
+                    <div className="am-row-cells">
+                      <span>
+                        {pane === "audit" ? t("audit.csvAction") : t("audit.csvItem")}
+                      </span>
+                      <span>
+                        {pane === "audit" ? t("audit.csvItem") : t("audit.csvPlace")}
+                      </span>
+                      <span className="am-row-end">{t("audit.csvDate")}</span>
+                    </div>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                  {pane === "audit"
+                    ? auditRows.map((row) => (
+                        <div key={row.id} className="am-row is-static" role="listitem">
+                          <div className="am-row-head">
+                            <div className="am-row-cells">
+                              <span className="am-row-title">{t(`audit.${row.type}`)}</span>
+                              <span className="am-dim">
+                                {[row.label, row.path].filter(Boolean).join(" · ") || "—"}
+                              </span>
+                              <span className="am-row-end am-dim">
+                                {[formatHistoryWhen(row.at), row.actor].filter(Boolean).join(" · ")}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    : trashRows.map((row) => (
+                        <div
+                          key={`${row.id}:${row.scope}:${row.targetId}`}
+                          className="am-row is-static"
+                          role="listitem"
+                        >
+                          <div className="am-row-head">
+                            <div className="am-row-cells">
+                              <span className="am-row-title">
+                                {row.label}
+                                <span className="am-row-sub">
+                                  {historyScopeLabel(row.scope, row.kind)}
+                                </span>
+                              </span>
+                              <span className="am-dim">
+                                {[row.path, historyCountLabel(row.count)].filter(Boolean).join(" · ") ||
+                                  "—"}
+                              </span>
+                              <span className="am-row-end">
+                                <span className="am-dim">
+                                  {[formatHistoryWhen(row.at), row.actor].filter(Boolean).join(" · ")}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="am-text-btn"
+                                  disabled={busy}
+                                  onClick={() => void restore(row)}
+                                >
+                                  {t("actions.restore")}
+                                </button>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-function StatsPanel({ catalog, onClose }) {
+function StatsPanel({ catalog, scoped, onClose }) {
   const top = useMemo(() => collectTopApps(catalog, 10).filter((r) => r.clicks > 0), [catalog]);
   const max = Math.max(1, ...top.map((r) => r.clicks));
   const total = top.reduce((sum, row) => sum + row.clicks, 0);
@@ -4790,7 +4835,7 @@ function StatsPanel({ catalog, onClose }) {
         <div>
           {" "}
           <h3 className="dialog-title">{t("stats.title")}</h3>
-          <p className="mt-1 text-sm text-muted">{t("stats.lead")}</p>
+          <p className="mt-1 text-sm text-muted">{t(scoped ? "stats.leadVisible" : "stats.lead")}</p>
         </div>{" "}
         <Button
           type="button"
@@ -4859,12 +4904,11 @@ function AdminPanel({
 }) {
   const sections = settingsSections().filter((s) => {
     if (s.id === "about") return true;
-    if (s.id === "reset") return session?.role === "admin";
     return session?.canManageSettings;
   });
   const current = sections.find((s) => s.id === tab) ?? sections[0];
   return (
-    <div className="settings-frame">
+    <div className="settings-frame is-wide is-access">
       {" "}
       <nav className="settings-nav" aria-label={t("settings.sectionsAria")}>
         {" "}
@@ -4873,7 +4917,7 @@ function AdminPanel({
           <button
             key={s.id}
             type="button"
-            className={`settings-nav-item ${tab === s.id ? "is-on" : ""}`}
+            className={`settings-nav-item${tab === s.id ? " is-on" : ""}`}
             onClick={() => onTab(s.id)}
           >
             {" "}
@@ -4962,18 +5006,17 @@ function AdminPanel({
               onImport={onImportPortal}
             />
           </div>
-        ) : tab === "reset" && session?.role === "admin" ? (
+        ) : tab === "about" || tab === "reset" || !session?.canManageSettings ? (
           <div className="settings-pane">
             {" "}
-            <ResetForm busy={busy} onReset={onResetPortal} />
-          </div>
-        ) : tab === "about" || !session?.canManageSettings ? (
-          <div className="settings-pane">
-            {" "}
-            <AboutForm />
+            <AboutForm
+              busy={busy}
+              canReset={session?.role === "admin"}
+              onReset={onResetPortal}
+            />
           </div>
         ) : (
-          <div className="settings-pane is-fill">
+          <div className="settings-pane">
             {" "}
             <TagManager
               tags={tags}
@@ -4982,6 +5025,7 @@ function AdminPanel({
               embedded
               settings={settings}
               pruneOrphanTags={Boolean(settings.pruneOrphanTags)}
+              tagsAlpha={settings.tagsAlpha !== false}
               onCancel={onCancel}
               onSave={(payload) =>
                 onSaveSettings(payload, {
@@ -4998,14 +5042,15 @@ function AdminPanel({
         tab === "reachability" ||
         tab === "security" ||
         tab === "info" ||
-        tab === "themes" ? (
-          <FormActions busy={busy} onCancel={onCancel} form="settings-form" />
+        tab === "themes" ||
+        tab === "tags" ? (
+          <FormActions busy={busy} hideCancel form="settings-form" />
         ) : null}
       </div>
     </div>
   );
 }
-function AboutForm() {
+function AboutForm({ busy, canReset, onReset }) {
   const [release, setRelease] = useState(null);
   useEffect(() => {
     let live = true;
@@ -5045,10 +5090,14 @@ function AboutForm() {
   }, []);
   return (
     <div className="settings-stack">
-      {" "}
+      <div className="about-hero">
+        <DockitMark className="dockit-mark about-mark" />
+        <p className="about-name">Dockit</p>
+      </div>
       <dl className="about-dl">
-        {" "}
-        <dt>{t("about.created")}</dt> <dd>{t("about.createdOn")}</dd> <dt>{t("about.build")}</dt>
+        <dt>{t("about.created")}</dt>
+        <dd>{t("about.createdOn")}</dd>
+        <dt>{t("about.build")}</dt>
         <dd className="about-build">
           {PORTAL_VERSION}
           {release?.kind === "ok" ? (
@@ -5071,17 +5120,45 @@ function AboutForm() {
             <span className="about-build-badge is-offline">{t("about.offline")}</span>
           ) : null}
         </dd>
-      </dl>{" "}
-      <div>
-        {" "}
+      </dl>
+      <div className="settings-card">
         <p className="settings-kicker">{t("about.tech")}</p>
-        <div className="about-tech">
-          {" "}
-          <span>React 19</span> <span>TanStack Start</span> <span>Vite</span>{" "}
-          <span>Tailwind CSS</span>
-          <span>Nitro</span> <span>Zod</span> <span>Lucide</span>
-        </div>
+        <dl className="about-dl">
+          <dt>{t("about.stackApp")}</dt>
+          <dd>React 19 · TanStack Start · Vite · Nitro</dd>
+          <dt>{t("about.stackUi")}</dt>
+          <dd>Tailwind CSS · Lucide</dd>
+          <dt>{t("about.stackData")}</dt>
+          <dd>Zod</dd>
+        </dl>
       </div>
+      {canReset ? (
+        <div className="settings-card">
+          <p className="settings-kicker">{t("sections.reset.label")}</p>
+          <p className="settings-hint">{t("settings.resetBody")}</p>
+          <Button
+            type="button"
+            variant="danger"
+            size="sm"
+            className="am-create self-start"
+            disabled={busy || !onReset}
+            onClick={async () => {
+              if (!onReset) return;
+              if (
+                !(await askConfirm({
+                  title: t("sections.reset.label"),
+                  body: t("settings.resetConfirm"),
+                  okLabel: t("sections.reset.label"),
+                }))
+              )
+                return;
+              onReset();
+            }}
+          >
+            {t("settings.resetAction")}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -5232,38 +5309,6 @@ function seedLdapDirs(initial) {
   }
   return [];
 }
-function ResetForm({ busy, onReset }) {
-  return (
-    <div className="settings-stack">
-      {" "}
-      <div className="settings-note">
-        {" "}
-        <p>{t("settings.resetBody")}</p>
-        <Button
-          type="button"
-          variant="danger"
-          size="sm"
-          className="settings-note-action h-9"
-          disabled={busy || !onReset}
-          onClick={async () => {
-            if (!onReset) return;
-            if (
-              !(await askConfirm({
-                title: t("sections.reset.label"),
-                body: t("settings.resetConfirm"),
-                okLabel: t("sections.reset.label"),
-              }))
-            )
-              return;
-            onReset();
-          }}
-        >
-          {t("settings.resetAction")}
-        </Button>
-      </div>
-    </div>
-  );
-}
 function settingsBase(initial) {
   return {
     title: initial.title,
@@ -5284,7 +5329,9 @@ function settingsBase(initial) {
     annexFade: Boolean(initial.annexFade),
     catCounts: Boolean(initial.catCounts),
     pruneOrphanTags: Boolean(initial.pruneOrphanTags),
+    tagsAlpha: initial.tagsAlpha !== false,
     infoStats: initial.infoStats !== false,
+    infoGeek: initial.infoGeek !== false,
     probeTlsVerify: Boolean(initial.probeTlsVerify),
     probeAuthOnly: Boolean(initial.probeAuthOnly),
     sessionHttpOnly: Boolean(initial.sessionHttpOnly),
@@ -5461,7 +5508,6 @@ function LocalesForm({ initial, onSave }) {
       {" "}
       <div className="settings-card">
         {" "}
-        <p className="settings-kicker">{t("lang.label")}</p>
         <Field label={t("lang.label")}>
           {" "}
           <Select value={locale} onChange={(e) => setLocaleDraft(asLocale(e.target.value))}>
@@ -5614,17 +5660,19 @@ function BackupForm({ token, busy, catalog, title, onImport }) {
           {" "}
           <Button
             type="button"
-            variant="secondary"
+            size="sm"
+            variant="outline"
+            className="am-create"
             disabled={working}
             onClick={() => void doExport()}
           >
             {" "}
-            <Download className="size-4" />
+            <Download className="size-3.5" />
             {t("actions.exportJson")}
           </Button>{" "}
           <label className={`settings-file ${working ? "is-disabled" : ""}`}>
             {" "}
-            <Upload className="size-4" />
+            <Upload className="size-3.5" />
             {t("actions.importJson")}
             <input
               type="file"
@@ -5646,14 +5694,28 @@ function BackupForm({ token, busy, catalog, title, onImport }) {
         <p className="settings-hint">{t("backup.inventoryHint")}</p>
         <div className="settings-actions is-start">
           {" "}
-          <Button type="button" variant="secondary" disabled={working} onClick={downloadCsv}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="am-create"
+            disabled={working}
+            onClick={downloadCsv}
+          >
             {" "}
-            <Download className="size-4" />
+            <Download className="size-3.5" />
             {t("actions.exportCsv")}
           </Button>{" "}
-          <Button type="button" variant="secondary" disabled={working} onClick={downloadPdf}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="am-create"
+            disabled={working}
+            onClick={downloadPdf}
+          >
             {" "}
-            <FileText className="size-4" />
+            <FileText className="size-3.5" />
             {t("actions.exportPdf")}
           </Button>
         </div>
@@ -6057,6 +6119,7 @@ function DebugPanel({ settings, runtime, session }) {
 }
 function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
   const [infoStats, setInfoStats] = useState(initial.infoStats !== false);
+  const [infoGeek, setInfoGeek] = useState(initial.infoGeek !== false);
   const infoBar = initial.infoBar !== false;
   return (
     <form
@@ -6067,6 +6130,7 @@ function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
         onSave({
           ...settingsBase(initial),
           infoStats,
+          infoGeek,
         });
       }}
     >
@@ -6086,23 +6150,34 @@ function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
             />
             {t("info.statsIcon")}
           </label>
+          <label className={infoBar ? "" : "is-disabled"}>
+            <input
+              type="checkbox"
+              checked={infoGeek}
+              disabled={!infoBar}
+              onChange={(e) => setInfoGeek(e.target.checked)}
+            />
+            {t("info.geek")}
+          </label>
         </div>{" "}
-        <p className="settings-hint">{infoBar ? t("info.statsHint") : t("info.statsHintHidden")}</p>{" "}
-        <hr className="settings-card-sep" />
+        <p className="settings-hint">{infoBar ? t("info.statsHint") : t("info.statsHintHidden")}</p>
+      </div>
+      <div className="settings-card">
+        <p className="settings-kicker">{t("info.resetKicker")}</p>
         <p className="settings-hint">{t("info.resetHint")}</p>
         <Button
           type="button"
           size="sm"
-          variant="secondary"
-          className="settings-note-action h-9"
+          variant="outline"
+          className="am-create settings-note-action"
           disabled={busy || !onResetClicks}
           onClick={async () => {
             if (!onResetClicks) return;
             if (
               !(await askConfirm({
-                title: t("info.resetClicks"),
+                title: t("confirm.resetClicks"),
                 body: t("info.resetConfirm"),
-                okLabel: t("info.resetClicks"),
+                okLabel: t("info.resetAction"),
               }))
             )
               return;
@@ -6252,10 +6327,11 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
       <div className="settings-card">
         {" "}
         <p className="settings-kicker">{t("theme.colors")}</p>
-        <div className="theme-switch">
-          {" "}
+        <div className="am-filters" role="tablist" aria-label={t("theme.colors")}>
           <button
             type="button"
+            role="tab"
+            aria-selected={pane === "light"}
             className={pane === "light" ? "is-on" : ""}
             onClick={() => {
               setPane("light");
@@ -6263,9 +6339,11 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
             }}
           >
             {t("theme.light")}
-          </button>{" "}
+          </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={pane === "dark"}
             className={pane === "dark" ? "is-on" : ""}
             onClick={() => {
               setPane("dark");
@@ -6274,7 +6352,7 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
           >
             {t("theme.dark")}
           </button>
-        </div>{" "}
+        </div>
         <div className="theme-palette">
           {THEME_COLOR_FIELDS.map((field) => (
             <ThemeColorField
@@ -7561,19 +7639,19 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
 function AclFields({ restricted, setRestricted, seeHint }) {
   return (
     <div className="settings-card">
-      {" "}
       <p className="settings-kicker">{t("space.visibility")}</p>
       <p className="settings-hint">{seeHint}</p>
-      <label className="mb-2 flex h-10 items-center gap-2 text-sm">
-        {" "}
-        <input
-          type="checkbox"
-          checked={restricted}
-          onChange={(e) => setRestricted(e.target.checked)}
-        />
-        {t("space.restrict")}
-      </label>
-      {restricted ? <p className="text-xs text-muted">{t("access.restrictedHint")}</p> : null}
+      <div className="settings-toggles">
+        <label>
+          <input
+            type="checkbox"
+            checked={restricted}
+            onChange={(e) => setRestricted(e.target.checked)}
+          />
+          {t("space.restrict")}
+        </label>
+      </div>
+      {restricted ? <p className="settings-hint">{t("access.restrictedHint")}</p> : null}
     </div>
   );
 }
@@ -7606,7 +7684,7 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
   const current = sections.find((s) => s.id === pane) ?? sections[0];
   return (
     <form
-      className="settings-frame"
+      className="settings-frame is-wide is-access"
       onSubmit={(e) => {
         e.preventDefault();
         onSave(name.trim(), icon.trim() || "Layers", {
@@ -7701,7 +7779,7 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
             </div>
           )}
         </div>{" "}
-        <FormActions busy={busy} onCancel={onCancel} />
+        <FormActions busy={busy} hideCancel onCancel={onCancel} />
       </div>
     </form>
   );
@@ -7710,33 +7788,44 @@ function FavsForm({ hideLabel: initialHide, busy, onCancel, onSave }) {
   const [hideLabel, setHideLabel] = useState(Boolean(initialHide));
   return (
     <form
+      className="settings-frame is-wide is-access"
       onSubmit={(e) => {
         e.preventDefault();
         onSave(hideLabel);
       }}
     >
-      {" "}
-      <div className="mb-4 flex items-center justify-between">
-        {" "}
-        <h3 className="dialog-title">{t("aria.editSpace")}</h3>
-        <Button type="button" variant="ghost" size="icon-sm" onClick={onCancel}>
-          {" "}
-          <X className="size-4" />
-        </Button>
-      </div>{" "}
-      <div className="settings-toggles">
-        {" "}
-        <label>
-          {" "}
-          <input
-            type="checkbox"
-            checked={hideLabel}
-            onChange={(e) => setHideLabel(e.target.checked)}
-          />
-          {t("space.hideLabel")}
-        </label>
-      </div>{" "}
-      <FormActions busy={busy} onCancel={onCancel} />
+      <div className="settings-body">
+        <div className="settings-head">
+          <div className="settings-head-copy">
+            <h3 className="dialog-title">{t("aria.editSpace")}</h3>
+            <p className="settings-lead">{t("space.generalLead")}</p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onCancel}
+            aria-label={t("actions.close")}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+        <div className="settings-pane">
+          <div className="settings-stack">
+            <div className="settings-toggles">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={hideLabel}
+                  onChange={(e) => setHideLabel(e.target.checked)}
+                />
+                {t("space.hideLabel")}
+              </label>
+            </div>
+          </div>
+        </div>
+        <FormActions busy={busy} hideCancel onCancel={onCancel} />
+      </div>
     </form>
   );
 }
@@ -7768,7 +7857,7 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
   const current = sections.find((s) => s.id === pane) ?? sections[0];
   return (
     <form
-      className="settings-frame"
+      className="settings-frame is-wide is-access"
       onSubmit={(e) => {
         e.preventDefault();
         onSave(name.trim(), icon.trim() || "Folder", {
@@ -7850,7 +7939,7 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
             </div>
           )}
         </div>{" "}
-        <FormActions busy={busy} onCancel={onCancel} />
+        <FormActions busy={busy} hideCancel onCancel={onCancel} />
       </div>
     </form>
   );
@@ -7868,7 +7957,13 @@ function itemKind(kind) {
 function ExtraLinksField({ links, setLinks }) {
   const listRef = useRef(null);
   const dragRef = useRef(null);
+  const didDrag = useRef(false);
   const [dragKey, setDragKey] = useState(null);
+  const [openId, setOpenId] = useState(null);
+  const INPUT_SM = "h-9 rounded-md bg-transparent";
+  function patch(key, next) {
+    setLinks((cur) => cur.map((r) => (r.key === key ? { ...r, ...next } : r)));
+  }
   function endDrag(el, pointerId) {
     dragRef.current = null;
     setDragKey(null);
@@ -7885,6 +7980,7 @@ function ExtraLinksField({ links, setLinks }) {
       key,
       pointerId: e.pointerId,
     };
+    didDrag.current = false;
     setDragKey(key);
   }
   function onGripMove(e) {
@@ -7892,9 +7988,10 @@ function ExtraLinksField({ links, setLinks }) {
     if (!drag || drag.pointerId !== e.pointerId) return;
     const root = listRef.current;
     if (!root) return;
-    const others = [...root.querySelectorAll("[data-link-key]")].filter(
-      (row) => row.getAttribute("data-link-key") !== drag.key,
-    );
+    const others = [...root.querySelectorAll("[data-row-id]")].filter((row) => {
+      const id = row.getAttribute("data-row-id");
+      return id && id !== drag.key;
+    });
     let to = others.length;
     for (let i = 0; i < others.length; i++) {
       const box = others[i].getBoundingClientRect();
@@ -7906,6 +8003,7 @@ function ExtraLinksField({ links, setLinks }) {
     setLinks((cur) => {
       const from = cur.findIndex((r) => r.key === drag.key);
       if (from < 0 || from === to) return cur;
+      didDrag.current = true;
       const rest = cur.filter((r) => r.key !== drag.key);
       rest.splice(to, 0, cur[from]);
       return rest;
@@ -7916,106 +8014,94 @@ function ExtraLinksField({ links, setLinks }) {
     if (!drag || drag.pointerId !== e.pointerId) return;
     endDrag(e.currentTarget, e.pointerId);
   }
+  function toggle(id) {
+    if (didDrag.current) {
+      didDrag.current = false;
+      return;
+    }
+    setOpenId((cur) => (cur === id ? null : id));
+  }
+  function addLink() {
+    if (links.length >= 4) return;
+    const key = crypto.randomUUID();
+    setLinks((cur) => [
+      ...cur,
+      {
+        key,
+        title: "",
+        url: "",
+      },
+    ]);
+    setOpenId(key);
+  }
   return (
-    <Field label={t("item.extraLinks")}>
-      {" "}
-      <p className="settings-hint">{t("item.extraLinksHint")}</p>
-      <div ref={listRef} className={`extra-links${dragKey ? " is-sorting" : ""}`}>
-        {links.map((row) => (
-          <div
-            key={row.key}
-            className={`extra-link${dragKey === row.key ? " is-dragging" : ""}`}
-            data-link-key={row.key}
-          >
-            {links.length > 1 ? (
-              <button
-                type="button"
-                className="extra-link-grip"
-                aria-label={t("item.dragReorder")}
-                onPointerDown={(e) => onGripDown(e, row.key)}
-                onPointerMove={onGripMove}
-                onPointerUp={onGripUp}
-                onPointerCancel={onGripUp}
-              >
-                {" "}
-                <GripVertical className="size-4" />
-              </button>
-            ) : null}{" "}
-            <div className="w-28 shrink-0">
-              {" "}
-              <Input
-                value={row.title}
-                placeholder={t("item.name")}
-                onChange={(e) =>
-                  setLinks((cur) =>
-                    cur.map((r) =>
-                      r.key === row.key
-                        ? {
-                            ...r,
-                            title: e.target.value,
-                          }
-                        : r,
-                    ),
-                  )
-                }
-                maxLength={40}
-              />
-            </div>{" "}
-            <div className="min-w-0 flex-1">
-              {" "}
-              <Input
-                value={row.url}
-                placeholder="https://vcenter:5480"
-                onChange={(e) =>
-                  setLinks((cur) =>
-                    cur.map((r) =>
-                      r.key === row.key
-                        ? {
-                            ...r,
-                            url: e.target.value,
-                          }
-                        : r,
-                    ),
-                  )
-                }
-              />
-            </div>{" "}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t("item.removeLink")}
-              onClick={() => setLinks((cur) => cur.filter((r) => r.key !== row.key))}
-            >
-              {" "}
-              <X className="size-4" />
-            </Button>
-          </div>
-        ))}
+    <div className="am-work">
+      <div className="am-toolbar">
+        <span className="am-toolbar-title">{t("item.extraLinks")}</span>
+        {links.length < 4 ? (
+          <Button type="button" size="sm" className="am-create shrink-0" onClick={addLink}>
+            <Plus className="size-3.5" /> {t("actions.addLink")}
+          </Button>
+        ) : null}
       </div>
-      {links.length < 4 ? (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="self-start"
-          onClick={() =>
-            setLinks((cur) => [
-              ...cur,
-              {
-                key: crypto.randomUUID(),
-                title: "",
-                url: "",
-              },
-            ])
-          }
-        >
-          {" "}
-          <Plus className="size-3.5" />
-          {t("actions.addLink")}
-        </Button>
+      <p className="settings-hint">{t("item.extraLinksHint")}</p>
+      {links.length ? (
+        <div ref={listRef} className="am-providers" role="list">
+          {links.map((row) => (
+            <ExpandRow
+              key={row.key}
+              id={row.key}
+              className="is-provider is-link"
+              expanded={openId === row.key}
+              dragging={dragKey === row.key}
+              grip={links.length > 1}
+              onToggle={() => toggle(row.key)}
+              onGripDown={(e) => onGripDown(e, row.key)}
+              onGripMove={onGripMove}
+              onGripUp={onGripUp}
+              cells={[
+                <span key="n" className="am-row-title">
+                  {row.title.trim() || t("item.name")}
+                  {row.url.trim() ? <span className="am-row-sub">{row.url.trim()}</span> : null}
+                </span>,
+              ]}
+            >
+              <div className="settings-stack">
+                <Field label={t("item.name")}>
+                  <Input
+                    className={INPUT_SM}
+                    value={row.title}
+                    onChange={(e) => patch(row.key, { title: e.target.value })}
+                    maxLength={40}
+                    placeholder={t("item.name")}
+                  />
+                </Field>
+                <Field label={t("item.url")}>
+                  <Input
+                    className={INPUT_SM}
+                    value={row.url}
+                    onChange={(e) => patch(row.key, { url: e.target.value })}
+                    placeholder="https://"
+                  />
+                </Field>
+                <div className="am-actions">
+                  <button
+                    type="button"
+                    className="am-text-btn is-danger"
+                    onClick={() => {
+                      setLinks((cur) => cur.filter((r) => r.key !== row.key));
+                      if (openId === row.key) setOpenId(null);
+                    }}
+                  >
+                    {t("item.removeLink")}
+                  </button>
+                </div>
+              </div>
+            </ExpandRow>
+          ))}
+        </div>
       ) : null}
-    </Field>
+    </div>
   );
 }
 function SizePreview({ colSpan, rowSpan }) {
@@ -8238,7 +8324,7 @@ function AppForm({
   ) : null;
   return (
     <form
-      className="settings-frame"
+      className="settings-frame is-wide is-access"
       onSubmit={(e) => {
         e.preventDefault();
         if (kind === "app" && !title.trim()) {
@@ -8556,7 +8642,7 @@ function AppForm({
             )}
           </div>
         </div>{" "}
-        <FormActions busy={busy} disabled={!canSave} onCancel={onCancel} />
+        <FormActions busy={busy} disabled={!canSave} hideCancel onCancel={onCancel} />
       </div>
     </form>
   );
@@ -8673,18 +8759,23 @@ function TagManager({
   embedded,
   settings,
   pruneOrphanTags,
+  tagsAlpha,
   onCancel,
   onSave,
   onApply,
 }) {
   const [pane, setPane] = useState("main");
   const [prune, setPrune] = useState(Boolean(pruneOrphanTags));
+  const [alpha, setAlpha] = useState(tagsAlpha !== false);
   const [drafts, setDrafts] = useState({});
   const [createDraft, setCreateDraft] = useState("");
   const [localColors, setLocalColors] = useState(colors ?? {});
   useEffect(() => {
     setPrune(Boolean(pruneOrphanTags));
   }, [pruneOrphanTags]);
+  useEffect(() => {
+    setAlpha(tagsAlpha !== false);
+  }, [tagsAlpha]);
   useEffect(() => {
     setLocalColors(colors ?? {});
   }, [colors]);
@@ -8743,152 +8834,156 @@ function TagManager({
       },
     });
   }
-  if (pane === "list") {
-    return (
-      <div className={embedded ? "tag-manager" : "settings-stack"}>
-        {" "}
-        <button
-          type="button"
-          className="settings-link settings-back"
-          onClick={() => setPane("main")}
-        >
-          {" "}
-          <ChevronLeft className="size-3.5" />
-          {t("tags.back")}
-        </button>{" "}
-        <div className="flex items-center justify-between gap-2">
-          {" "}
-          <p className="settings-kicker">
-            {tags.length ? tp("tags.count", tags.length) : t("item.tags")}
-          </p>
-        </div>{" "}
-        <Input
-          value={createDraft}
-          placeholder={t("tags.newPlaceholder")}
-          maxLength={32}
-          disabled={busy || tags.length >= 80}
-          onChange={(e) => setCreateDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              createTag();
-            }
-          }}
-        />
-        {tags.length === 0 ? (
-          <p className="settings-hint">{t("tags.empty")}</p>
-        ) : (
-          <ul className="settings-list tag-manager-list">
-            {tags.map((row) => {
-              const draft = drafts[row.name] ?? row.name;
-              const hex = lookupTagColor(row.name, localColors) ?? defaultTagHex(row.name);
-              return (
-                <li key={row.name} className="settings-list-item tag-item">
-                  {" "}
-                  <TagColorPick
-                    hex={hex}
-                    name={row.name}
-                    disabled={busy}
-                    onChange={(next) => changeColor(row.name, next)}
-                  />{" "}
-                  <input
-                    className="tag-item-name"
-                    value={draft}
-                    aria-label={t("tags.nameOf", {
-                      name: row.name,
-                    })}
-                    onChange={(e) =>
-                      setDrafts((d) => ({
-                        ...d,
-                        [row.name]: e.target.value,
-                      }))
-                    }
-                    onBlur={() => renameTag(row.name, draft)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        e.currentTarget.blur();
-                      }
-                    }}
-                  />{" "}
-                  <span className="tag-row-count">{row.count}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="card-tool is-danger"
-                    disabled={busy}
-                    aria-label={t("tags.deleteAria", {
-                      name: row.name,
-                    })}
-                    onClick={() => removeTag(row.name)}
-                  >
-                    {" "}
-                    <Trash2 className="size-4" />
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    );
-  }
   return (
     <form
-      className={embedded ? "tag-manager" : "settings-stack"}
+      id="settings-form"
+      className="settings-stack"
       onSubmit={(e) => {
         e.preventDefault();
         onSave?.({
           ...settingsBase(settings || {}),
           pruneOrphanTags: prune,
+          tagsAlpha: alpha,
         });
         toast.success(t("toast.saved"));
       }}
     >
-      {" "}
-      <div className="settings-card">
-        {" "}
-        <p className="settings-kicker">{t("tags.memory")}</p>
-        <div className="settings-toggles">
-          {" "}
-          <label>
-            {" "}
-            <input type="checkbox" checked={prune} onChange={(e) => setPrune(e.target.checked)} />
-            {t("tags.prune")}
-          </label>
-        </div>{" "}
-        <p className="settings-hint">{t("tags.pruneHint")}</p>
-      </div>{" "}
-      <div className="settings-card">
-        {" "}
-        <p className="settings-kicker">{t("item.tags")}</p>
-        <p className="settings-hint">
-          {tags.length ? tp("tags.count", tags.length) : t("tags.none")}
-        </p>{" "}
-        <Button
-          type="button"
-          variant="secondary"
-          className="h-9 self-start"
-          onClick={() => setPane("list")}
-        >
-          {" "}
-          <Tags className="size-3.5" />
-          {t("tags.manage")}
-        </Button>
-      </div>{" "}
-      <FormActions busy={busy} onCancel={onCancel} label={t("actions.save")} />
+      {pane === "list" ? (
+        <>
+          <button
+            type="button"
+            className="settings-link settings-back"
+            onClick={() => setPane("main")}
+          >
+            <ChevronLeft className="size-3.5" />
+            {t("tags.back")}
+          </button>
+          <div className="settings-card">
+            <p className="settings-kicker">
+              {tags.length ? tp("tags.count", tags.length) : t("item.tags")}
+            </p>
+            <Input
+              value={createDraft}
+              placeholder={t("tags.newPlaceholder")}
+              maxLength={32}
+              disabled={busy || tags.length >= 80}
+              onChange={(e) => setCreateDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  createTag();
+                }
+              }}
+            />
+            {tags.length === 0 ? (
+              <p className="settings-hint">{t("tags.empty")}</p>
+            ) : (
+              <ul className="settings-list">
+                {tags.map((row) => {
+                  const draft = drafts[row.name] ?? row.name;
+                  const hex = lookupTagColor(row.name, localColors) ?? defaultTagHex(row.name);
+                  return (
+                    <li key={row.name} className="settings-list-item tag-item">
+                      <TagColorPick
+                        hex={hex}
+                        name={row.name}
+                        disabled={busy}
+                        onChange={(next) => changeColor(row.name, next)}
+                      />
+                      <input
+                        className="tag-item-name"
+                        value={draft}
+                        aria-label={t("tags.nameOf", {
+                          name: row.name,
+                        })}
+                        onChange={(e) =>
+                          setDrafts((d) => ({
+                            ...d,
+                            [row.name]: e.target.value,
+                          }))
+                        }
+                        onBlur={() => renameTag(row.name, draft)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            e.currentTarget.blur();
+                          }
+                        }}
+                      />
+                      <span className="tag-row-count">{row.count}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="card-tool is-danger"
+                        disabled={busy}
+                        aria-label={t("tags.deleteAria", {
+                          name: row.name,
+                        })}
+                        onClick={() => removeTag(row.name)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="settings-card">
+            <p className="settings-kicker">{t("tags.memory")}</p>
+            <div className="settings-toggles">
+              <label>
+                <input type="checkbox" checked={prune} onChange={(e) => setPrune(e.target.checked)} />
+                {t("tags.prune")}
+              </label>
+              <label>
+                <input type="checkbox" checked={alpha} onChange={(e) => setAlpha(e.target.checked)} />
+                {t("tags.alpha")}
+              </label>
+            </div>
+            <p className="settings-hint">{t("tags.pruneHint")}</p>
+            <p className="settings-hint">{t("tags.alphaHint")}</p>
+          </div>
+          <div className="settings-card">
+            <p className="settings-kicker">{t("item.tags")}</p>
+            <p className="settings-hint">
+              {tags.length ? tp("tags.count", tags.length) : t("tags.none")}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="am-create self-start"
+              onClick={() => setPane("list")}
+            >
+              <Tags className="size-3.5" />
+              {t("tags.manage")}
+            </Button>
+          </div>
+        </>
+      )}
     </form>
   );
 }
-function FormActions({ busy, onCancel, label = t("actions.save"), form, disabled }) {
+function FormActions({ busy, onCancel, label = t("actions.save"), form, disabled, hideCancel }) {
   return (
-    <div className="settings-actions">
-      {" "}
-      <Button type="button" variant="secondary" onClick={onCancel}>
-        {t("actions.cancel")}
-      </Button>{" "}
-      <Button type="submit" form={form} disabled={busy || disabled}>
+    <div className={`settings-actions${hideCancel ? " is-save-only" : ""}`}>
+      {hideCancel ? null : (
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          {t("actions.cancel")}
+        </Button>
+      )}
+      <Button
+        type="submit"
+        form={form}
+        size={hideCancel ? "sm" : "default"}
+        className={hideCancel ? "am-create" : undefined}
+        disabled={busy || disabled}
+      >
         {label}
       </Button>
     </div>

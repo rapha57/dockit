@@ -140,7 +140,9 @@ export type PortalSettings = {
   annexFade: boolean;
   catCounts: boolean;
   pruneOrphanTags: boolean;
+  tagsAlpha: boolean;
   infoStats: boolean;
+  infoGeek: boolean;
   probeTlsVerify: boolean;
   probeAuthOnly: boolean;
   sessionHttpOnly: boolean;
@@ -192,6 +194,7 @@ export type ClickStats = {
   month: number;
   year: number;
   spanDays: number;
+  fullCatalog?: boolean;
 };
 
 export type PortalData = {
@@ -414,7 +417,9 @@ function defaultSettings() {
 		annexFade: false,
 		catCounts: false,
 		pruneOrphanTags: false,
+		tagsAlpha: true,
 		infoStats: true,
+		infoGeek: true,
 		probeTlsVerify: false,
 		probeAuthOnly: false,
 		sessionHttpOnly: false,
@@ -961,6 +966,32 @@ function dayKey(d = /* @__PURE__ */ new Date(), tz) {
 		day: "2-digit"
 	}).format(d);
 }
+function seesFullCatalog(doc, user) {
+	if (user && isOwnerUser(user)) return true;
+	for (const tab of doc.tabs || []) {
+		if (!can(user, "view", { res: "tab", id: tab.id }, doc)) return false;
+		for (const cat of tab.categories || []) {
+			if (!can(user, "view", { res: "cat", id: cat.id }, doc)) return false;
+			for (const app of cat.apps || []) {
+				if (!can(user, "view", { res: "card", id: app.id }, doc)) return false;
+			}
+		}
+	}
+	return true;
+}
+function clickStatsFor(doc, user) {
+	const stats = computeClickStats(doc);
+	if (seesFullCatalog(doc, user)) return { ...stats, fullCatalog: true };
+	return {
+		all: 0,
+		today: 0,
+		week: 0,
+		month: 0,
+		year: 0,
+		spanDays: 0,
+		fullCatalog: false
+	};
+}
 function computeClickStats(doc) {
 	let all = 0;
 	for (const tab of doc.tabs) for (const cat of tab.categories) for (const app of cat.apps) if (app.kind === "app") all += app.clicks || 0;
@@ -1033,7 +1064,9 @@ function asStore(raw) {
 			annexFade: Boolean(doc.settings.annexFade),
 			catCounts: Boolean(doc.settings.catCounts),
 			pruneOrphanTags: Boolean(doc.settings.pruneOrphanTags),
+			tagsAlpha: doc.settings.tagsAlpha !== false,
 			infoStats: doc.settings.infoStats !== false,
+			infoGeek: doc.settings.infoGeek !== false,
 			probeTlsVerify: Boolean(doc.settings.probeTlsVerify),
 			probeAuthOnly: Boolean(doc.settings.probeAuthOnly),
 			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly),
@@ -1300,7 +1333,7 @@ function view(doc, tabId, user) {
 		activeTabId,
 		categories: sortCats(stored?.categories ?? []),
 		catalog,
-		clickStats: computeClickStats(doc),
+		clickStats: clickStatsFor(doc, user),
 		session,
 		directory: session?.canManageUsers ? directoryOf(doc) : [],
 		runtime: {
@@ -1545,8 +1578,18 @@ export const rememberTab = createServerFn({ method: "POST" }).validator(z.object
 	doc.lastTabId = data.tabId;
 	await writeDocUnlocked(doc);
 }));
-export const recordClick = createServerFn({ method: "POST" }).validator(z.object({ id: z.string().min(1) })).handler(async ({ data, request }) => withLock(async () => {
+export const recordClick = createServerFn({ method: "POST" }).validator(z.object({
+	id: z.string().min(1),
+	token: z.string().optional()
+})).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
+	let user = null;
+	const token = tok(data, request);
+	if (token) try {
+		user = requireUser(doc, token);
+	} catch {
+		user = null;
+	}
 	const found = appOf(doc, data.id);
 	if (found.app.kind !== "app") return {
 		id: data.id,
@@ -1559,7 +1602,7 @@ export const recordClick = createServerFn({ method: "POST" }).validator(z.object
 	return {
 		id: data.id,
 		clicks: found.app.clicks,
-		clickStats: computeClickStats(doc)
+		clickStats: clickStatsFor(doc, user)
 	};
 }));
 export const resetClicks = createServerFn({ method: "POST" }).validator(z.object({
@@ -1614,7 +1657,9 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	annexFade: z.boolean().optional(),
 	catCounts: z.boolean().optional(),
 	pruneOrphanTags: z.boolean().optional(),
+	tagsAlpha: z.boolean().optional(),
 	infoStats: z.boolean().optional(),
+	infoGeek: z.boolean().optional(),
 	probeTlsVerify: z.boolean().optional(),
 	probeAuthOnly: z.boolean().optional(),
 	sessionHttpOnly: z.boolean().optional(),
@@ -1644,7 +1689,9 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		annexFade: typeof data.annexFade === "boolean" ? data.annexFade : Boolean(doc.settings.annexFade),
 		catCounts: typeof data.catCounts === "boolean" ? data.catCounts : Boolean(doc.settings.catCounts),
 		pruneOrphanTags: typeof data.pruneOrphanTags === "boolean" ? data.pruneOrphanTags : Boolean(doc.settings.pruneOrphanTags),
+		tagsAlpha: typeof data.tagsAlpha === "boolean" ? data.tagsAlpha : doc.settings.tagsAlpha !== false,
 		infoStats: typeof data.infoStats === "boolean" ? data.infoStats : doc.settings.infoStats !== false,
+		infoGeek: typeof data.infoGeek === "boolean" ? data.infoGeek : doc.settings.infoGeek !== false,
 		probeTlsVerify: typeof data.probeTlsVerify === "boolean" ? data.probeTlsVerify : Boolean(doc.settings.probeTlsVerify),
 		probeAuthOnly: typeof data.probeAuthOnly === "boolean" ? data.probeAuthOnly : Boolean(doc.settings.probeAuthOnly),
 		sessionHttpOnly: typeof data.sessionHttpOnly === "boolean" ? data.sessionHttpOnly : Boolean(doc.settings.sessionHttpOnly),

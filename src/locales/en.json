@@ -141,7 +141,9 @@
   "stats": {
     "title": "Statistics",
     "lead": "Top 10 most opened applications",
-    "clicksTip": "Cumulative click statistics, for geeks",
+    "leadVisible": "Top 10 among the cards you can see",
+    "clicksTip": "Click stats for the whole portal, for geeks",
+    "clicksTipVisible": "Top 10 among the cards you can see, for geeks",
     "topApps": "Top applications",
     "showAll": "Show all cards",
     "showDown": "Show only probes that are down",
@@ -548,8 +550,11 @@
     "hs": "Down",
     "removeHs": "Remove down-probe filter",
     "statsIcon": "Usage statistics icon",
-    "statsHint": "Opens the top 10 most clicked applications, in the bottom bar. The day is always shown. The week appears after more than one day of history, the month after a week, the year after a month.",
+    "statsHint": "The icon opens the top 10 most clicked applications. The day is always shown in the bar. The week appears after more than one day of history, the month after a week, the year after a month.",
     "statsHintHidden": "The information bar is hidden in Presentation.",
+    "geek": "Geek tooltip",
+    "geekHint": "Short note on hover on the click icon.",
+    "resetKicker": "Counters",
     "resetHint": "Clears every card click counter. The information bar and the top 10 start again from zero.",
     "resetAction": "Reset counters",
     "resetConfirm": "Reset all click counters?"
@@ -609,6 +614,9 @@
     "openVersion": "Open version {v}",
     "offline": "No connection",
     "tech": "Stack",
+    "stackApp": "App",
+    "stackUi": "Interface",
+    "stackData": "Data",
     "createdOn": "26 August 2026"
   },
   "oidc": {
@@ -1000,6 +1008,8 @@
     "memory": "Memory",
     "prune": "Delete a tag as soon as no card uses it",
     "pruneHint": "Otherwise they stay in memory, even after the last card is destroyed.",
+    "alpha": "Sort tags alphabetically",
+    "alphaHint": "Applies to the tag list, search filters and chips on cards.",
     "count": "{n} tag",
     "count_other": "{n} tags",
     "none": "No tags",

@@ -598,7 +598,8 @@ html.dark select.field-input {
   right: 0;
   bottom: 0;
   z-index: 30;
-  contain: layout paint;
+  contain: layout;
+  overflow: visible;
   border-top: 1px solid color-mix(in oklab, var(--color-border) 75%, transparent);
   background: var(--color-header);
   padding-top: 0.2rem;
@@ -612,6 +613,7 @@ html.dark select.field-input {
   min-height: 1.35rem;
   margin: 0 auto;
   padding: 0 1rem;
+  overflow: visible;
 }
 @media (min-width: 40rem) {
   .info-bar-inner {
@@ -639,32 +641,39 @@ html.dark select.field-input {
 .info-tip {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 0.4rem);
+  bottom: calc(100% + 0.45rem);
   z-index: 40;
   display: none;
-  align-items: center;
-  gap: 0.35rem;
-  max-width: 16rem;
-  padding: 0.35rem 0.55rem;
+  align-items: flex-start;
+  gap: 0.4rem;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: 0.5rem 0.65rem;
   border: 1px solid var(--color-border);
-  border-radius: 0.45rem;
+  border-radius: 0.5rem;
   background: var(--color-surface);
   color: var(--color-muted);
-  font-size: 0.6875rem;
-  line-height: 1.3;
-  white-space: nowrap;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: normal;
   box-shadow: 0 8px 20px -14px color-mix(in oklab, #050505 28%, transparent);
   pointer-events: none;
 }
+.info-tip-text {
+  min-width: 0;
+  flex: 1;
+}
 .info-tip-smile {
-  width: 0.85rem;
-  height: 0.85rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: 0.1rem;
   flex-shrink: 0;
   color: var(--color-muted);
 }
 .info-metrics:hover .info-tip,
 .info-metrics:focus-visible .info-tip {
-  display: inline-flex;
+  display: flex;
 }
 .info-metric {
   display: inline-flex;
@@ -1270,15 +1279,21 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-elevated);
+  padding: 0.55rem 0.15rem;
+  border: 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-border) 55%, transparent);
+  border-radius: 0;
+  background: transparent;
 }
 .debug-level {
+  display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: 1.35rem;
   margin-top: 0.1rem;
-  padding: 0.15rem 0.4rem;
+  padding: 0 0.45rem;
+  min-width: 4.6rem;
   border-radius: 999px;
   font-size: 0.625rem;
   font-weight: 700;
@@ -1286,9 +1301,10 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   text-transform: uppercase;
 }
 .debug-title {
-  margin: 0 0 0.15rem;
-  font-size: 0.875rem;
-  font-weight: 600;
+  margin: 0 0 0.1rem;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  letter-spacing: -0.015em;
 }
 .debug-row.is-error .debug-level {
   background: color-mix(in oklab, var(--color-danger) 16%, var(--color-elevated));
@@ -1298,12 +1314,16 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   background: color-mix(in oklab, #c2410c 16%, var(--color-elevated));
   color: #c2410c;
 }
+html.dark .debug-row.is-warn .debug-level {
+  background: color-mix(in oklab, #f0b429 16%, var(--color-elevated));
+  color: #f0b429;
+}
 .debug-row.is-ok .debug-level {
   background: color-mix(in oklab, var(--color-ok) 16%, var(--color-elevated));
   color: var(--color-ok);
 }
 .debug-row.is-info .debug-level {
-  background: var(--color-surface);
+  background: color-mix(in oklab, var(--color-fg) 6%, var(--color-elevated));
   color: var(--color-muted);
 }
 .settings-body {
@@ -1349,15 +1369,15 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   min-width: 0;
 }
 .kind-select {
-  height: 2.25rem;
+  height: 2rem;
   min-width: 9rem;
   padding: 0 1.75rem 0 0.7rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-elevated);
+  border-radius: 8px;
+  background: transparent;
   color: var(--color-fg);
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 0.75rem;
+  font-weight: 550;
 }
 .settings-pane {
   min-height: 0;
@@ -1448,7 +1468,7 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
 .settings-field > span:first-child,
 .settings-label {
   display: block;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--color-muted);
 }
@@ -1472,9 +1492,11 @@ html.dark .settings-hint.is-warn {
 }
 .settings-kicker {
   margin: 0;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--color-fg);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-subtle);
 }
 .settings-link {
   display: inline;
@@ -1497,21 +1519,21 @@ html.dark .settings-hint.is-warn {
 }
 .settings-file {
   display: inline-flex;
-  height: 2.75rem;
+  height: 2rem;
   cursor: pointer;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-elevated);
-  padding: 0 1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 550;
   color: var(--color-fg);
 }
 .settings-file:hover {
-  background: var(--color-surface);
+  background: var(--color-elevated);
 }
 .settings-file:has(input:disabled),
 .settings-file.is-disabled {
@@ -1521,14 +1543,16 @@ html.dark .settings-hint.is-warn {
 .settings-card {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--color-elevated) 40%, transparent);
-  padding: 0.85rem;
+  gap: 0.55rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
 .settings-stack > .settings-card + .settings-card {
-  margin-top: 0.45rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in oklab, var(--color-border) 55%, transparent);
 }
 .settings-card .settings-toggles {
   gap: 0;
@@ -1693,7 +1717,7 @@ html.dark .settings-hint.is-warn {
 .settings-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1703,11 +1727,12 @@ html.dark .settings-hint.is-warn {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--color-elevated) 28%, transparent);
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
+  border: 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-border) 55%, transparent);
+  border-radius: 0;
+  background: transparent;
+  padding: 0.45rem 0.15rem;
+  font-size: 0.8125rem;
 }
 .user-row-main {
   display: flex;
@@ -2083,13 +2108,13 @@ button.user-row-main:hover .user-row-name {
 .tag-item-name {
   min-width: 0;
   flex: 1;
-  height: 2.25rem;
+  height: 2rem;
   padding: 0 0.55rem;
   border: 1px solid transparent;
-  border-radius: var(--radius-lg);
+  border-radius: 8px;
   background: transparent;
   color: var(--color-fg);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 500;
 }
 .tag-item-name:hover,
@@ -2130,9 +2155,9 @@ button.user-row-main:hover .user-row-name {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  min-height: 2.25rem;
+  min-height: 2rem;
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--color-fg);
 }
 .settings-toggles label.is-disabled,
@@ -2179,6 +2204,10 @@ html.dark .btn-debug:hover {
 .settings-body > .settings-actions {
   margin-top: auto;
   padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in oklab, var(--color-border) 55%, transparent);
+}
+.settings-actions.is-save-only {
+  justify-content: flex-end;
 }
 .settings-actions.is-start {
   justify-content: flex-start;
@@ -2199,10 +2228,10 @@ html.dark .btn-debug:hover {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--color-elevated) 40%, transparent);
-  padding: 0.85rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
 .settings-note p {
   margin: 0;
@@ -2302,12 +2331,29 @@ html.dark .btn-debug:hover {
   color: var(--color-muted);
   font-weight: 400;
 }
+.about-hero {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+}
+.about-mark {
+  width: 3.5rem;
+  height: 3.5rem;
+  flex-shrink: 0;
+}
+.about-name {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
 .about-dl {
   display: grid;
-  grid-template-columns: 7.5rem minmax(0, 1fr);
-  gap: 0.45rem 1rem;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: 0.55rem 1.15rem;
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
 }
 .about-dl dt {
   color: var(--color-muted);
@@ -2321,18 +2367,18 @@ html.dark .btn-debug:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
 }
 .about-build-badge {
   display: inline-flex;
   align-items: center;
-  height: 1.35rem;
-  padding: 0 0.45rem;
+  height: 1.5rem;
+  padding: 0 0.5rem;
   border: 1px solid color-mix(in oklab, var(--color-ok) 35%, var(--color-border));
   border-radius: var(--radius-md);
   background: color-mix(in oklab, var(--color-ok) 14%, var(--color-elevated));
   color: var(--color-ok);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
@@ -2355,17 +2401,6 @@ html.dark .btn-debug:hover {
   flex-wrap: wrap;
   gap: 0.4rem;
   margin-top: 0.5rem;
-}
-.about-tech span {
-  display: inline-flex;
-  align-items: center;
-  height: 1.85rem;
-  padding: 0 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-elevated);
-  font-size: 0.75rem;
-  font-weight: 500;
 }
 
 .note-scroll {
@@ -2713,100 +2748,40 @@ html.dark .dockit-mark {
   gap: 0.5rem;
 }
 
-.history-toolbar {
-  display: flex;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.55rem;
-  margin-bottom: 0.85rem;
+.am-row.is-static .am-row-head {
+  cursor: default;
 }
-.history-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.15rem;
-  padding: 0.2rem;
-  border-radius: var(--radius-lg);
-  background: var(--color-elevated);
+.am-list.is-history .am-row-cells {
+  grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 1.1fr) minmax(8.5rem, 11rem);
+  align-items: start;
 }
-.history-filters button {
+.am-list.is-history .am-row-title {
+  white-space: normal;
+  line-height: 1.35rem;
+  min-height: 1.35rem;
+}
+.am-list.is-history .am-dim,
+.am-list.is-history .am-row-end {
+  line-height: 1.35rem;
+  min-height: 1.35rem;
+}
+.am-list.is-history .am-row-end {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  height: 2.25rem;
-  padding: 0 0.75rem;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  font-size: 0.8125rem;
-  color: var(--color-muted);
+  justify-content: flex-end;
+  gap: 0.65rem;
+  overflow: visible;
 }
-.history-filters button.is-on {
-  background: var(--color-surface);
-  font-weight: 500;
-  color: var(--color-fg);
-}
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.history-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--color-elevated) 28%, transparent);
-}
-.history-row-ico {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--radius-md);
-  background: var(--color-elevated);
-  color: var(--color-fg);
-}
-.history-row-main {
+.am-list.is-history .am-row-end > .am-dim {
   min-width: 0;
-  flex: 1;
-}
-.history-title {
-  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.875rem;
-  font-weight: 500;
 }
-.history-scope {
+.am-list.is-history .am-row-end .am-text-btn {
+  height: 1.5rem;
+  flex-shrink: 0;
   font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--color-muted);
-}
-.history-meta {
-  margin: 0.15rem 0 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  color: var(--color-muted);
-}
-.history-empty {
-  margin: 0;
-  padding: 2.5rem 0.5rem;
-  text-align: center;
-  font-size: 0.875rem;
-  color: var(--color-muted);
 }
 .stats-panel {
   width: min(36rem, 100%);
@@ -2910,7 +2885,8 @@ html.dark .dockit-mark {
   font-weight: 550;
   letter-spacing: -0.01em;
 }
-.am-toolbar .am-create {
+button.am-create,
+.am-create {
   height: 2rem;
   padding-inline: 0.7rem;
   border-radius: 8px;
@@ -3164,7 +3140,7 @@ html.dark .am-filters.is-pills button.is-on {
   margin-top: 0;
 }
 .am-expand .settings-card {
-  padding: 0.55rem 0.65rem;
+  padding: 0;
   gap: 0.4rem;
 }
 .am-expand .settings-stack {
@@ -3213,6 +3189,9 @@ html.dark .am-filters.is-pills button.is-on {
 }
 .am-row.is-provider .am-row-title {
   white-space: normal;
+}
+.am-row.is-link .am-row-cells {
+  grid-template-columns: minmax(0, 1fr);
 }
 .am-chips {
   display: flex;
@@ -3548,6 +3527,10 @@ html.dark .am-filters.is-pills button.is-on {
 }
 .am-text-btn.is-danger:hover {
   color: var(--color-danger);
+}
+.am-text-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .am-icon-btn {
   display: inline-flex;
