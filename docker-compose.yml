@@ -1,0 +1,21 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORTAL_EDIT_USER: admin
+      # 12 caractères min. Obligatoire en production (pas admin / change-moi).
+      PORTAL_EDIT_PASSWORD: ""
+      PORTAL_DATA_FILE: /app/data/portal.json
+      PORT: "3000"
+      # Derrière un reverse proxy :
+      # PORTAL_PUBLIC_ORIGIN: https://portail.exemple
+      # PORTAL_TRUST_PROXY: "1"
+    volumes:
+      - portal-data:/app/data
+    cap_add:
+      - NET_RAW
+
+volumes:
+  portal-data:

@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+root=$(git rev-parse --show-toplevel)
+version=$("$root/scripts/portal-version.sh" "$root/src/routes/index.tsx")
+git add "$root/src/routes/index.tsx"
+echo "build $version"

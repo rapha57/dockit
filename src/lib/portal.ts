@@ -1,0 +1,2953 @@
+// @ts-nocheck
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { safeAppHref } from "./safe-href";
+import { MAX_CUSTOM_ICONS, toClientAsset } from "./assets-url";
+import { CSS_MAX, sanitizeThemeCss } from "./theme-css";
+import { isWeakPassword, passwordPolicyError } from "./security";
+import { assertProductionSecrets, clientIp, isDevRuntime, trustProxy } from "./security-runtime";
+import { parseSessCookie } from "./session-cookie";
+import {
+	asHistory,
+	pruneHistory,
+	appendHistory,
+	snapshotTab,
+	snapshotCat,
+	snapshotApp,
+	publicAudit,
+	publicTrash,
+	emptyTrash
+} from "./history";
+import { t, withLocale } from "./i18n";
+import { defaultTagHex, remapTagHex } from "./tag-colors";
+import {
+	absorbResourceAcl,
+	asGrants,
+	can,
+	categoryMoveImpact,
+	defaultRoles,
+	grantsFromLegacyRole,
+	groupsOf,
+	isOwnerUser,
+	isSystemRole,
+	mergeGrant,
+	moveCategoryInDoc,
+	roleIdsOf,
+	roleSummary,
+	setRoleHolders,
+	stripRole
+} from "./acl";
+
+function tt(doc, key, vars) {
+	return withLocale(doc.settings?.locale, () => t(key, vars));
+}
+
+export type UserRole = "admin" | "editeur" | "lecteur";
+export type TabPerm = "view" | "edit";
+
+export type PortalUser = {
+  id: string;
+  username: string;
+  passHash: string;
+  role: UserRole;
+  canCreateTabs?: boolean;
+};
+
+export type SessionInfo = {
+  username: string;
+  role: UserRole;
+  canEdit: boolean;
+  canManageUsers: boolean;
+  canManageSettings: boolean;
+  canCreateTabs: boolean;
+  tabPerms: Record<string, TabPerm>;
+};
+
+export type DirectoryUser = {
+  id: string;
+  username: string;
+  role: UserRole;
+};
+
+export type ItemKind = "app" | "note" | "embed";
+export type CheckMode = "off" | "http" | "icmp";
+
+export type PortalApp = {
+  id: string;
+  categoryId: string;
+  kind: ItemKind;
+  title: string;
+  description: string;
+  url: string;
+  icon: string;
+  openIn: "_blank" | "_self";
+  tags: string[];
+  colSpan: 1 | 2 | 3;
+  rowSpan: 1 | 2 | 3;
+  sortOrder: number;
+  check: CheckMode;
+  checkHost: string;
+  clicks: number;
+  links: { title: string; url: string }[];
+};
+
+export type PortalCategory = {
+  id: string;
+  name: string;
+  icon: string;
+  sortOrder: number;
+  restricted: boolean;
+  viewers: string[];
+  editors: string[];
+  apps: PortalApp[];
+};
+
+export type PortalTab = {
+  id: string;
+  name: string;
+  icon: string;
+  sortOrder: number;
+  restricted: boolean;
+  viewers: string[];
+  editors: string[];
+  hideLabel: boolean;
+};
+
+export type PortalSettings = {
+  title: string;
+  subtitle: string;
+  logo: string;
+  healthChecks: boolean;
+  usageStats: boolean;
+  infoBar: boolean;
+  tagColors: Record<string, string>;
+  cssLight: string;
+  cssDark: string;
+  documentTitle: string;
+  locale: "en" | "fr";
+  dateFormat: "ymd" | "dmy" | "mdy" | "iso";
+  favicon: string;
+  favsHideLabel: boolean;
+  favNotes: boolean;
+  favEmbeds: boolean;
+  onlineIcons: boolean;
+  navRichIcons: boolean;
+  probeBlink: boolean;
+  annexFade: boolean;
+  catCounts: boolean;
+  pruneOrphanTags: boolean;
+  infoStats: boolean;
+  probeTlsVerify: boolean;
+  probeAuthOnly: boolean;
+  sessionHttpOnly: boolean;
+  devAdminNoPassword: boolean;
+  oidcEnabled: boolean;
+  oidcIssuer: string;
+  oidcClientId: string;
+  oidcClientSecret: string;
+  oidcLabel: string;
+  oidcAutoCreate: boolean;
+  ldapEnabled: boolean;
+  ldapHost: string;
+  ldapPort: number;
+  ldapTls: boolean;
+  ldapTlsVerify: boolean;
+  ldapBindDn: string;
+  ldapBindPassword: string;
+  ldapBaseDn: string;
+  ldapUserFilter: string;
+  ldapDomain: string;
+  ldapAutoCreate: boolean;
+  loginOrder: Array<"local" | "ad">;
+};
+
+export type CustomIcon = {
+  id: string;
+  name: string;
+  dataUrl: string;
+};
+
+export type ClickStats = {
+  all: number;
+  today: number;
+  week: number;
+  month: number;
+  year: number;
+  spanDays: number;
+};
+
+export type PortalData = {
+  settings: PortalSettings;
+  customIcons: CustomIcon[];
+  tabs: PortalTab[];
+  activeTabId: string;
+  categories: PortalCategory[];
+  catalog: (PortalTab & { categories: PortalCategory[] })[];
+  clickStats: ClickStats;
+  session: SessionInfo | null;
+  directory: DirectoryUser[];
+  runtime: {
+    isDev: boolean;
+    publicOrigin: string;
+    trustProxy: boolean;
+  };
+};
+
+type StoredTab = PortalTab & { categories: PortalCategory[] };
+
+type StoreFile = {
+  settings: PortalSettings;
+  customIcons: CustomIcon[];
+  tabs: StoredTab[];
+  lastTabId?: string;
+  clickDays?: Record<string, number>;
+  users: PortalUser[];
+};
+
+var SESSION_MS = 432e5;
+var sessions = /* @__PURE__ */ new Map();
+var oidcPending = /* @__PURE__ */ new Map();
+var OIDC_PENDING_MS = 5 * 60 * 1000;
+function envUser() {
+	return (process.env.PORTAL_EDIT_USER || "admin").trim().toLowerCase() || "admin";
+}
+function envPassword() {
+	return (process.env.PORTAL_EDIT_PASSWORD || "admin").trim() || "admin";
+}
+function hashPasswordSync(password) {
+	const salt = randomBytes(16).toString("hex");
+	return `${salt}:${scryptSync(password, salt, 32).toString("hex")}`;
+}
+async function hashPassword(password) {
+	const { randomBytes: bytes, scrypt } = await import("node:crypto");
+	const { promisify } = await import("node:util");
+	const salt = bytes(16).toString("hex");
+	const buf = await promisify(scrypt)(password, salt, 32);
+	return `${salt}:${Buffer.from(buf).toString("hex")}`;
+}
+async function verifyPassword(password, stored) {
+	const [salt, hash] = String(stored || "").split(":");
+	if (!salt || !hash) return false;
+	const { scrypt, timingSafeEqual: same } = await import("node:crypto");
+	const { promisify } = await import("node:util");
+	const next = Buffer.from(await promisify(scrypt)(password, salt, 32));
+	const prev = Buffer.from(hash, "hex");
+	if (next.length !== prev.length) return false;
+	return same(next, prev);
+}
+var loginFails = /* @__PURE__ */ new Map();
+var LOGIN_MAX = 5;
+var LOGIN_WINDOW_MS = 15 * 60 * 1000;
+function clientKey(username, request) {
+	return `${clientIp(request)}:${String(username || "").toLowerCase()}`;
+}
+function requireStrongPassword(raw) {
+	const err = passwordPolicyError(raw);
+	if (err) throw new Error(err);
+}
+var defaultAdminCache = {
+	hash: "",
+	value: false
+};
+async function isDefaultAdminPassword(doc) {
+	const admin = ensureUsers(doc).find((u) => u.role === "admin");
+	if (!admin?.passHash) return true;
+	if (defaultAdminCache.hash === admin.passHash) return defaultAdminCache.value;
+	const env = envPassword();
+	const value = await verifyPassword("admin", admin.passHash) || isWeakPassword(env) && await verifyPassword(env, admin.passHash);
+	defaultAdminCache = {
+		hash: admin.passHash,
+		value: Boolean(value)
+	};
+	return defaultAdminCache.value;
+}
+async function sessionFor(user, doc) {
+	const u = hydrateUser(user, doc);
+	const info = sessionInfo(u, doc);
+	if (user.id === "admin") info.mustChangePassword = await isDefaultAdminPassword(doc);
+	return info;
+}
+function loginBlocked(key) {
+	const row = loginFails.get(key);
+	if (!row) return false;
+	if (Date.now() > row.until) {
+		loginFails.delete(key);
+		return false;
+	}
+	return row.n >= LOGIN_MAX;
+}
+function loginFail(key) {
+	const now = Date.now();
+	const row = loginFails.get(key) || {
+		n: 0,
+		until: now + LOGIN_WINDOW_MS
+	};
+	row.n += 1;
+	row.until = now + LOGIN_WINDOW_MS;
+	loginFails.set(key, row);
+}
+function loginOk(key) {
+	loginFails.delete(key);
+}
+function issueToken(userId) {
+	const token = randomBytes(24).toString("hex");
+	sessions.set(token, {
+		userId,
+		exp: Date.now() + SESSION_MS
+	});
+	return token;
+}
+var tokenField = z.string().min(1);
+function tok(data, request) {
+	return parseSessCookie(typeof request?.headers?.get === "function" ? request.headers.get("cookie") : "") || String(data?.token || "");
+}
+export function sessionAlive(token) {
+	if (!token) return false;
+	const row = sessions.get(token);
+	return Boolean(row && row.exp >= Date.now());
+}
+function asKind(v) {
+	return v === "note" || v === "embed" ? v : "app";
+}
+function asCheck(v) {
+	return v === "http" || v === "icmp" ? v : "off";
+}
+function asCheckHost(v) {
+	return String(v ?? "").trim().slice(0, 253);
+}
+function asSpan(v) {
+	const n = Number(v);
+	return n === 2 || n === 3 ? n : 1;
+}
+function asTags(v) {
+	if (!Array.isArray(v)) return [];
+	const out = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const raw of v) {
+		const tag = String(raw ?? "").trim().slice(0, 32);
+		if (!tag) continue;
+		const key = tag.toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(tag);
+		if (out.length >= 3) break;
+	}
+	return out;
+}
+function asExtraLinks(raw) {
+	if (!Array.isArray(raw)) return [];
+	const out = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const row of raw) {
+		const title = String(row?.title ?? "").trim().slice(0, 40);
+		const url = safeAppHref(row?.url);
+		if (!title || !url) continue;
+		const key = url.toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push({
+			title,
+			url
+		});
+		if (out.length >= 4) break;
+	}
+	return out;
+}
+function normalizeItem(a, categoryId, sortOrder) {
+	const kind = asKind(a.kind);
+	return {
+		id: a.id || crypto.randomUUID(),
+		categoryId,
+		kind,
+		title: String(a.title || (kind === "note" || kind === "embed" ? "" : "Untitled")).slice(0, 80),
+		description: String(a.description || "").slice(0, 8e3),
+		url: kind === "note" ? String(a.url || "").slice(0, 2e3) : (safeAppHref(a.url) || (String(a.url || "").trim().toLowerCase().startsWith("http") ? String(a.url).trim().slice(0, 2e3) : "")),
+		icon: String(a.icon || (kind === "note" ? "FileText" : kind === "embed" ? "AppWindow" : "Link")),
+		openIn: a.openIn === "_self" ? "_self" : "_blank",
+		tags: kind === "app" ? asTags(a.tags) : [],
+		colSpan: asSpan(a.colSpan),
+		rowSpan: asSpan(a.rowSpan),
+		sortOrder,
+		check: kind === "app" ? asCheck(a.check) : "off",
+		checkHost: kind === "app" && asCheck(a.check) === "icmp" ? asCheckHost(a.checkHost) : "",
+		clicks: Math.max(0, Math.floor(Number(a.clicks) || 0)),
+		links: kind === "app" ? asExtraLinks(a.links) : []
+	};
+}
+function defaultSettings() {
+	return {
+		title: "Dockit",
+		subtitle: "Pin your URLs",
+		logo: "",
+		healthChecks: true,
+		usageStats: true,
+		infoBar: true,
+		tagColors: {},
+		cssLight: "",
+		cssDark: "",
+		documentTitle: "Dockit",
+		favicon: "",
+		favsHideLabel: false,
+		favNotes: false,
+		favEmbeds: false,
+		onlineIcons: false,
+		navRichIcons: false,
+		probeBlink: false,
+		annexFade: false,
+		catCounts: false,
+		pruneOrphanTags: false,
+		infoStats: true,
+		probeTlsVerify: false,
+		probeAuthOnly: false,
+		sessionHttpOnly: false,
+		devAdminNoPassword: false,
+		oidcEnabled: false,
+		oidcIssuer: "",
+		oidcClientId: "",
+		oidcClientSecret: "",
+		oidcLabel: "SSO",
+		oidcAutoCreate: false,
+		ldapEnabled: false,
+		ldapHost: "",
+		ldapPort: 636,
+		ldapTls: true,
+		ldapTlsVerify: true,
+		ldapBindDn: "",
+		ldapBindPassword: "",
+		ldapBaseDn: "",
+		ldapUserFilter: "",
+		ldapDomain: "",
+		ldapAutoCreate: false,
+		loginOrder: ["local", "ad"],
+		locale: "en",
+		dateFormat: "ymd"
+	};
+}
+function blankTabs() {
+	const tabId = crypto.randomUUID();
+	const catId = crypto.randomUUID();
+	return {
+		lastTabId: tabId,
+		tabs: [{
+			id: tabId,
+			name: "Home",
+			icon: "Layers",
+			sortOrder: 1,
+			restricted: false,
+			viewers: [],
+			editors: [],
+			hideLabel: false,
+			categories: [{
+				id: catId,
+				name: "Applications",
+				icon: "AppWindow",
+				sortOrder: 1,
+				restricted: false,
+				viewers: [],
+				editors: [],
+				apps: []
+			}]
+		}]
+	};
+}
+function defaultStore() {
+	const blank = blankTabs();
+	return {
+		settings: defaultSettings(),
+		customIcons: [],
+		lastTabId: blank.lastTabId,
+		clickDays: {},
+		users: [],
+		groups: [],
+		roles: defaultRoles(),
+		history: [],
+		tabs: blank.tabs
+	};
+}
+function assignTagColors(doc, tags, extras) {
+	const colors = { ...asTagColors(doc.settings.tagColors) };
+	const extra = extras && typeof extras === "object" && !Array.isArray(extras) ? extras : {};
+	for (const raw of Array.isArray(tags) ? tags : []) {
+		const tag = String(raw || "").trim().slice(0, 32);
+		if (!tag) continue;
+		if (Object.keys(colors).some((k) => k.toLowerCase() === tag.toLowerCase())) continue;
+		const hit = Object.entries(extra).find(([k, v]) => k.toLowerCase() === tag.toLowerCase() && /^#[0-9a-f]{6}$/i.test(String(v)));
+		if (!hit) continue;
+		colors[tag] = String(hit[1]).toLowerCase();
+	}
+	doc.settings.tagColors = colors;
+}
+function pruneUnusedTags(doc) {
+	if (!doc.settings.pruneOrphanTags) return;
+	const used = new Set();
+	eachItem(doc, (app) => {
+		if ((app.kind || "app") !== "app") return;
+		for (const tag of app.tags || []) used.add(String(tag).toLowerCase());
+	});
+	const colors = { ...asTagColors(doc.settings.tagColors) };
+	for (const name of Object.keys(colors)) {
+		if (!used.has(name.toLowerCase())) delete colors[name];
+	}
+	doc.settings.tagColors = colors;
+}
+function asTagColors(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+	const out = {};
+	for (const [key, value] of Object.entries(raw)) {
+		const name = String(key || "").trim().slice(0, 32);
+		const hex = remapTagHex(String(value || "").trim().toLowerCase());
+		if (!name || !/^#[0-9a-f]{6}$/.test(hex)) continue;
+		out[name] = hex;
+		if (Object.keys(out).length >= 80) break;
+	}
+	return out;
+}
+function asClickDays(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+	const out = {};
+	for (const [key, value] of Object.entries(raw)) {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+		const n = Math.max(0, Math.floor(Number(value) || 0));
+		if (!n) continue;
+		out[key] = n;
+		if (Object.keys(out).length >= 800) break;
+	}
+	return out;
+}
+function asUsers(raw) {
+	if (!Array.isArray(raw)) return [];
+	return raw.map((u) => {
+		const row = u;
+		const id = String(row.id || crypto.randomUUID());
+		let roleIds = roleIdsOf(row).map((r) => String(r).slice(0, 80));
+		if (id === "admin") roleIds = ["owner"];
+		else {
+			roleIds = roleIds.filter((r) => r !== "owner");
+			if (!roleIds.length) roleIds = ["lecteur"];
+		}
+		return {
+			id,
+			username: String(row.username || "").trim().toLowerCase().slice(0, 40),
+			passHash: String(row.passHash || ""),
+			role: roleIds[0],
+			roleIds,
+			groupIds: asIdList(row.groupIds),
+			grants: asGrants(row.grants),
+			disabled: id === "admin" ? false : Boolean(row.disabled),
+			source: row.source === "ad" || row.source === "oidc" ? row.source : "local"
+		};
+	}).filter((u) => u.username);
+}
+const LOGIN_REALMS = ["local", "ad"];
+function asLoginOrder(raw) {
+	const seen = /* @__PURE__ */ new Set();
+	const out = [];
+	if (Array.isArray(raw)) {
+		for (const value of raw) {
+			const id = value === "ad" ? "ad" : value === "local" ? "local" : "";
+			if (!id || seen.has(id)) continue;
+			seen.add(id);
+			out.push(id);
+		}
+	}
+	for (const id of LOGIN_REALMS) if (!seen.has(id)) out.push(id);
+	return out;
+}
+function asIdList(raw) {
+	if (!Array.isArray(raw)) return [];
+	const out = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const value of raw) {
+		const id = String(value || "").trim();
+		if (!id || seen.has(id)) continue;
+		seen.add(id);
+		out.push(id);
+	}
+	return out;
+}
+function asGroups(raw) {
+	if (!Array.isArray(raw)) return [];
+	return raw.slice(0, 80).map((g) => {
+		let roleIds = roleIdsOf(g).map((r) => String(r).slice(0, 80)).filter((r) => r !== "owner");
+		if (!roleIds.length) roleIds = ["lecteur"];
+		return {
+			id: String(g?.id || crypto.randomUUID()),
+			name: String(g?.name || "").trim().slice(0, 60),
+			members: asIdList(g?.members),
+			role: roleIds[0],
+			roleIds,
+			grants: asGrants(g?.grants),
+			source: g?.source === "ad" ? "ad" : "local",
+			externalId: String(g?.externalId || "").slice(0, 200)
+		};
+	}).filter((g) => g.name);
+}
+function ensureGroups(doc) {
+	if (!Array.isArray(doc.groups)) doc.groups = [];
+	doc.groups = asGroups(doc.groups);
+	return doc.groups;
+}
+function asRoles(raw) {
+	if (!Array.isArray(raw)) return [];
+	return raw.slice(0, 40).map((r) => {
+		const id = String(r?.id || crypto.randomUUID()).slice(0, 80);
+		const system = isSystemRole(id);
+		let grants = grantsFromLegacyRole(r);
+		if (id === "owner") grants = [{ res: "portal", id: "*", allow: ["*"] }];
+		return {
+			id,
+			name: String(r?.name || id).trim().slice(0, 40) || id,
+			description: String(r?.description || "").trim().slice(0, 200),
+			system,
+			grants
+		};
+	}).filter((r) => r.name);
+}
+function ensureRoles(doc) {
+	const byId = new Map();
+	for (const r of asRoles(doc.roles)) byId.set(r.id, r);
+	for (const s of defaultRoles()) if (!byId.has(s.id)) byId.set(s.id, s);
+	const owner = byId.get("owner");
+	if (owner) {
+		owner.system = true;
+		owner.grants = [{ res: "portal", id: "*", allow: ["*"] }];
+	}
+	doc.roles = [...byId.values()].slice(0, 40);
+	absorbResourceAcl(doc);
+	return doc.roles;
+}
+function normalizeTabAccess(tab) {
+	const editors = asIdList(tab.editors);
+	const viewers = asIdList(tab.viewers);
+	for (const id of editors) if (!viewers.includes(id)) viewers.push(id);
+	return {
+		restricted: Boolean(tab.restricted),
+		viewers,
+		editors,
+		hideLabel: Boolean(tab.hideLabel)
+	};
+}
+function normalizeCatAccess(cat) {
+	const editors = asIdList(cat.editors);
+	const viewers = asIdList(cat.viewers);
+	for (const id of editors) if (!viewers.includes(id)) viewers.push(id);
+	return {
+		restricted: Boolean(cat.restricted),
+		viewers,
+		editors
+	};
+}
+function hasPrincipal(list, user) {
+	if (!user) return false;
+	const ids = user._ids || [user.id];
+	return (list || []).some((id) => ids.includes(id));
+}
+function tabCanSee(tab, user, doc) {
+	if (!tab) return false;
+	return can(user, "view", { res: "tab", id: tab.id }, doc);
+}
+function tabCanEdit(tab, user, doc) {
+	if (!tab || !user) return false;
+	return can(user, "edit", { res: "tab", id: tab.id }, doc);
+}
+function catCanSee(cat, user, doc) {
+	if (!cat) return false;
+	return can(user, "view", { res: "cat", id: cat.id }, doc);
+}
+function hydrateUser(user, doc) {
+	if (!user) return user;
+	if (user._ids) return user;
+	ensureRoles(doc);
+	ensureGroups(doc);
+	const groups = groupsOf(user, doc);
+	const ids = [user.id, ...groups.map((g) => g.id)];
+	const owner = isOwnerUser(user);
+	const portal = { res: "portal" };
+	const canCreateTabs = owner || can(user, "spaces.create", portal, doc);
+	const canAudit = owner || can(user, "audit", portal, doc);
+	const canRestore = owner || can(user, "restore", portal, doc);
+	const canPurge = owner || can(user, "purge", portal, doc);
+	const canManageSettings = owner || can(user, "settings", portal, doc);
+	const canManageUsers = owner || can(user, "users.manage", portal, doc);
+	const canManageGroups = owner || can(user, "groups.manage", portal, doc);
+	const canManageRoles = owner || can(user, "roles.manage", portal, doc);
+	const anyEdit = owner || canCreateTabs || (doc.tabs || []).some((t) => can(user, "edit", { res: "tab", id: t.id }, doc));
+	const roleIds = roleIdsOf(user);
+	return {
+		...user,
+		role: owner ? "admin" : roleIds[0] || "lecteur",
+		roleId: roleIds[0] || user.role,
+		roleIds,
+		canCreateTabs,
+		canAudit,
+		canRestore,
+		canPurge,
+		canManageSettings,
+		canManageUsers,
+		canManageGroups,
+		canManageRoles,
+		groupIds: groups.map((g) => g.id),
+		_ids: ids,
+		_canEdit: anyEdit
+	};
+}
+function historyVisible(doc, user, ev) {
+	if (!user) return false;
+	if (user.role === "admin" || user.canAudit) return true;
+	if (!user.canRestore) return false;
+	const type = String(ev?.type || "");
+	if (type === "login") return ev.actor === user.username;
+	if (/^(user|group|role|settings|theme|oidc|ldap|auth|portal)\./.test(type)) return false;
+	const tabMeta = ev?.snapshot?.tab;
+	if (!tabMeta) return false;
+	const live = doc.tabs.find((t) => t.id === tabMeta.id);
+	return tabCanEdit(live || tabMeta, user, doc);
+}
+function ensureUsers(doc) {
+	if (!Array.isArray(doc.users)) doc.users = [];
+	let admin = doc.users.find((u) => u.id === "admin");
+	if (!admin) {
+		admin = {
+			id: "admin",
+			username: envUser(),
+			passHash: hashPasswordSync(envPassword()),
+			role: "owner",
+			roleIds: ["owner"]
+		};
+		doc.users.unshift(admin);
+	}
+	admin.role = "owner";
+	admin.roleIds = ["owner"];
+	admin.disabled = false;
+	if (!admin.passHash) admin.passHash = hashPasswordSync(envPassword());
+	return doc.users;
+}
+function tabAccess(tab, user, doc) {
+	if (!tabCanSee(tab, user, doc)) return null;
+	if (tabCanEdit(tab, user, doc)) return "edit";
+	return "view";
+}
+function readSession(token) {
+	const row = sessions.get(token);
+	if (!row || row.exp < Date.now()) {
+		if (row) sessions.delete(token);
+		throw new Error("errors.sessionExpired");
+	}
+	return row;
+}
+function requireUser(doc, token) {
+	ensureUsers(doc);
+	ensureGroups(doc);
+	ensureRoles(doc);
+	const sess = readSession(token);
+	const user = doc.users.find((u) => u.id === sess.userId);
+	if (!user) throw new Error("errors.userNotFound");
+	if (user.disabled) throw new Error("errors.disabled");
+	return hydrateUser(user, doc);
+}
+function requireEdit(doc, token, tabId) {
+	const user = requireUser(doc, token);
+	if (isOwnerUser(user)) return user;
+	if (tabId) {
+		const tab = doc.tabs.find((t) => t.id === tabId);
+		if (!tab || !tabCanEdit(tab, user, doc)) throw new Error("errors.noEditTab");
+		return user;
+	}
+	if (user.canCreateTabs || user._canEdit || doc.tabs.some((t) => tabCanEdit(t, user, doc))) return user;
+	throw new Error("errors.readonly");
+}
+function requireAdmin(doc, token) {
+	const user = requireUser(doc, token);
+	if (!isOwnerUser(user) && !user.canManageSettings) throw new Error("errors.adminOnly");
+	return user;
+}
+function requireAccountManager(doc, token) {
+	const user = requireUser(doc, token);
+	if (!isOwnerUser(user) && !user.canManageUsers && !user.canManageGroups && !user.canManageRoles) throw new Error("errors.insufficient");
+	return user;
+}
+function requireCreateTab(doc, token) {
+	const user = requireUser(doc, token);
+	if (isOwnerUser(user) || user.canCreateTabs) return user;
+	throw new Error("errors.noManageSpaces");
+}
+function directAccess(doc, principalId) {
+	const viewTabIds = [];
+	const editTabIds = [];
+	const viewCatIds = [];
+	for (const tab of doc.tabs) {
+		if ((tab.editors || []).includes(principalId)) editTabIds.push(tab.id);
+		if (tab.restricted && (tab.viewers || []).includes(principalId)) viewTabIds.push(tab.id);
+		for (const cat of tab.categories || []) {
+			if (cat.restricted && ((cat.viewers || []).includes(principalId) || (cat.editors || []).includes(principalId))) viewCatIds.push(cat.id);
+		}
+	}
+	return {
+		viewTabIds,
+		editTabIds,
+		viewCatIds
+	};
+}
+function publicUser(u, doc) {
+	const roleIds = roleIdsOf(u);
+	return {
+		kind: "user",
+		id: u.id,
+		username: u.username,
+		name: u.username,
+		role: roleIds[0] || u.role,
+		roleIds,
+		grants: asGrants(u.grants),
+		disabled: Boolean(u.disabled),
+		source: u.source === "ad" || u.source === "oidc" ? u.source : "local",
+		groupIds: asIdList(u.groupIds)
+	};
+}
+function publicGroup(g, doc) {
+	const roleIds = roleIdsOf(g);
+	return {
+		kind: "group",
+		id: g.id,
+		name: g.name,
+		role: roleIds[0] || g.role || "lecteur",
+		roleIds,
+		grants: asGrants(g.grants),
+		source: g.source === "ad" ? "ad" : "local",
+		members: asIdList(g.members)
+	};
+}
+function latestSessionExp(userId) {
+	let exp = 0;
+	for (const row of sessions.values()) {
+		if (row.userId === userId && row.exp > exp) exp = row.exp;
+	}
+	return exp || undefined;
+}
+function sessionInfo(user, doc) {
+	const u = hydrateUser(user, doc);
+	const tabPerms = {};
+	for (const tab of doc.tabs) {
+		const perm = tabAccess(tab, u, doc);
+		if (perm) tabPerms[tab.id] = perm;
+	}
+	const owner = isOwnerUser(u);
+	return {
+		username: u.username,
+		role: owner ? "admin" : u.role,
+		roleId: u.roleId || (u.roleIds && u.roleIds[0]) || user.role,
+		roleIds: u.roleIds || roleIdsOf(user),
+		canEdit: Boolean(owner || u._canEdit),
+		canManageUsers: Boolean(u.canManageUsers || owner),
+		canManageGroups: Boolean(u.canManageGroups || owner),
+		canManageRoles: Boolean(u.canManageRoles || owner),
+		canManageSettings: Boolean(u.canManageSettings || owner),
+		canCreateTabs: Boolean(u.canCreateTabs || owner),
+		canAudit: Boolean(u.canAudit || owner),
+		canRestore: Boolean(u.canRestore || owner),
+		canPurge: Boolean(u.canPurge || owner),
+		tabPerms,
+		exp: latestSessionExp(u.id)
+	};
+}
+function directoryOf(doc) {
+	return ensureUsers(doc).filter((u) => u.id !== "admin").map((u) => ({
+		id: u.id,
+		username: u.username,
+		role: roleIdsOf(u)[0] || u.role
+	}));
+}
+function syncGroupMembers(doc, groupId, memberIds) {
+	ensureGroups(doc);
+	const g = doc.groups.find((row) => row.id === groupId);
+	if (!g) return;
+	const next = asIdList(memberIds).filter((id) => doc.users.some((u) => u.id === id && u.id !== "admin"));
+	g.members = next;
+	for (const u of doc.users) {
+		u.groupIds = asIdList(u.groupIds);
+		const has = next.includes(u.id);
+		if (has && !u.groupIds.includes(groupId)) u.groupIds.push(groupId);
+		if (!has) u.groupIds = u.groupIds.filter((id) => id !== groupId);
+	}
+}
+function syncUserGroups(doc, userId, groupIds) {
+	ensureGroups(doc);
+	const user = doc.users.find((u) => u.id === userId);
+	if (!user || user.role === "admin") return;
+	const next = asIdList(groupIds).filter((id) => doc.groups.some((g) => g.id === id));
+	user.groupIds = next;
+	for (const g of doc.groups) {
+		g.members = asIdList(g.members);
+		const has = next.includes(g.id);
+		if (has && !g.members.includes(userId)) g.members.push(userId);
+		if (!has) g.members = g.members.filter((id) => id !== userId);
+	}
+}
+function publicRole(r, doc) {
+	ensureUsers(doc);
+	ensureGroups(doc);
+	const counts = roleSummary(r, doc);
+	return {
+		id: r.id,
+		name: r.name,
+		description: r.description || "",
+		system: Boolean(r.system),
+		grants: asGrants(r.grants),
+		userCount: counts.userCount,
+		groupCount: counts.groupCount,
+		grantCount: counts.grantCount
+	};
+}
+function directoryPayload(doc, actor) {
+	ensureUsers(doc);
+	ensureGroups(doc);
+	ensureRoles(doc);
+	const ownerActor = isOwnerUser(actor);
+	return {
+		users: doc.users.filter((u) => ownerActor ? true : u.id === actor.id || u.id !== "admin").map((u) => publicUser(u, doc)),
+		groups: doc.groups.map((g) => publicGroup(g, doc)),
+		roles: doc.roles.map((r) => publicRole(r, doc)),
+		tabs: manageTabs(doc),
+		directory: directoryOf(doc)
+	};
+}
+function applyUserAccess(doc, userId, role, viewTabIds, editTabIds, viewCatIds) {
+	if (role === "admin") {
+		stripUserAccess(doc, userId);
+		return;
+	}
+	const views = new Set(viewTabIds);
+	const edits = role === "editeur" ? new Set(editTabIds) : /* @__PURE__ */ new Set();
+	const catViews = new Set(viewCatIds);
+	for (const tab of doc.tabs) {
+		tab.editors = (tab.editors || []).filter((id) => id !== userId);
+		tab.viewers = (tab.viewers || []).filter((id) => id !== userId);
+		if (edits.has(tab.id)) {
+			tab.editors.push(userId);
+			if (tab.restricted && !tab.viewers.includes(userId)) tab.viewers.push(userId);
+		} else if (tab.restricted && views.has(tab.id)) tab.viewers.push(userId);
+		for (const cat of tab.categories || []) {
+			cat.editors = (cat.editors || []).filter((id) => id !== userId);
+			cat.viewers = (cat.viewers || []).filter((id) => id !== userId);
+			if (cat.restricted && catViews.has(cat.id) && tabCanSee(tab, { id: userId, role })) cat.viewers.push(userId);
+		}
+	}
+}
+function stripUserAccess(doc, userId) {
+	for (const tab of doc.tabs) {
+		tab.editors = (tab.editors || []).filter((id) => id !== userId);
+		tab.viewers = (tab.viewers || []).filter((id) => id !== userId);
+		for (const cat of tab.categories || []) {
+			cat.editors = (cat.editors || []).filter((id) => id !== userId);
+			cat.viewers = (cat.viewers || []).filter((id) => id !== userId);
+		}
+	}
+}
+async function emit(doc, user, tabId) {
+	const out = view(doc, tabId, user);
+	if (out.session && user?.id === "admin") out.session.mustChangePassword = await isDefaultAdminPassword(doc);
+	return out;
+}
+function parisDayKey(d = /* @__PURE__ */ new Date()) {
+	return new Intl.DateTimeFormat("en-CA", {
+		timeZone: "Europe/Paris",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit"
+	}).format(d);
+}
+function computeClickStats(doc) {
+	let all = 0;
+	for (const tab of doc.tabs) for (const cat of tab.categories) for (const app of cat.apps) if (app.kind === "app") all += app.clicks || 0;
+	const days = doc.clickDays ?? {};
+	const now = Date.now();
+	const today = parisDayKey();
+	const weekFrom = parisDayKey(/* @__PURE__ */ new Date(now - 5184e5));
+	const monthFrom = parisDayKey(/* @__PURE__ */ new Date(now - 25056e5));
+	const yearFrom = parisDayKey(/* @__PURE__ */ new Date(now - 314496e5));
+	let todayN = 0;
+	let week = 0;
+	let month = 0;
+	let year = 0;
+	for (const [key, raw] of Object.entries(days)) {
+		if (key > today) continue;
+		const n = raw || 0;
+		if (key === today) todayN += n;
+		if (key >= weekFrom) week += n;
+		if (key >= monthFrom) month += n;
+		if (key >= yearFrom) year += n;
+	}
+	const oldest = Object.keys(days).filter((k) => k <= today && (days[k] || 0) > 0).sort()[0];
+	const spanDays = oldest ? Math.max(0, Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${oldest}T00:00:00Z`)) / 864e5)) : 0;
+	return {
+		all,
+		today: todayN,
+		week,
+		month,
+		year,
+		spanDays
+	};
+}
+function bumpClickDay(doc) {
+	const key = parisDayKey();
+	const days = { ...doc.clickDays ?? {} };
+	days[key] = (days[key] || 0) + 1;
+	const cutoff = parisDayKey(/* @__PURE__ */ new Date(Date.now() - 3456e7));
+	for (const k of Object.keys(days)) if (k < cutoff) delete days[k];
+	doc.clickDays = days;
+}
+function dataPath(join) {
+	const custom = process.env.PORTAL_DATA_FILE?.trim();
+	if (custom) return custom;
+	return join(process.cwd(), "data", "portal.json");
+}
+function asStore(raw) {
+	if (!raw || typeof raw !== "object") return null;
+	const doc = raw;
+	if (!doc.settings || !Array.isArray(doc.tabs)) return null;
+	return {
+		settings: {
+			title: String(doc.settings.title || "Dockit"),
+			subtitle: String(doc.settings.subtitle || ""),
+			logo: typeof doc.settings.logo === "string" ? doc.settings.logo : "",
+			healthChecks: doc.settings.healthChecks !== false,
+			usageStats: doc.settings.usageStats !== false,
+			infoBar: doc.settings.infoBar !== false,
+			tagColors: asTagColors(doc.settings.tagColors),
+			cssLight: sanitizeThemeCss(typeof doc.settings.cssLight === "string" ? doc.settings.cssLight : ""),
+			cssDark: sanitizeThemeCss(typeof doc.settings.cssDark === "string" ? doc.settings.cssDark : ""),
+			documentTitle: String(doc.settings.documentTitle || "Dockit").slice(0, 60),
+			favicon: typeof doc.settings.favicon === "string" ? doc.settings.favicon.slice(0, 4e5) : "",
+			favsHideLabel: Boolean(doc.settings.favsHideLabel),
+			favNotes: Boolean(doc.settings.favNotes),
+			favEmbeds: Boolean(doc.settings.favEmbeds),
+			onlineIcons: Boolean(doc.settings.onlineIcons),
+			navRichIcons: Boolean(doc.settings.navRichIcons),
+			probeBlink: Boolean(doc.settings.probeBlink),
+			annexFade: Boolean(doc.settings.annexFade),
+			catCounts: Boolean(doc.settings.catCounts),
+			pruneOrphanTags: Boolean(doc.settings.pruneOrphanTags),
+			infoStats: doc.settings.infoStats !== false,
+			probeTlsVerify: Boolean(doc.settings.probeTlsVerify),
+			probeAuthOnly: Boolean(doc.settings.probeAuthOnly),
+			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly),
+			devAdminNoPassword: Boolean(doc.settings.devAdminNoPassword),
+			oidcEnabled: Boolean(doc.settings.oidcEnabled),
+			oidcIssuer: String(doc.settings.oidcIssuer || "").trim().slice(0, 300),
+			oidcClientId: String(doc.settings.oidcClientId || "").trim().slice(0, 120),
+			oidcClientSecret: String(doc.settings.oidcClientSecret || "").slice(0, 200),
+			oidcLabel: String(doc.settings.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
+			oidcAutoCreate: Boolean(doc.settings.oidcAutoCreate),
+			ldapEnabled: Boolean(doc.settings.ldapEnabled),
+			ldapHost: String(doc.settings.ldapHost || "").trim().slice(0, 253),
+			ldapPort: Math.max(1, Math.min(65535, Number(doc.settings.ldapPort) || 0)) || (doc.settings.ldapTls === false ? 389 : 636),
+			ldapTls: doc.settings.ldapTls !== false,
+			ldapTlsVerify: doc.settings.ldapTlsVerify !== false,
+			ldapBindDn: String(doc.settings.ldapBindDn || "").trim().slice(0, 300),
+			ldapBindPassword: String(doc.settings.ldapBindPassword || "").slice(0, 200),
+			ldapBaseDn: String(doc.settings.ldapBaseDn || "").trim().slice(0, 300),
+			ldapUserFilter: String(doc.settings.ldapUserFilter || "").trim().slice(0, 300),
+			ldapDomain: String(doc.settings.ldapDomain || "").trim().slice(0, 60),
+			ldapAutoCreate: Boolean(doc.settings.ldapAutoCreate),
+			loginOrder: asLoginOrder(doc.settings.loginOrder),
+			locale: doc.settings.locale === "fr" ? "fr" : "en",
+			dateFormat: ["dmy", "mdy", "iso"].includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd"
+		},
+		customIcons: (Array.isArray(doc.customIcons) ? doc.customIcons : []).slice(0, MAX_CUSTOM_ICONS),
+		lastTabId: typeof doc.lastTabId === "string" ? doc.lastTabId : void 0,
+		clickDays: asClickDays(doc.clickDays),
+		users: asUsers(doc.users),
+		groups: asGroups(doc.groups),
+		roles: asRoles(doc.roles),
+		history: asHistory(doc.history),
+		tabs: doc.tabs.map((t, i) => ({
+			id: t.id || crypto.randomUUID(),
+			name: t.name,
+			icon: t.icon || "Layers",
+			sortOrder: Number(t.sortOrder ?? i + 1),
+			...normalizeTabAccess(t),
+			categories: (t.categories ?? []).map((c, j) => ({
+				...c,
+				sortOrder: Number(c.sortOrder ?? j + 1),
+				...normalizeCatAccess(c),
+				apps: (c.apps ?? []).map((a, k) => normalizeItem(a, c.id, Number(a.sortOrder ?? k + 1)))
+			}))
+		}))
+	};
+}
+var liveDoc = null;
+var clickFlushTimer = null;
+var CLICK_FLUSH_MS = 4000;
+async function persistDocMedia(doc) {
+	const { persistMediaValue } = await import("./assets");
+	doc.settings.logo = await persistMediaValue("logo", doc.settings.logo);
+	doc.settings.favicon = await persistMediaValue("favicon", doc.settings.favicon);
+	const icons = Array.isArray(doc.customIcons) ? doc.customIcons : [];
+	const next = [];
+	for (const ic of icons.slice(0, MAX_CUSTOM_ICONS)) {
+		const id = String(ic.id || crypto.randomUUID());
+		next.push({
+			id,
+			name: String(ic.name || "").slice(0, 80),
+			dataUrl: await persistMediaValue(`icon-${id}`, ic.dataUrl)
+		});
+	}
+	doc.customIcons = next;
+}
+async function readDocUnlocked() {
+	assertProductionSecrets();
+	if (liveDoc) return liveDoc;
+	const { readFile } = await import("node:fs/promises");
+	const { join } = await import("node:path");
+	const path = dataPath(join);
+	try {
+		const text = await readFile(path, "utf8");
+		const parsed = asStore(JSON.parse(text));
+		if (parsed && parsed.tabs.length > 0) {
+			ensureRoles(parsed);
+			ensureGroups(parsed);
+			liveDoc = parsed;
+			return parsed;
+		}
+	} catch {}
+	const seeded = defaultStore();
+	await writeDocUnlocked(seeded);
+	return seeded;
+}
+async function persistDoc(doc) {
+	await persistDocMedia(doc);
+	liveDoc = doc;
+	const { mkdir, rename, writeFile, unlink } = await import("node:fs/promises");
+	const { dirname: dirn, join } = await import("node:path");
+	const path = dataPath(join);
+	await mkdir(dirn(path), { recursive: true });
+	const tmp = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
+	try {
+		await writeFile(tmp, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
+		await rename(tmp, path);
+	} catch (err) {
+		await unlink(tmp).catch(() => void 0);
+		throw err;
+	}
+}
+async function writeDocUnlocked(doc) {
+	if (clickFlushTimer) {
+		clearTimeout(clickFlushTimer);
+		clickFlushTimer = null;
+	}
+	await persistDoc(doc);
+}
+function scheduleClickFlush() {
+	if (clickFlushTimer) return;
+	clickFlushTimer = setTimeout(() => {
+		clickFlushTimer = null;
+		withLock(async () => {
+			if (liveDoc) await persistDoc(liveDoc);
+		});
+	}, CLICK_FLUSH_MS);
+}
+var ioChain = Promise.resolve();
+function withLock(fn) {
+	const run = ioChain.then(fn, fn);
+	ioChain = run.then(() => void 0, () => void 0);
+	return run;
+}
+async function readDoc() {
+	return withLock(readDocUnlocked);
+}
+function mutate(fn) {
+	return withLock(async () => {
+		const doc = await readDocUnlocked();
+		const result = await fn(doc);
+		await writeDocUnlocked(doc);
+		return result;
+	});
+}
+async function loadPortal(tabId, token) {
+	const doc = await readDoc();
+	ensureUsers(doc);
+	let user = null;
+	if (token) try {
+		user = requireUser(doc, token);
+	} catch {
+		user = null;
+	}
+	const out = view(doc, tabId, user);
+	if (out.session && user?.id === "admin") out.session.mustChangePassword = await isDefaultAdminPassword(doc);
+	return out;
+}
+function publicTabs(doc, user) {
+	return [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder).filter((t) => tabCanSee(t, user, doc)).map((t) => ({
+		id: t.id,
+		name: t.name,
+		icon: t.icon,
+		sortOrder: t.sortOrder,
+		restricted: Boolean(t.restricted),
+		viewers: [],
+		editors: [],
+		hideLabel: Boolean(t.hideLabel)
+	}));
+}
+function manageTabs(doc) {
+	return [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder).map((t) => ({
+		id: t.id,
+		name: t.name,
+		icon: t.icon,
+		categories: (t.categories || []).map((c) => ({
+			id: c.id,
+			name: c.name,
+			restricted: Boolean(c.restricted),
+			apps: (c.apps || []).map((a) => ({
+				id: a.id,
+				title: a.title || "",
+				kind: a.kind || "app"
+			}))
+		})),
+		sortOrder: t.sortOrder,
+		restricted: Boolean(t.restricted),
+		hideLabel: Boolean(t.hideLabel)
+	}));
+}
+function clientSettings(doc, user) {
+	const s = doc.settings;
+	const out = {
+		...s,
+		logo: toClientAsset(s.logo),
+		favicon: toClientAsset(s.favicon),
+		oidcEnabled: Boolean(s.oidcEnabled) && Boolean(s.oidcIssuer) && Boolean(s.oidcClientId),
+		oidcLabel: String(s.oidcLabel || "SSO").slice(0, 40) || "SSO",
+		oidcHasSecret: Boolean(s.oidcClientSecret),
+		ldapEnabled: Boolean(s.ldapEnabled) && Boolean(s.ldapHost) && Boolean(s.ldapDomain),
+		ldapDomain: Boolean(s.ldapEnabled) && Boolean(s.ldapHost) && Boolean(s.ldapDomain) ? String(s.ldapDomain || "").slice(0, 60) : "",
+		ldapHasBindPassword: Boolean(s.ldapBindPassword),
+		loginOrder: asLoginOrder(s.loginOrder),
+		devAdminNoPassword: isDevRuntime() && Boolean(s.devAdminNoPassword)
+	};
+	delete out.oidcClientSecret;
+	delete out.ldapBindPassword;
+	if (!isOwnerUser(user) && !user?.canManageSettings) {
+		delete out.oidcIssuer;
+		delete out.oidcClientId;
+		delete out.oidcAutoCreate;
+		delete out.oidcHasSecret;
+		delete out.ldapHost;
+		delete out.ldapPort;
+		delete out.ldapTls;
+		delete out.ldapTlsVerify;
+		delete out.ldapBindDn;
+		delete out.ldapBaseDn;
+		delete out.ldapUserFilter;
+		delete out.ldapAutoCreate;
+		delete out.ldapHasBindPassword;
+	} else {
+		out.oidcIssuer = String(s.oidcIssuer || "");
+		out.oidcClientId = String(s.oidcClientId || "");
+		out.oidcAutoCreate = Boolean(s.oidcAutoCreate);
+		out.ldapHost = String(s.ldapHost || "");
+		out.ldapPort = Number(s.ldapPort) || (s.ldapTls === false ? 389 : 636);
+		out.ldapTls = s.ldapTls !== false;
+		out.ldapTlsVerify = s.ldapTlsVerify !== false;
+		out.ldapBindDn = String(s.ldapBindDn || "");
+		out.ldapBaseDn = String(s.ldapBaseDn || "");
+		out.ldapUserFilter = String(s.ldapUserFilter || "");
+		out.ldapAutoCreate = Boolean(s.ldapAutoCreate);
+	}
+	return out;
+}
+function view(doc, tabId, user) {
+	ensureUsers(doc);
+	const session = user ? sessionInfo(user, doc) : null;
+	const tabs = publicTabs(doc, user);
+	const activeTabId = tabId && tabs.some((t) => t.id === tabId) && tabId || doc.lastTabId && tabs.some((t) => t.id === doc.lastTabId) && doc.lastTabId || tabs[0]?.id || "";
+	if (activeTabId && user?.role === "admin") doc.lastTabId = activeTabId;
+	const stored = doc.tabs.find((t) => t.id === activeTabId);
+	const sortCats = (cats) => [...cats].filter((c) => catCanSee(c, user, doc)).sort((a, b) => a.sortOrder - b.sortOrder).map((c) => ({
+		...c,
+		apps: [...c.apps].filter((a) => can(user, "view", { res: "card", id: a.id }, doc)).sort((a, b) => a.sortOrder - b.sortOrder)
+	}));
+	const visibleIds = new Set(tabs.map((t) => t.id));
+	const catalog = [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder).filter((t) => visibleIds.has(t.id)).map((t) => ({
+		id: t.id,
+		name: t.name,
+		icon: t.icon,
+		sortOrder: t.sortOrder,
+		restricted: Boolean(t.restricted),
+		viewers: t.viewers || [],
+		editors: t.editors || [],
+		hideLabel: Boolean(t.hideLabel),
+		categories: sortCats(t.categories ?? [])
+	}));
+	return {
+		settings: clientSettings(doc, user),
+		customIcons: (doc.customIcons || []).map((ic) => ({
+			...ic,
+			dataUrl: toClientAsset(ic.dataUrl)
+		})),
+		tabs,
+		activeTabId,
+		categories: sortCats(stored?.categories ?? []),
+		catalog,
+		clickStats: computeClickStats(doc),
+		session,
+		directory: session?.canManageUsers ? directoryOf(doc) : [],
+		runtime: {
+			isDev: isDevRuntime(),
+			publicOrigin: String(process.env.PORTAL_PUBLIC_ORIGIN || "").trim(),
+			trustProxy: trustProxy()
+		}
+	};
+}
+function tabOfCategory(doc, categoryId) {
+	const tab = doc.tabs.find((t) => t.categories.some((c) => c.id === categoryId));
+	if (!tab) throw new Error("errors.categoryNotFound");
+	return tab;
+}
+function categoryOf(doc, categoryId) {
+	for (const tab of doc.tabs) {
+		const cat = tab.categories.find((c) => c.id === categoryId);
+		if (cat) return {
+			tab,
+			cat
+		};
+	}
+	throw new Error("errors.categoryNotFound");
+}
+function appOf(doc, appId) {
+	for (const tab of doc.tabs) for (const cat of tab.categories) {
+		const app = cat.apps.find((a) => a.id === appId);
+		if (app) return {
+			tab,
+			cat,
+			app
+		};
+	}
+	throw new Error("errors.appNotFound");
+}
+function liveAppId(doc, id) {
+	for (const tab of doc.tabs) for (const cat of tab.categories) if (cat.apps.some((a) => a.id === id)) return true;
+	return false;
+}
+function ensureRestoredTab(doc, meta) {
+	if (!meta) throw new Error("errors.historySpaceMissing");
+	const byId = doc.tabs.find((t) => t.id === meta.id);
+	if (byId) return byId;
+	const byName = doc.tabs.find((t) => t.name.toLowerCase() === String(meta.name || "").toLowerCase());
+	if (byName) return byName;
+	const tab = {
+		id: meta.id && !doc.tabs.some((t) => t.id === meta.id) ? meta.id : crypto.randomUUID(),
+		name: meta.name || "Space",
+		icon: meta.icon || "Layers",
+		sortOrder: Math.max(0, ...doc.tabs.map((t) => t.sortOrder)) + 1,
+		restricted: Boolean(meta.restricted),
+		viewers: Array.isArray(meta.viewers) ? [...meta.viewers] : [],
+		editors: Array.isArray(meta.editors) ? [...meta.editors] : [],
+		hideLabel: Boolean(meta.hideLabel),
+		categories: []
+	};
+	doc.tabs.push(tab);
+	return tab;
+}
+function ensureRestoredCat(tab, meta) {
+	if (!meta) throw new Error("errors.historyCategoryMissing");
+	const byId = tab.categories.find((c) => c.id === meta.id);
+	if (byId) return byId;
+	const byName = tab.categories.find((c) => c.name.toLowerCase() === String(meta.name || "").toLowerCase());
+	if (byName) return byName;
+	const cat = {
+		id: meta.id && !tab.categories.some((c) => c.id === meta.id) ? meta.id : crypto.randomUUID(),
+		name: meta.name || "Category",
+		icon: meta.icon || "AppWindow",
+		sortOrder: Math.max(0, ...tab.categories.map((c) => c.sortOrder)) + 1,
+		...normalizeCatAccess(meta),
+		apps: []
+	};
+	tab.categories.push(cat);
+	return cat;
+}
+function putRestoredApp(doc, tabMeta, catMeta, app) {
+	const tab = ensureRestoredTab(doc, tabMeta);
+	const cat = ensureRestoredCat(tab, catMeta);
+	const id = app.id && !liveAppId(doc, app.id) ? app.id : crypto.randomUUID();
+	const sortOrder = Math.max(0, ...cat.apps.map((a) => a.sortOrder)) + 1;
+	cat.apps.push(normalizeItem({
+		...app,
+		id
+	}, cat.id, sortOrder));
+	return {
+		tab,
+		cat,
+		id
+	};
+}
+function markRestored(ev, scope, id) {
+	if (!ev.restored) ev.restored = {
+		tab: false,
+		categories: [],
+		apps: []
+	};
+	if (scope === "tab") ev.restored.tab = true;
+	else if (scope === "category") {
+		if (!ev.restored.categories.includes(id)) ev.restored.categories.push(id);
+	} else if (!ev.restored.apps.includes(id)) ev.restored.apps.push(id);
+}
+function snapshotAppFromEvent(ev, targetId) {
+	const snap = ev.snapshot || {};
+	if (snap.app && snap.app.id === targetId) return {
+		app: snap.app,
+		category: snap.category,
+		tab: snap.tab
+	};
+	for (const app of snap.apps || []) if (app.id === targetId) return {
+		app,
+		category: snap.category,
+		tab: snap.tab
+	};
+	for (const cat of snap.categories || []) for (const app of cat.apps || []) if (app.id === targetId) return {
+		app,
+		category: snapshotCat(cat),
+		tab: snap.tab
+	};
+	return null;
+}
+function restoreHistoryItem(doc, user, eventId, scope, targetId) {
+	const ev = (doc.history || []).find((row) => row.id === eventId);
+	if (!ev || ev.purged || !ev.snapshot) throw new Error("errors.trashMissing");
+	const snap = ev.snapshot;
+	if (scope === "card") {
+		const found = snapshotAppFromEvent(ev, targetId);
+		if (!found) throw new Error("errors.historyCardMissing");
+		putRestoredApp(doc, found.tab, found.category, found.app);
+		markRestored(ev, "card", targetId);
+		appendHistory(doc, user, {
+			type: "card.restore",
+			label: found.app.title || tt(doc, "empty.untitled"),
+			snapshot: {
+				tab: found.tab,
+				category: found.category
+			}
+		});
+		return found.tab.id;
+	}
+	if (scope === "category") {
+		let catMeta = snap.category && snap.category.id === targetId ? snap.category : null;
+		let apps = snap.apps || [];
+		let tabMeta = snap.tab;
+		if (!catMeta) {
+			const cat = (snap.categories || []).find((c) => c.id === targetId);
+			if (!cat) throw new Error("errors.historyCategoryMissing");
+			catMeta = snapshotCat(cat);
+			apps = cat.apps || [];
+		}
+		const tab = ensureRestoredTab(doc, tabMeta);
+		const cat = ensureRestoredCat(tab, catMeta);
+		for (const app of apps) {
+			if (liveAppId(doc, app.id)) continue;
+			putRestoredApp(doc, snapshotTab(tab), snapshotCat(cat), app);
+			markRestored(ev, "card", app.id);
+		}
+		markRestored(ev, "category", targetId);
+		appendHistory(doc, user, {
+			type: "category.restore",
+			label: catMeta.name,
+			snapshot: { tab: snapshotTab(tab), category: catMeta }
+		});
+		return tab.id;
+	}
+	if (scope === "tab") {
+		if (!snap.tab) throw new Error("errors.historySpaceMissing");
+		const tab = ensureRestoredTab(doc, snap.tab);
+		for (const cat of snap.categories || []) {
+			const created = ensureRestoredCat(tab, snapshotCat(cat));
+			for (const app of cat.apps || []) {
+				if (liveAppId(doc, app.id)) continue;
+				putRestoredApp(doc, snapshotTab(tab), snapshotCat(created), app);
+				markRestored(ev, "card", app.id);
+			}
+			markRestored(ev, "category", cat.id);
+		}
+		markRestored(ev, "tab", snap.tab.id);
+		appendHistory(doc, user, {
+			type: "tab.restore",
+			label: snap.tab.name,
+			snapshot: { tab: snapshotTab(tab) }
+		});
+		return tab.id;
+	}
+	throw new Error("errors.restoreFail");
+}
+export const getPortal = createServerFn({ method: "GET" }).validator(z.object({
+	tabId: z.string().optional(),
+	token: z.string().optional()
+})).handler(async ({ data, request }) => loadPortal(data.tabId, tok(data, request)));
+export const listHistory = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField
+})).handler(async ({ data, request }) => withLock(async () => {
+	const doc = await readDocUnlocked();
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canAudit && !user.canRestore && user.role !== "admin") throw new Error("errors.insufficient");
+	const before = (doc.history || []).length;
+	pruneHistory(doc);
+	if ((doc.history || []).length !== before) await writeDocUnlocked(doc);
+	const visible = (doc.history || []).filter((ev) => historyVisible(doc, user, ev));
+	return withLocale(doc.settings?.locale, () => ({
+		audit: user.canAudit || user.role === "admin" ? publicAudit(visible) : [],
+		trash: user.canRestore || user.role === "admin" ? publicTrash(visible) : [],
+		canEmpty: Boolean(user.canPurge || user.role === "admin"),
+		canAudit: Boolean(user.canAudit || user.role === "admin"),
+		canRestore: Boolean(user.canRestore || user.role === "admin")
+	}));
+}));
+export const restoreHistory = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1),
+	scope: z.enum(["card", "category", "tab"]),
+	targetId: z.string().min(1)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canRestore && user.role !== "admin") throw new Error("errors.insufficient");
+	const ev = (doc.history || []).find((row) => row.id === data.id);
+	if (!ev || !historyVisible(doc, user, ev)) throw new Error("errors.trashMissing");
+	const tabId = restoreHistoryItem(doc, user, data.id, data.scope, data.targetId);
+	pruneUnusedTags(doc);
+	return emit(doc, user, tabId);
+}));
+export const purgeTrash = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField
+})).handler(async ({ data, request }) => mutate(async (doc) => {
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canPurge && user.role !== "admin") throw new Error("errors.insufficient");
+	emptyTrash(doc);
+	const portal = await emit(doc, user);
+	return withLocale(doc.settings?.locale, () => ({
+		portal,
+		audit: publicAudit(doc.history),
+		trash: publicTrash(doc.history),
+		canEmpty: true
+	}));
+}));
+export const rememberTab = createServerFn({ method: "POST" }).validator(z.object({ tabId: z.string().min(1) })).handler(async ({ data, request }) => withLock(async () => {
+	const doc = await readDocUnlocked();
+	if (doc.lastTabId === data.tabId) return;
+	if (!doc.tabs.some((t) => t.id === data.tabId)) return;
+	doc.lastTabId = data.tabId;
+	await writeDocUnlocked(doc);
+}));
+export const recordClick = createServerFn({ method: "POST" }).validator(z.object({ id: z.string().min(1) })).handler(async ({ data, request }) => withLock(async () => {
+	const doc = await readDocUnlocked();
+	const found = appOf(doc, data.id);
+	if (found.app.kind !== "app") return {
+		id: data.id,
+		clicks: found.app.clicks || 0
+	};
+	found.app.clicks = Math.max(0, found.app.clicks || 0) + 1;
+	bumpClickDay(doc);
+	liveDoc = doc;
+	scheduleClickFlush();
+	return {
+		id: data.id,
+		clicks: found.app.clicks,
+		clickStats: computeClickStats(doc)
+	};
+}));
+export const resetClicks = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	tabId: z.string().optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireAdmin(doc, tok(data, request));
+	for (const tab of doc.tabs) for (const cat of tab.categories) for (const app of cat.apps) if (app.kind === "app") app.clicks = 0;
+	doc.clickDays = {};
+	return emit(doc, user, data.tabId);
+}));
+export const resetPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => mutate(async (doc) => {
+	requireAdmin(doc, tok(data, request));
+	const fresh = blankTabs();
+	doc.settings = defaultSettings();
+	doc.customIcons = [];
+	doc.clickDays = {};
+	doc.lastTabId = fresh.lastTabId;
+	doc.tabs = fresh.tabs;
+	if (process.env.NODE_ENV === "production") requireStrongPassword(envPassword());
+	doc.users = [{
+		id: "admin",
+		username: envUser(),
+		passHash: await hashPassword(envPassword()),
+		role: "admin"
+	}];
+	for (const [tok, row] of sessions) if (row.userId !== "admin") sessions.delete(tok);
+	doc.history = [];
+	const admin = doc.users[0];
+	appendHistory(doc, admin, {
+		type: "portal.reset",
+		label: tt(doc, "audit.item.reset")
+	});
+	return emit(doc, admin);
+}));
+export const updateSettings = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	title: z.string().min(1).max(60),
+	subtitle: z.string().max(120),
+	logo: z.string().max(4e5),
+	healthChecks: z.boolean(),
+	usageStats: z.boolean(),
+	infoBar: z.boolean().optional(),
+	documentTitle: z.string().max(60).optional(),
+	favicon: z.string().max(4e5).optional(),
+	favWidgets: z.boolean().optional(),
+	favNotes: z.boolean().optional(),
+	favEmbeds: z.boolean().optional(),
+	onlineIcons: z.boolean().optional(),
+	navRichIcons: z.boolean().optional(),
+	probeBlink: z.boolean().optional(),
+	annexFade: z.boolean().optional(),
+	catCounts: z.boolean().optional(),
+	pruneOrphanTags: z.boolean().optional(),
+	infoStats: z.boolean().optional(),
+	probeTlsVerify: z.boolean().optional(),
+	probeAuthOnly: z.boolean().optional(),
+	sessionHttpOnly: z.boolean().optional(),
+	devAdminNoPassword: z.boolean().optional(),
+	locale: z.enum(["en", "fr"]).optional(),
+	dateFormat: z.enum(["ymd", "dmy", "mdy", "iso"]).optional(),
+	tabId: z.string().optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireAdmin(doc, tok(data, request));
+	doc.settings = {
+		...doc.settings,
+		title: data.title,
+		subtitle: data.subtitle,
+		logo: data.logo,
+		healthChecks: data.healthChecks,
+		usageStats: data.usageStats,
+		infoBar: data.infoBar ?? doc.settings.infoBar !== false,
+		documentTitle: String((data.documentTitle ?? doc.settings.documentTitle) || "Dockit").slice(0, 60),
+		favicon: typeof data.favicon === "string" ? data.favicon.slice(0, 4e5) : doc.settings.favicon,
+		favNotes: typeof data.favNotes === "boolean" ? data.favNotes : typeof data.favWidgets === "boolean" ? data.favWidgets : Boolean(doc.settings.favNotes),
+		favEmbeds: typeof data.favEmbeds === "boolean" ? data.favEmbeds : typeof data.favWidgets === "boolean" ? data.favWidgets : Boolean(doc.settings.favEmbeds),
+		onlineIcons: typeof data.onlineIcons === "boolean" ? data.onlineIcons : Boolean(doc.settings.onlineIcons),
+		navRichIcons: typeof data.navRichIcons === "boolean" ? data.navRichIcons : Boolean(doc.settings.navRichIcons),
+		probeBlink: typeof data.probeBlink === "boolean" ? data.probeBlink : Boolean(doc.settings.probeBlink),
+		annexFade: typeof data.annexFade === "boolean" ? data.annexFade : Boolean(doc.settings.annexFade),
+		catCounts: typeof data.catCounts === "boolean" ? data.catCounts : Boolean(doc.settings.catCounts),
+		pruneOrphanTags: typeof data.pruneOrphanTags === "boolean" ? data.pruneOrphanTags : Boolean(doc.settings.pruneOrphanTags),
+		infoStats: typeof data.infoStats === "boolean" ? data.infoStats : doc.settings.infoStats !== false,
+		probeTlsVerify: typeof data.probeTlsVerify === "boolean" ? data.probeTlsVerify : Boolean(doc.settings.probeTlsVerify),
+		probeAuthOnly: typeof data.probeAuthOnly === "boolean" ? data.probeAuthOnly : Boolean(doc.settings.probeAuthOnly),
+		sessionHttpOnly: typeof data.sessionHttpOnly === "boolean" ? data.sessionHttpOnly : Boolean(doc.settings.sessionHttpOnly),
+		devAdminNoPassword: typeof data.devAdminNoPassword === "boolean" ? data.devAdminNoPassword : Boolean(doc.settings.devAdminNoPassword),
+		dateFormat: ["ymd", "dmy", "mdy", "iso"].includes(data.dateFormat) ? data.dateFormat : doc.settings.dateFormat === "dmy" || doc.settings.dateFormat === "mdy" || doc.settings.dateFormat === "iso" ? doc.settings.dateFormat : "ymd",
+		locale: data.locale === "fr" || data.locale === "en" ? data.locale : doc.settings.locale === "fr" ? "fr" : "en"
+	};
+	pruneUnusedTags(doc);
+	appendHistory(doc, user, {
+		type: "settings.update",
+		label: tt(doc, "audit.item.settings")
+	});
+	return emit(doc, user, data.tabId);
+}));
+export const updateThemeCss = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	cssLight: z.string().max(CSS_MAX),
+	cssDark: z.string().max(CSS_MAX),
+	tabId: z.string().optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireAdmin(doc, tok(data, request));
+	doc.settings = {
+		...doc.settings,
+		cssLight: sanitizeThemeCss(data.cssLight),
+		cssDark: sanitizeThemeCss(data.cssDark)
+	};
+	appendHistory(doc, user, {
+		type: "theme.update",
+		label: tt(doc, "audit.item.themes")
+	});
+	return emit(doc, user, data.tabId);
+}));
+export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object({
+	username: z.string().min(1).max(80),
+	password: z.string().max(120).optional().default(""),
+	domain: z.enum(["local", "ad"]).optional()
+})).handler(async (ctx) => {
+	const data = ctx.data;
+	const { ldapAuthenticate, ldapLoginName, ldapReady } = await import("./ldap-runtime");
+	const username = ldapLoginName(data.username);
+	if (!username) throw new Error("errors.badLogin");
+	const domain = data.domain === "ad" ? "ad" : "local";
+	const key = clientKey(`${domain}:${username}`, ctx.request);
+	if (loginBlocked(key)) throw new Error("errors.badLogin");
+	if (domain === "ad") {
+		const snap = await readDoc();
+		if (!ldapReady(snap.settings)) throw new Error("errors.ldapOff");
+		try {
+			await ldapAuthenticate(snap.settings, username, data.password || "");
+		} catch (err) {
+			loginFail(key);
+			throw err instanceof Error ? err : new Error("errors.ldapFail");
+		}
+		return mutate(async (doc) => {
+			ensureUsers(doc);
+			let user = doc.users.find((u) => u.username === username);
+			if (!user) {
+				if (!doc.settings.ldapAutoCreate) {
+					loginFail(key);
+					throw new Error("errors.ldapUnknownUser");
+				}
+				user = {
+					id: crypto.randomUUID(),
+					username,
+					passHash: await hashPassword(randomBytes(24).toString("hex")),
+					role: "lecteur",
+					roleIds: ["lecteur"],
+					grants: [],
+					source: "ad"
+				};
+				doc.users.push(user);
+				appendHistory(doc, user, {
+					type: "user.create",
+					label: user.username
+				});
+			}
+			if (user.disabled) {
+				loginFail(key);
+				throw new Error("errors.disabled");
+			}
+			loginOk(key);
+			appendHistory(doc, user, {
+				type: "login",
+				label: user.username
+			});
+			return {
+				token: issueToken(user.id),
+				session: await sessionFor(user, doc),
+				sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly)
+			};
+		});
+	}
+	return mutate(async (doc) => {
+		ensureUsers(doc);
+		const user = doc.users.find((u) => u.username === username);
+		const skipPass = isDevRuntime() && Boolean(doc.settings.devAdminNoPassword) && isOwnerUser(user);
+		if (!user || !skipPass && !await verifyPassword(data.password || "", user.passHash)) {
+			loginFail(key);
+			throw new Error("errors.badLogin");
+		}
+		if (user.disabled) {
+			loginFail(key);
+			throw new Error("errors.disabled");
+		}
+		loginOk(key);
+		appendHistory(doc, user, {
+			type: "login",
+			label: user.username
+		});
+		return {
+			token: issueToken(user.id),
+			session: await sessionFor(user, doc),
+			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly)
+		};
+	});
+});
+function pruneOidcPending() {
+	const now = Date.now();
+	for (const [key, row] of oidcPending) if (!row || row.exp < now) oidcPending.delete(key);
+	if (oidcPending.size > 200) {
+		const extra = oidcPending.size - 200;
+		let n = 0;
+		for (const key of oidcPending.keys()) {
+			oidcPending.delete(key);
+			n += 1;
+			if (n >= extra) break;
+		}
+	}
+}
+export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	oidcEnabled: z.boolean(),
+	oidcIssuer: z.string().max(300),
+	oidcClientId: z.string().max(120),
+	oidcClientSecret: z.string().max(200).optional(),
+	oidcLabel: z.string().max(40).optional(),
+	oidcAutoCreate: z.boolean().optional(),
+	tabId: z.string().optional()
+})).handler(async ({ data, request }) => mutate(async (doc) => {
+	const user = requireAdmin(doc, tok(data, request));
+	const issuer = data.oidcIssuer.trim();
+	const clientId = data.oidcClientId.trim();
+	if (data.oidcEnabled) {
+		const { normalizeIssuer } = await import("./oidc-runtime");
+		normalizeIssuer(issuer);
+		if (!clientId) throw new Error("errors.oidcClientId");
+	}
+	let secret = doc.settings.oidcClientSecret || "";
+	if (typeof data.oidcClientSecret === "string" && data.oidcClientSecret && data.oidcClientSecret !== "********") {
+		secret = data.oidcClientSecret.slice(0, 200);
+	}
+	doc.settings = {
+		...doc.settings,
+		oidcEnabled: Boolean(data.oidcEnabled),
+		oidcIssuer: issuer.slice(0, 300),
+		oidcClientId: clientId.slice(0, 120),
+		oidcClientSecret: secret,
+		oidcLabel: String(data.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
+		oidcAutoCreate: Boolean(data.oidcAutoCreate)
+	};
+	appendHistory(doc, user, {
+		type: "oidc.update",
+		label: "OIDC"
+	});
+	return emit(doc, user, data.tabId);
+}));
+export const updateLdapSettings = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	ldapEnabled: z.boolean(),
+	ldapHost: z.string().max(253),
+	ldapPort: z.number().int().min(1).max(65535).optional(),
+	ldapTls: z.boolean().optional(),
+	ldapTlsVerify: z.boolean().optional(),
+	ldapBindDn: z.string().max(300).optional(),
+	ldapBindPassword: z.string().max(200).optional(),
+	ldapBaseDn: z.string().max(300).optional(),
+	ldapUserFilter: z.string().max(300).optional(),
+	ldapDomain: z.string().max(60).optional(),
+	ldapAutoCreate: z.boolean().optional(),
+	tabId: z.string().optional()
+})).handler(async ({ data, request }) => mutate(async (doc) => {
+	const user = requireAdmin(doc, tok(data, request));
+	const host = data.ldapHost.trim();
+	const domain = String(data.ldapDomain || "").trim();
+	const bindDn = String(data.ldapBindDn || "").trim();
+	const baseDn = String(data.ldapBaseDn || "").trim();
+	if (data.ldapEnabled) {
+		if (!host) throw new Error("errors.ldapHost");
+		if (/[\s/:]/.test(host)) throw new Error("errors.ldapHost");
+		if (!domain) throw new Error("errors.ldapDomain");
+		if (bindDn && !baseDn) throw new Error("errors.ldapBaseDn");
+	}
+	let bindPassword = doc.settings.ldapBindPassword || "";
+	if (typeof data.ldapBindPassword === "string" && data.ldapBindPassword && data.ldapBindPassword !== "********") {
+		bindPassword = data.ldapBindPassword.slice(0, 200);
+	}
+	const tls = data.ldapTls !== false;
+	doc.settings = {
+		...doc.settings,
+		ldapEnabled: Boolean(data.ldapEnabled),
+		ldapHost: host.slice(0, 253),
+		ldapPort: data.ldapPort || (tls ? 636 : 389),
+		ldapTls: tls,
+		ldapTlsVerify: data.ldapTlsVerify !== false,
+		ldapBindDn: bindDn.slice(0, 300),
+		ldapBindPassword: bindPassword,
+		ldapBaseDn: baseDn.slice(0, 300),
+		ldapUserFilter: String(data.ldapUserFilter || "").trim().slice(0, 300),
+		ldapDomain: domain.slice(0, 60),
+		ldapAutoCreate: Boolean(data.ldapAutoCreate)
+	};
+	appendHistory(doc, user, {
+		type: "ldap.update",
+		label: "AD"
+	});
+	return emit(doc, user, data.tabId);
+}));
+export const updateLoginOrder = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	loginOrder: z.array(z.enum(["local", "ad"])).min(1).max(8),
+	tabId: z.string().optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireAdmin(doc, tok(data, request));
+	doc.settings = {
+		...doc.settings,
+		loginOrder: asLoginOrder(data.loginOrder)
+	};
+	appendHistory(doc, user, {
+		type: "auth.update",
+		label: tt(doc, "audit.item.auth")
+	});
+	return emit(doc, user, data.tabId);
+}));
+export const startOidc = createServerFn({ method: "POST" }).validator(z.object({})).handler(async (ctx) => {
+	const doc = await readDoc();
+	const s = doc.settings;
+	if (!s.oidcEnabled || !s.oidcIssuer || !s.oidcClientId) throw new Error("errors.oidcOff");
+	const key = clientKey("oidc", ctx.request);
+	if (loginBlocked(key)) throw new Error("errors.tooManyTries");
+	const { discoverOidc, buildAuthorizeUrl, randomUrlToken, s256, publicOrigin } = await import("./oidc-runtime");
+	const origin = publicOrigin(ctx.request);
+	if (!origin) throw new Error("errors.unknownOrigin");
+	const redirectUri = `${origin}/oidc/callback`;
+	const disc = await discoverOidc(s.oidcIssuer);
+	pruneOidcPending();
+	const state = randomUrlToken(24);
+	const nonce = randomUrlToken(24);
+	const verifier = randomUrlToken(32);
+	oidcPending.set(state, {
+		verifier,
+		nonce,
+		exp: Date.now() + OIDC_PENDING_MS,
+		redirectUri
+	});
+	return {
+		url: buildAuthorizeUrl(disc, {
+			clientId: s.oidcClientId,
+			redirectUri,
+			state,
+			nonce,
+			challenge: s256(verifier)
+		})
+	};
+});
+export const finishOidc = createServerFn({ method: "POST" }).validator(z.object({
+	code: z.string().min(1).max(4000),
+	state: z.string().min(1).max(200)
+})).handler(async (ctx) => {
+	const pending = oidcPending.get(ctx.data.state);
+	oidcPending.delete(ctx.data.state);
+	if (!pending || pending.exp < Date.now()) throw new Error("errors.oidcExpired");
+	const key = clientKey("oidc", ctx.request);
+	if (loginBlocked(key)) throw new Error("errors.tooManyTries");
+	return mutate(async (doc) => {
+		const s = doc.settings;
+		if (!s.oidcEnabled || !s.oidcIssuer || !s.oidcClientId) throw new Error("errors.oidcOff");
+		const { discoverOidc, exchangeCode, fetchUserInfo, usernameFromClaims, verifyIdToken } = await import("./oidc-runtime");
+		try {
+			const disc = await discoverOidc(s.oidcIssuer);
+			const tokens = await exchangeCode(disc, {
+				clientId: s.oidcClientId,
+				clientSecret: s.oidcClientSecret || "",
+				code: ctx.data.code,
+				redirectUri: pending.redirectUri,
+				verifier: pending.verifier
+			});
+			await verifyIdToken(disc, tokens.idToken, {
+				clientId: s.oidcClientId,
+				nonce: pending.nonce
+			});
+			const info = await fetchUserInfo(disc, tokens.accessToken);
+			const username = usernameFromClaims(info);
+			ensureUsers(doc);
+			let user = doc.users.find((u) => u.username === username);
+			if (!user) {
+				if (!s.oidcAutoCreate) throw new Error("errors.oidcUnknownUser");
+				user = {
+					id: crypto.randomUUID(),
+					username,
+					passHash: await hashPassword(randomBytes(24).toString("hex")),
+					role: "lecteur",
+					roleIds: ["lecteur"],
+					grants: [],
+					source: "oidc"
+				};
+				doc.users.push(user);
+				appendHistory(doc, user, {
+					type: "user.create",
+					label: user.username
+				});
+			}
+			loginOk(key);
+			appendHistory(doc, user, {
+				type: "login",
+				label: user.username
+			});
+			return {
+				token: issueToken(user.id),
+				session: await sessionFor(user, doc),
+				sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly)
+			};
+		} catch (err) {
+			loginFail(key);
+			throw err instanceof Error ? err : new Error("errors.oidcFail");
+		}
+	});
+});
+const grantField = z.object({
+	res: z.enum(["portal", "tab", "cat", "card"]),
+	id: z.string().min(1).max(80),
+	allow: z.array(z.string()).optional(),
+	deny: z.array(z.string()).optional(),
+	scope: z.enum(["public"]).optional()
+});
+function cleanRoleIds(doc, ids, { allowOwner = false } = {}) {
+	const allowed = new Set((doc.roles || []).map((r) => r.id));
+	const out = [];
+	for (const id of asIdList(ids)) {
+		if (!allowed.has(id)) continue;
+		if (id === "owner" && !allowOwner) continue;
+		if (!out.includes(id)) out.push(id);
+	}
+	return out.length ? out : ["lecteur"];
+}
+export const listUsers = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => mutate((doc) => {
+	const actor = requireAccountManager(doc, tok(data, request));
+	return directoryPayload(doc, actor);
+}));
+export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().optional(),
+	username: z.string().min(1).max(40),
+	password: z.string().max(120).optional(),
+	role: z.string().min(1).max(80).optional(),
+	roleIds: z.array(z.string()).optional(),
+	grants: z.array(grantField).optional(),
+	disabled: z.boolean().optional(),
+	groupIds: z.array(z.string()).optional()
+})).handler(async ({ data, request }) => mutate(async (doc) => {
+	const actor = requireAccountManager(doc, tok(data, request));
+	if (!isOwnerUser(actor) && !actor.canManageUsers) throw new Error("errors.insufficient");
+	ensureRoles(doc);
+	const username = data.username.trim().toLowerCase();
+	if (data.id === "admin" || isOwnerUser({ id: data.id, roleIds: data.roleIds })) {
+		if (!isOwnerUser(actor)) throw new Error("errors.adminOnly");
+		const admin = ensureUsers(doc).find((u) => u.id === "admin");
+		if (!admin) throw new Error("errors.adminNotFound");
+		if (data.password) {
+			requireStrongPassword(data.password);
+			admin.passHash = await hashPassword(data.password);
+			appendHistory(doc, actor, {
+				type: "user.update",
+				label: admin.username
+			});
+		}
+		return directoryPayload(doc, actor);
+	}
+	const existing = data.id ? doc.users.find((u) => u.id === data.id) : void 0;
+	if (existing && isOwnerUser(existing)) throw new Error("errors.adminPasswordOnly");
+	const roleIds = cleanRoleIds(doc, data.roleIds?.length ? data.roleIds : data.role ? [data.role] : existing ? roleIdsOf(existing) : ["lecteur"]);
+	let target = existing;
+	if (existing) {
+		existing.username = username;
+		existing.roleIds = roleIds;
+		existing.role = roleIds[0];
+		if (data.grants) existing.grants = asGrants(data.grants);
+		if (data.disabled !== undefined) existing.disabled = Boolean(data.disabled);
+		if (data.password) {
+			requireStrongPassword(data.password);
+			existing.passHash = await hashPassword(data.password);
+		}
+	} else {
+		requireStrongPassword(data.password || "");
+		if (doc.users.some((u) => u.username === username)) throw new Error("errors.usernameTaken");
+		target = {
+			id: crypto.randomUUID(),
+			username,
+			passHash: await hashPassword(data.password),
+			role: roleIds[0],
+			roleIds,
+			grants: asGrants(data.grants),
+			disabled: Boolean(data.disabled),
+			groupIds: []
+		};
+		doc.users.push(target);
+	}
+	if (data.groupIds) syncUserGroups(doc, target.id, data.groupIds);
+	appendHistory(doc, actor, {
+		type: existing ? "user.update" : "user.create",
+		label: username
+	});
+	return directoryPayload(doc, actor);
+}));
+export const deleteUser = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const actor = requireAccountManager(doc, tok(data, request));
+	const target = doc.users.find((u) => u.id === data.id);
+	if (!target) throw new Error("errors.userNotFound");
+	if (target.role === "admin" || target.id === "admin") throw new Error("errors.cannotDeleteAdmin");
+	if (actor.role !== "admin" && target.role === "admin") throw new Error("errors.insufficient");
+	stripUserAccess(doc, target.id);
+	syncUserGroups(doc, target.id, []);
+	doc.users = doc.users.filter((u) => u.id !== data.id);
+	appendHistory(doc, actor, {
+		type: "user.delete",
+		label: target.username
+	});
+	return directoryPayload(doc, actor);
+}));
+export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().optional(),
+	name: z.string().min(1).max(60),
+	role: z.string().min(1).max(80).optional(),
+	roleIds: z.array(z.string()).optional(),
+	members: z.array(z.string()).optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const actor = requireAccountManager(doc, tok(data, request));
+	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
+	ensureGroups(doc);
+	ensureRoles(doc);
+	const roleIds = cleanRoleIds(doc, data.roleIds?.length ? data.roleIds : data.role ? [data.role] : ["lecteur"]);
+	const name = data.name.trim().slice(0, 60);
+	if (!name) throw new Error("errors.nameRequired");
+	let target = data.id ? doc.groups.find((g) => g.id === data.id) : void 0;
+	if (data.id && !target) throw new Error("errors.userNotFound");
+	if (target?.source === "ad") {
+		target.roleIds = roleIds;
+		target.role = roleIds[0];
+	} else if (target) {
+		if (doc.groups.some((g) => g.id !== target.id && g.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
+		target.name = name;
+		target.roleIds = roleIds;
+		target.role = roleIds[0];
+	} else {
+		if (doc.groups.some((g) => g.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
+		target = {
+			id: crypto.randomUUID(),
+			name,
+			members: [],
+			role: roleIds[0],
+			roleIds,
+			grants: [],
+			source: "local",
+			externalId: ""
+		};
+		doc.groups.push(target);
+	}
+	if (target.source !== "ad") syncGroupMembers(doc, target.id, data.members ?? target.members);
+	appendHistory(doc, actor, {
+		type: data.id ? "group.update" : "group.create",
+		label: target.name
+	});
+	return directoryPayload(doc, actor);
+}));
+export const deleteGroup = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const actor = requireAccountManager(doc, tok(data, request));
+	ensureGroups(doc);
+	const target = doc.groups.find((g) => g.id === data.id);
+	if (!target) throw new Error("errors.userNotFound");
+	syncGroupMembers(doc, target.id, []);
+	stripUserAccess(doc, target.id);
+	doc.groups = doc.groups.filter((g) => g.id !== data.id);
+	appendHistory(doc, actor, {
+		type: "group.delete",
+		label: target.name
+	});
+	return directoryPayload(doc, actor);
+}));
+export const saveRole = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().optional(),
+	name: z.string().min(1).max(40),
+	description: z.string().max(200).optional(),
+	grants: z.array(grantField).optional(),
+	userIds: z.array(z.string()).optional(),
+	groupIds: z.array(z.string()).optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const actor = requireAccountManager(doc, tok(data, request));
+	if (!isOwnerUser(actor) && !actor.canManageRoles) throw new Error("errors.insufficient");
+	ensureRoles(doc);
+	const name = data.name.trim().slice(0, 40);
+	if (!name) throw new Error("errors.nameRequired");
+	let target = data.id ? doc.roles.find((r) => r.id === data.id) : void 0;
+	if (data.id && !target) throw new Error("errors.userNotFound");
+	const description = String(data.description || "").trim().slice(0, 200);
+	const grants = asGrants(data.grants);
+	if (target?.id === "owner") {
+		target.name = name;
+		target.description = description;
+	} else if (target) {
+		if (doc.roles.some((r) => r.id !== target.id && r.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
+		target.name = name;
+		target.description = description;
+		target.grants = grants;
+	} else {
+		if (doc.roles.length >= 40) throw new Error("errors.tooManyIcons");
+		if (doc.roles.some((r) => r.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
+		target = {
+			id: crypto.randomUUID(),
+			name,
+			description,
+			system: false,
+			grants
+		};
+		doc.roles.push(target);
+	}
+	if (target.id !== "owner" && (data.userIds || data.groupIds)) setRoleHolders(doc, target.id, data.userIds || [], data.groupIds || []);
+	appendHistory(doc, actor, {
+		type: data.id ? "role.update" : "role.create",
+		label: target.name
+	});
+	return directoryPayload(doc, actor);
+}));
+export const deleteRole = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const actor = requireAccountManager(doc, tok(data, request));
+	if (!isOwnerUser(actor) && !actor.canManageRoles) throw new Error("errors.insufficient");
+	ensureRoles(doc);
+	const target = doc.roles.find((r) => r.id === data.id);
+	if (!target) throw new Error("errors.userNotFound");
+	if (target.system || isSystemRole(target.id)) throw new Error("errors.insufficient");
+	stripRole(doc, target.id);
+	doc.roles = doc.roles.filter((r) => r.id !== data.id);
+	appendHistory(doc, actor, {
+		type: "role.delete",
+		label: target.name
+	});
+	return directoryPayload(doc, actor);
+}));
+export const createTab = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	name: z.string().min(1).max(40),
+	icon: z.string().min(1).max(4e5),
+	restricted: z.boolean().optional(),
+	viewers: z.array(z.string()).optional(),
+	editors: z.array(z.string()).optional(),
+	hideLabel: z.boolean().optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireCreateTab(doc, tok(data, request));
+	const id = crypto.randomUUID();
+	const next = Math.max(0, ...doc.tabs.map((t) => t.sortOrder)) + 1;
+	doc.tabs.push({
+		id,
+		name: data.name,
+		icon: data.icon,
+		sortOrder: next,
+		restricted: Boolean(data.restricted),
+		viewers: [],
+		editors: [],
+		hideLabel: Boolean(data.hideLabel),
+		categories: []
+	});
+	if (!isOwnerUser(user)) {
+		const live = doc.users.find((u) => u.id === user.id);
+		if (live) live.grants = mergeGrant(asGrants(live.grants), { res: "tab", id, allow: ["view", "open", "edit", "create", "delete"] });
+	}
+	appendHistory(doc, user, {
+		type: "tab.create",
+		label: data.name,
+		snapshot: { tab: snapshotTab(doc.tabs[doc.tabs.length - 1]) }
+	});
+	return emit(doc, user, id);
+}));
+export const duplicateTab = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireCreateTab(doc, tok(data, request));
+	const src = doc.tabs.find((t) => t.id === data.id);
+	if (!src) throw new Error("errors.spaceNotFound");
+	requireEdit(doc, tok(data, request), src.id);
+	const tabId = crypto.randomUUID();
+	const suffix = tt(doc, "copy.suffix");
+	const base = String(src.name || "").trim().replace(/\s*\((copie|copy)\)\s*$/i, "") || tt(doc, "nav.space");
+	const ordered = [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder);
+	const srcIndex = ordered.findIndex((t) => t.id === src.id);
+	doc.tabs.push({
+		id: tabId,
+		name: `${base} (${suffix})`.slice(0, 40),
+		icon: src.icon || "Layers",
+		sortOrder: 0,
+		restricted: Boolean(src.restricted),
+		viewers: [...(src.viewers || [])],
+		editors: [...(src.editors || [])],
+		hideLabel: Boolean(src.hideLabel),
+		categories: (src.categories || []).map((c, ci) => {
+			const catId = crypto.randomUUID();
+			return {
+				id: catId,
+				name: c.name,
+				icon: c.icon || "AppWindow",
+				sortOrder: Number(c.sortOrder ?? ci + 1),
+				...normalizeCatAccess(c),
+				apps: (c.apps || []).map((a, ai) => normalizeItem({
+					...a,
+					id: crypto.randomUUID(),
+					clicks: 0
+				}, catId, ai + 1))
+			};
+		})
+	});
+	const ids = ordered.map((t) => t.id);
+	ids.splice(srcIndex < 0 ? ids.length : srcIndex + 1, 0, tabId);
+	ids.forEach((id, i) => {
+		const tab = doc.tabs.find((t) => t.id === id);
+		if (tab) tab.sortOrder = i + 1;
+	});
+	appendHistory(doc, user, {
+		type: "tab.duplicate",
+		label: `${base} (${suffix})`.slice(0, 40),
+		snapshot: { tab: snapshotTab(doc.tabs.find((t) => t.id === tabId)) }
+	});
+	return emit(doc, user, tabId);
+}));
+export const updateTab = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1),
+	name: z.string().min(1).max(40),
+	icon: z.string().min(1).max(4e5),
+	restricted: z.boolean().optional(),
+	viewers: z.array(z.string()).optional(),
+	editors: z.array(z.string()).optional(),
+	hideLabel: z.boolean().optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request), data.id);
+	const tab = doc.tabs.find((t) => t.id === data.id);
+	if (!tab) throw new Error("errors.portalNotFound");
+	tab.name = data.name;
+	tab.icon = data.icon;
+	if (typeof data.hideLabel === "boolean") tab.hideLabel = data.hideLabel;
+	if (user.role === "admin") {
+		if (typeof data.restricted === "boolean") tab.restricted = data.restricted;
+		if (data.viewers) tab.viewers = asIdList(data.viewers);
+		if (data.editors) tab.editors = asIdList(data.editors);
+		for (const id of tab.editors) if (!tab.viewers.includes(id)) tab.viewers.push(id);
+	}
+	appendHistory(doc, user, {
+		type: "tab.update",
+		label: tab.name,
+		snapshot: { tab: snapshotTab(tab) }
+	});
+	return emit(doc, user, data.id);
+}));
+export const updateFavsOptions = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	hideLabel: z.boolean(),
+	tabId: z.string().optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request));
+	doc.settings.favsHideLabel = data.hideLabel;
+	return emit(doc, user, data.tabId);
+}));
+export const deleteTab = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request), data.id);
+	if (doc.tabs.length <= 1) throw new Error("errors.lastSpace");
+	const tab = doc.tabs.find((t) => t.id === data.id);
+	if (tab) appendHistory(doc, user, {
+		type: "tab.delete",
+		label: tab.name,
+		snapshot: {
+			tab: snapshotTab(tab),
+			categories: (tab.categories || []).map((c) => ({
+				...snapshotCat(c),
+				apps: (c.apps || []).map(snapshotApp)
+			}))
+		}
+	});
+	doc.tabs = doc.tabs.filter((t) => t.id !== data.id);
+	pruneUnusedTags(doc);
+	return emit(doc, user);
+}));
+export const createCategory = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	tabId: z.string().min(1),
+	name: z.string().min(1).max(60),
+	icon: z.string().min(1).max(4e5),
+	restricted: z.boolean().optional(),
+	viewers: z.array(z.string()).optional(),
+	editors: z.array(z.string()).optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request), data.tabId);
+	const tab = doc.tabs.find((t) => t.id === data.tabId);
+	if (!tab) throw new Error("errors.portalNotFound");
+	const next = Math.max(0, ...tab.categories.map((c) => c.sortOrder)) + 1;
+	const access = user.role === "admin" ? normalizeCatAccess({
+		restricted: data.restricted,
+		viewers: data.viewers,
+		editors: data.editors
+	}) : {
+		restricted: false,
+		viewers: [],
+		editors: []
+	};
+	tab.categories.push({
+		id: crypto.randomUUID(),
+		name: data.name,
+		icon: data.icon,
+		sortOrder: next,
+		...access,
+		apps: []
+	});
+	appendHistory(doc, user, {
+		type: "category.create",
+		label: data.name,
+		snapshot: {
+			tab: snapshotTab(tab),
+			category: snapshotCat(tab.categories[tab.categories.length - 1])
+		}
+	});
+	return emit(doc, user, data.tabId);
+}));
+export const updateCategory = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1),
+	name: z.string().min(1).max(60),
+	icon: z.string().min(1).max(4e5),
+	restricted: z.boolean().optional(),
+	viewers: z.array(z.string()).optional(),
+	editors: z.array(z.string()).optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request));
+	const { tab, cat } = categoryOf(doc, data.id);
+	requireEdit(doc, tok(data, request), tab.id);
+	cat.name = data.name;
+	cat.icon = data.icon;
+	if (user.role === "admin" && typeof data.restricted === "boolean") Object.assign(cat, normalizeCatAccess({
+		restricted: data.restricted,
+		viewers: data.viewers,
+		editors: data.editors
+	}));
+	appendHistory(doc, user, {
+		type: "category.update",
+		label: cat.name,
+		snapshot: {
+			tab: snapshotTab(tab),
+			category: snapshotCat(cat)
+		}
+	});
+	return emit(doc, user, tab.id);
+}));
+export const deleteCategory = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request));
+	const tab = tabOfCategory(doc, data.id);
+	requireEdit(doc, tok(data, request), tab.id);
+	const cat = tab.categories.find((c) => c.id === data.id);
+	if (cat) appendHistory(doc, user, {
+		type: "category.delete",
+		label: cat.name,
+		snapshot: {
+			tab: snapshotTab(tab),
+			category: snapshotCat(cat),
+			apps: (cat.apps || []).map(snapshotApp)
+		}
+	});
+	tab.categories = tab.categories.filter((c) => c.id !== data.id);
+	pruneUnusedTags(doc);
+	return emit(doc, user, tab.id);
+}));
+var itemPayload = {
+	categoryId: z.string().min(1),
+	kind: z.enum([
+		"app",
+		"note",
+		"embed"
+	]).default("app"),
+	title: z.string().max(80).default(""),
+	description: z.string().max(8e3),
+	url: z.string().max(2e3),
+	icon: z.string().min(1).max(4e5),
+	openIn: z.enum(["_blank", "_self"]),
+	tags: z.array(z.string().min(1).max(32)).max(3).default([]),
+	colSpan: z.union([
+		z.literal(1),
+		z.literal(2),
+		z.literal(3)
+	]).default(1),
+	rowSpan: z.union([
+		z.literal(1),
+		z.literal(2),
+		z.literal(3)
+	]).default(1),
+	check: z.enum([
+		"off",
+		"http",
+		"icmp"
+	]).default("off"),
+	checkHost: z.string().max(253).default(""),
+	links: z.array(z.object({
+		title: z.string().min(1).max(40),
+		url: z.string().min(1).max(2e3)
+	})).max(4).optional().default([]),
+	tagColors: z.record(z.string().min(1).max(32), z.string().max(7)).optional()
+};
+function requireUrl(kind, url) {
+	if (kind === "note") return;
+	if (!safeAppHref(url)) throw new Error(kind === "embed" ? "errors.embedUrlRequired" : "errors.urlRequired");
+}
+function requireTitle(kind, title) {
+	if (kind === "note" || kind === "embed") return;
+	if (!title.trim()) throw new Error("errors.nameRequired");
+}
+function requireBody(kind, description) {
+	if (kind !== "note") return;
+	if (!String(description || "").trim()) throw new Error("errors.contentRequired");
+}
+export const createApp = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	...itemPayload
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request));
+	requireUrl(data.kind, data.url);
+	requireTitle(data.kind, data.title);
+	requireBody(data.kind, data.description);
+	const { tab, cat } = categoryOf(doc, data.categoryId);
+	requireEdit(doc, tok(data, request), tab.id);
+	const next = Math.max(0, ...cat.apps.map((a) => a.sortOrder)) + 1;
+	cat.apps.push(normalizeItem({
+		kind: data.kind,
+		title: data.title,
+		description: data.description,
+		url: data.url,
+		icon: data.icon,
+		openIn: data.openIn,
+		tags: data.tags,
+		colSpan: data.colSpan,
+		rowSpan: data.rowSpan,
+		check: data.check,
+		checkHost: data.checkHost,
+		links: data.links
+	}, cat.id, next));
+	assignTagColors(doc, data.tags, data.tagColors);
+	const created = cat.apps[cat.apps.length - 1];
+	appendHistory(doc, user, {
+		type: "card.create",
+		label: created.title || tt(doc, "empty.untitled"),
+		snapshot: {
+			tab: snapshotTab(tab),
+			category: snapshotCat(cat),
+			app: snapshotApp(created)
+		}
+	});
+	return emit(doc, user, tab.id);
+}));
+export const updateApp = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1),
+	...itemPayload
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request));
+	requireUrl(data.kind, data.url);
+	requireTitle(data.kind, data.title);
+	requireBody(data.kind, data.description);
+	const found = appOf(doc, data.id);
+	const dest = categoryOf(doc, data.categoryId);
+	requireEdit(doc, tok(data, request), found.tab.id);
+	requireEdit(doc, tok(data, request), dest.tab.id);
+	if (found.cat.id !== dest.cat.id) {
+		found.cat.apps = found.cat.apps.filter((a) => a.id !== data.id);
+		dest.cat.apps.push(found.app);
+	}
+	const next = normalizeItem({
+		...found.app,
+		kind: data.kind,
+		title: data.title,
+		description: data.description,
+		url: data.url,
+		icon: data.icon,
+		openIn: data.openIn,
+		tags: data.tags,
+		colSpan: data.colSpan,
+		rowSpan: data.rowSpan,
+		check: data.check,
+		checkHost: data.checkHost,
+		clicks: found.app.clicks,
+		links: data.links
+	}, dest.cat.id, found.app.sortOrder);
+	Object.assign(found.app, next);
+	found.app.id = data.id;
+	found.app.categoryId = dest.cat.id;
+	assignTagColors(doc, data.tags, data.tagColors);
+	pruneUnusedTags(doc);
+	appendHistory(doc, user, {
+		type: "card.update",
+		label: found.app.title || tt(doc, "empty.untitled"),
+		snapshot: {
+			tab: snapshotTab(dest.tab),
+			category: snapshotCat(dest.cat),
+			app: snapshotApp(found.app)
+		}
+	});
+	return emit(doc, user, dest.tab.id);
+}));
+export const deleteApp = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request));
+	const { tab, cat, app } = appOf(doc, data.id);
+	requireEdit(doc, tok(data, request), tab.id);
+	appendHistory(doc, user, {
+		type: "card.delete",
+		label: app.title || tt(doc, "empty.untitled"),
+		snapshot: {
+			tab: snapshotTab(tab),
+			category: snapshotCat(cat),
+			app: snapshotApp(app)
+		}
+	});
+	cat.apps = cat.apps.filter((a) => a.id !== data.id);
+	pruneUnusedTags(doc);
+	return emit(doc, user, tab.id);
+}));
+export const reorderApps = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	tabId: z.string().min(1),
+	placements: z.array(z.object({
+		id: z.string().min(1),
+		categoryId: z.string().min(1),
+		sortOrder: z.number().int().min(0).max(9999)
+	})).min(1).max(400)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request), data.tabId);
+	const tab = doc.tabs.find((t) => t.id === data.tabId);
+	if (!tab) throw new Error("errors.portalNotFound");
+	const allowed = new Set(tab.categories.map((c) => c.id));
+	const bag = /* @__PURE__ */ new Map();
+	for (const cat of tab.categories) {
+		for (const app of cat.apps) bag.set(app.id, app);
+		cat.apps = [];
+	}
+	for (const p of data.placements) {
+		if (!allowed.has(p.categoryId)) throw new Error("errors.badCategory");
+		const app = bag.get(p.id);
+		if (!app) continue;
+		app.categoryId = p.categoryId;
+		app.sortOrder = p.sortOrder;
+		tab.categories.find((c) => c.id === p.categoryId)?.apps.push(app);
+		bag.delete(p.id);
+	}
+	for (const leftover of bag.values()) tab.categories.find((c) => c.id === leftover.categoryId)?.apps.push(leftover);
+	return emit(doc, user, data.tabId);
+}));
+export const moveApp = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1),
+	destTabId: z.string().min(1),
+	destCategoryId: z.string().min(1),
+	sortOrder: z.number().int().min(0).max(9999)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireUser(doc, tok(data, request));
+	const found = appOf(doc, data.id);
+	if (!isOwnerUser(user) && !can(user, "move", { res: "card", id: found.app.id }, doc)) throw new Error("errors.noMove");
+	if (!isOwnerUser(user) && !can(user, "move", { res: "cat", id: data.destCategoryId }, doc) && !can(user, "edit", { res: "tab", id: data.destTabId }, doc)) throw new Error("errors.noMove");
+	requireEdit(doc, tok(data, request), data.destTabId);
+	const dest = categoryOf(doc, data.destCategoryId);
+	if (dest.tab.id !== data.destTabId) throw new Error("errors.categoryNotFound");
+	found.cat.apps = found.cat.apps.filter((a) => a.id !== data.id);
+	dest.cat.apps = dest.cat.apps.filter((a) => a.id !== data.id);
+	const at = Math.max(0, Math.min(Math.max(0, data.sortOrder - 1), dest.cat.apps.length));
+	dest.cat.apps.splice(at, 0, found.app);
+	found.cat.apps.forEach((a, i) => {
+		a.sortOrder = i + 1;
+	});
+	dest.cat.apps.forEach((a, i) => {
+		a.sortOrder = i + 1;
+		a.categoryId = dest.cat.id;
+	});
+	pruneUnusedTags(doc);
+	appendHistory(doc, user, {
+		type: "card.update",
+		label: found.app.title || tt(doc, "empty.untitled"),
+		snapshot: {
+			tab: snapshotTab(dest.tab),
+			category: snapshotCat(dest.cat),
+			app: snapshotApp(found.app)
+		}
+	});
+	return emit(doc, user, dest.tab.id);
+}));
+export const reorderCategories = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	tabId: z.string().min(1),
+	order: z.array(z.string().min(1)).min(1).max(80)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireEdit(doc, tok(data, request), data.tabId);
+	const tab = doc.tabs.find((t) => t.id === data.tabId);
+	if (!tab) throw new Error("errors.portalNotFound");
+	data.order.forEach((id, i) => {
+		const cat = tab.categories.find((c) => c.id === id);
+		if (cat) cat.sortOrder = i + 1;
+	});
+	tab.categories.sort((a, b) => a.sortOrder - b.sortOrder);
+	return emit(doc, user, data.tabId);
+}));
+export const previewMoveCategory = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	categoryId: z.string().min(1),
+	destTabId: z.string().min(1)
+})).handler(async ({ data, request }) => withLock(async () => {
+	const doc = await readDocUnlocked();
+	const user = requireUser(doc, tok(data, request));
+	if (!isOwnerUser(user) && !can(user, "move", { res: "cat", id: data.categoryId }, doc)) throw new Error("errors.noMove");
+	const impact = categoryMoveImpact(doc, data.categoryId, data.destTabId);
+	if (!impact) throw new Error("errors.categoryNotFound");
+	return impact;
+}));
+export const moveCategory = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	categoryId: z.string().min(1),
+	destTabId: z.string().min(1),
+	insertAt: z.number().int().min(0).max(80).optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireUser(doc, tok(data, request));
+	if (!isOwnerUser(user) && !can(user, "move", { res: "cat", id: data.categoryId }, doc)) throw new Error("errors.noMove");
+	if (!isOwnerUser(user) && !can(user, "move", { res: "tab", id: data.destTabId }, doc) && !can(user, "edit", { res: "tab", id: data.destTabId }, doc)) throw new Error("errors.noMove");
+	const moved = moveCategoryInDoc(doc, data.categoryId, data.destTabId, data.insertAt);
+	if (!moved) throw new Error("errors.categoryNotFound");
+	appendHistory(doc, user, {
+		type: "category.update",
+		label: moved.cat.name,
+		snapshot: {
+			tab: snapshotTab(moved.dest),
+			category: snapshotCat(moved.cat)
+		}
+	});
+	return emit(doc, user, moved.dest.id);
+}));
+export const reorderTabs = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	tabId: z.string().optional(),
+	order: z.array(z.string().min(1)).min(1).max(40)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireCreateTab(doc, tok(data, request));
+	data.order.forEach((id, i) => {
+		const tab = doc.tabs.find((t) => t.id === id);
+		if (tab) tab.sortOrder = i + 1;
+	});
+	doc.tabs.sort((a, b) => a.sortOrder - b.sortOrder);
+	return emit(doc, user, data.tabId);
+}));
+function eachItem(doc, fn) {
+	for (const tab of doc.tabs) for (const cat of tab.categories) for (const app of cat.apps) fn(app);
+}
+function tagColorFromName(name) {
+	return defaultTagHex(name);
+}
+export const manageTags = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	tabId: z.string().optional(),
+	create: z.array(z.string().min(1).max(32)).max(40).optional(),
+	rename: z.array(z.object({
+		from: z.string().min(1).max(32),
+		to: z.string().max(32)
+	})).max(80).optional(),
+	remove: z.array(z.string().min(1).max(32)).max(80).optional(),
+	colors: z.record(z.string().min(1).max(32), z.string().max(7)).optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const user = requireAdmin(doc, tok(data, request));
+	const removeKeys = new Set((data.remove ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean));
+	const renameMap = /* @__PURE__ */ new Map();
+	for (const r of data.rename ?? []) {
+		const from = r.from.trim().toLowerCase();
+		const to = r.to.trim().slice(0, 32);
+		if (!from) continue;
+		renameMap.set(from, to);
+	}
+	eachItem(doc, (app) => {
+		const next = [];
+		const seen = /* @__PURE__ */ new Set();
+		for (const tag of app.tags) {
+			const key = tag.toLowerCase();
+			if (removeKeys.has(key)) continue;
+			const renamed = renameMap.has(key) ? renameMap.get(key) : tag;
+			if (!renamed) continue;
+			const nk = renamed.toLowerCase();
+			if (seen.has(nk)) continue;
+			seen.add(nk);
+			next.push(renamed);
+		}
+		app.tags = next;
+	});
+	const colors = { ...asTagColors(doc.settings.tagColors) };
+	if (data.colors) for (const [name, value] of Object.entries(data.colors)) {
+		const tag = name.trim().slice(0, 32);
+		const hex = remapTagHex(String(value || "").trim().toLowerCase());
+		if (!tag || !/^#[0-9a-f]{6}$/.test(hex)) continue;
+		const existing = Object.keys(colors).find((k) => k.toLowerCase() === tag.toLowerCase());
+		if (existing) delete colors[existing];
+		colors[tag] = hex;
+	}
+	for (const [from, to] of renameMap) {
+		const hit = Object.keys(colors).find((k) => k.toLowerCase() === from);
+		if (!hit) continue;
+		const hex = colors[hit];
+		delete colors[hit];
+		if (to) colors[to] = hex;
+	}
+	for (const key of removeKeys) for (const name of Object.keys(colors)) if (name.toLowerCase() === key) delete colors[name];
+	for (const raw of data.create ?? []) {
+		const tag = String(raw || "").trim().slice(0, 32);
+		if (!tag) continue;
+		if (Object.keys(colors).some((k) => k.toLowerCase() === tag.toLowerCase())) continue;
+		if (Object.keys(colors).length >= 80) break;
+		colors[tag] = tagColorFromName(tag);
+	}
+	doc.settings.tagColors = colors;
+	return emit(doc, user, data.tabId);
+}));
+export const saveCustomIcon = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	name: z.string().min(1).max(80),
+	dataUrl: z.string().min(20).max(4e5).regex(/^data:image\//)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	requireEdit(doc, tok(data, request));
+	if ((doc.customIcons || []).length >= MAX_CUSTOM_ICONS) throw new Error("errors.tooManyIcons");
+	doc.customIcons.push({
+		id: crypto.randomUUID(),
+		name: data.name,
+		dataUrl: data.dataUrl
+	});
+	return (doc.customIcons || []).map((ic) => ({
+		...ic,
+		dataUrl: toClientAsset(ic.dataUrl)
+	}));
+}));
+
+function unwrapBackup(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+	if (raw.settings && Array.isArray(raw.tabs)) return raw;
+	if (raw.backup && typeof raw.backup === "object") return raw.backup;
+	return raw;
+}
+export const exportPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
+	const { assetToDataUrl } = await import("./assets");
+	const doc = await readDocUnlocked();
+	requireAdmin(doc, tok(data, request));
+	const customIcons = [];
+	for (const ic of doc.customIcons || []) customIcons.push({
+		...ic,
+		dataUrl: await assetToDataUrl(ic.dataUrl)
+	});
+	return {
+		version: 1,
+		exportedAt: new Date().toISOString(),
+		settings: {
+			...doc.settings,
+			logo: await assetToDataUrl(doc.settings.logo),
+			favicon: await assetToDataUrl(doc.settings.favicon)
+		},
+		customIcons,
+		lastTabId: doc.lastTabId ?? "",
+		clickDays: doc.clickDays ?? {},
+		users: doc.users,
+		groups: doc.groups || [],
+		roles: doc.roles || [],
+		history: asHistory(doc.history),
+		tabs: doc.tabs
+	};
+}));
+export const exportAudit = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
+	const doc = await readDocUnlocked();
+	const user = requireEdit(doc, tok(data, request));
+	const before = (doc.history || []).length;
+	pruneHistory(doc);
+	if ((doc.history || []).length !== before) await writeDocUnlocked(doc);
+	const visible = (doc.history || []).filter((ev) => historyVisible(doc, user, ev));
+	return {
+		exportedAt: new Date().toISOString(),
+		rows: publicAudit(visible, 0)
+	};
+}));
+export const importPortal = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	payload: z.unknown()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const actor = requireAdmin(doc, tok(data, request));
+	const parsed = asStore(unwrapBackup(data.payload));
+	if (!parsed || !parsed.tabs.length) throw new Error("errors.badBackup");
+	doc.settings = parsed.settings;
+	doc.customIcons = parsed.customIcons;
+	doc.lastTabId = parsed.lastTabId;
+	doc.clickDays = parsed.clickDays;
+	doc.users = parsed.users;
+	doc.groups = parsed.groups || [];
+	doc.roles = parsed.roles || [];
+	doc.tabs = parsed.tabs;
+	ensureRoles(doc);
+	ensureUsers(doc);
+	const nextUser = doc.users.find((u) => u.id === actor.id) || doc.users.find((u) => u.role === "admin") || actor;
+	doc.history = asHistory(parsed.history);
+	appendHistory(doc, nextUser, {
+		type: "portal.import",
+		label: tt(doc, "audit.item.import")
+	});
+	return emit(doc, nextUser);
+}));
+async function resolveProbeByIds(token, ids) {
+	const doc = await readDoc();
+	let user = null;
+	if (token) try {
+		user = requireUser(doc, token);
+	} catch {
+		user = null;
+	}
+	const out = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const raw of ids) {
+		const id = String(raw || "");
+		if (!id || seen.has(id) || out.length >= 8) continue;
+		seen.add(id);
+		let found;
+		try {
+			found = appOf(doc, id);
+		} catch {
+			continue;
+		}
+		if (!tabCanSee(found.tab, user, doc)) continue;
+		const app = found.app;
+		if (app.kind !== "app" || app.check === "off") continue;
+		if (app.check === "http") {
+			const url = safeAppHref(app.url);
+			if (url) out.push({
+				id: app.id,
+				mode: "http",
+				url
+			});
+		} else if (app.check === "icmp" && app.checkHost) out.push({
+			id: app.id,
+			mode: "icmp",
+			host: app.checkHost
+		});
+	}
+	return out;
+}
+async function requireEditorSession(token) {
+	const doc = await readDoc();
+	const user = requireUser(doc, token);
+	if (!user._canEdit && !isOwnerUser(user)) throw new Error("errors.insufficient");
+	return user;
+}
+
+export const probeTargets = createServerFn({ method: "POST" }).validator(z.object({
+	token: z.string().optional(),
+	ids: z.array(z.string().min(1).max(80)).min(1).max(8)
+})).handler(async (ctx) => {
+	const { probeAllowed, probeOne } = await import("./probe-runtime");
+	if (!probeAllowed(ctx.request)) return [];
+	const doc = await readDoc();
+	const token = tok(ctx.data, ctx.request);
+	if (doc.settings.probeAuthOnly) {
+		try {
+			requireUser(doc, token);
+		} catch {
+			return [];
+		}
+	}
+	const targets = await resolveProbeByIds(token, ctx.data.ids);
+	return Promise.all(targets.map((target) => probeOne(target, Boolean(doc.settings.probeTlsVerify))));
+});
+
+export const probePreview = createServerFn({ method: "POST" }).validator(z.object({
+	token: z.string().min(1),
+	mode: z.enum(["http", "icmp"]),
+	url: z.string().max(2000).optional(),
+	host: z.string().max(253).optional()
+})).handler(async (ctx) => {
+	const { probeAllowed, probeIcmp, probeHttp } = await import("./probe-runtime");
+	await requireEditorSession(tok(ctx.data, ctx.request));
+	if (!probeAllowed(ctx.request)) throw new Error("errors.tooManyProbes");
+	const doc = await readDoc();
+	const tlsVerify = Boolean(doc.settings.probeTlsVerify);
+	if (ctx.data.mode === "icmp") return probeIcmp("preview", ctx.data.host || "");
+	const url = safeAppHref(ctx.data.url);
+	if (!url) throw new Error("errors.httpRequired");
+	return probeHttp("preview", url, tlsVerify);
+});
+
+export const grabSiteFavicon = createServerFn({ method: "POST" }).validator(z.object({
+	token: z.string().min(1),
+	url: z.string().max(2000)
+})).handler(async (ctx) => {
+	await requireEditorSession(tok(ctx.data, ctx.request));
+	const href = safeAppHref(ctx.data.url);
+	if (!href) throw new Error("errors.httpRequired");
+	const { fetchSiteFavicon } = await import("./favicon-runtime");
+	return fetchSiteFavicon(href);
+});

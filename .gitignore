@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+.output/
+.vercel/
+.nitro/
+dist/
+screenshots/
+test-results/
+.DS_Store
+*.log
+data/portal.json
+data/assets/

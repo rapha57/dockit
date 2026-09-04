@@ -1,0 +1,11 @@
+node_modules
+.git
+.output
+.vercel
+.nitro
+screenshots
+test-results
+*.log
+.DS_Store
+.env
+.env.*
