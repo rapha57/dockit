@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ThemeScript, ThemedToaster } from "@/components/theme";
+import { ConfirmHost } from "@/components/confirm-dialog";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Dockit";
@@ -26,6 +27,7 @@ function RootShell() {
       <body className="min-h-dvh text-fg antialiased">
         <ClearChunkReload />
         <Outlet />
+        <ConfirmHost />
         <ThemedToaster />
         <Scripts />
       </body>

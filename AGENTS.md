@@ -44,7 +44,7 @@ Sauvegarder / déplacer = copier ce JSON. Le traiter comme un secret (hashes scr
 | Version GitHub | `src/lib/release.ts` → `rapha57/dockit` |
 | Styles | `src/styles.css` (préfixes `.am-*` pour Access) |
 
-`index.tsx` est volumineux et écrit avec `jsx` / `jsxs`. Matcher ce style sur place. Ne pas le réécrire en JSX sucré « pour faire propre ».
+`index.tsx` est volumineux ; il est en JSX. Matcher ce style. Primitives : `src/components/ui/`.
 
 Server : `createServerFn` + Zod. Toute mutation passe par `mutate` / `withLock`.
 
@@ -53,7 +53,8 @@ Server : `createServerFn` + Zod. Toute mutation passe par `mutate` / `withLock`.
 - Rôles système : `owner` / `admin` / `editeur` / `lecteur` (labels EN : Owner / Admin / Editor / Viewer).
 - Effective access = union grants directs + rôles user + rôles de groupes + héritage. `view` + `open` implicites si le nœud n’est pas restricted.
 - **`move` ≠ `edit`.**
-- Access = **table + inspecteur**, pas des cartes partout. Suppressions = **popup**, pas d’inline. Pas de barre de sélection noire. Ghost de drag catégories comme pour les cartes. Aérer, ne pas coller les blocs.
+- Access = **liste → chevron → expansion inline**. Suppressions = **popup**. Pas de barre de sélection noire. Ghost de drag catégories comme pour les cartes.
+- `index.tsx` est en JSX. Primitives UI dans `src/components/ui/` (shadcn-style, tokens Dockit). Ne pas réintroduire `jsx()`/`jsxs()`.
 
 ## Sécurité (by design)
 
