@@ -85,6 +85,7 @@ export function ExpandRow({
 	className
 }) {
 	const panelId = `am-exp-${String(id || "row").replace(/[^a-zA-Z0-9_-]/g, "")}`;
+	const padGrip = Boolean(grip) || /\bis-provider\b/.test(className || "");
 	function onHeadKey(e) {
 		if (e.target !== e.currentTarget && e.target.closest("button, input, select, textarea, a, [contenteditable]")) return;
 		if (e.key === "Enter" || e.key === " ") {
@@ -124,8 +125,10 @@ export function ExpandRow({
 						onPointerCancel={onGripUp}
 						onClick={(e) => e.stopPropagation()}
 					>
-						<GripVertical className="size-4" />
+						<GripVertical className="size-3.5" strokeWidth={1.75} />
 					</button>
+				) : padGrip ? (
+					<span className="am-chevron-spacer" aria-hidden />
 				) : null}
 				<button
 					type="button"
@@ -137,7 +140,7 @@ export function ExpandRow({
 						onToggle();
 					}}
 				>
-					{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+					{expanded ? <ChevronDown className="size-3.5" strokeWidth={1.75} /> : <ChevronRight className="size-3.5" strokeWidth={1.75} />}
 				</button>
 				<div className="am-row-cells">{cells}</div>
 			</div>

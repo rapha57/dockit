@@ -179,7 +179,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.04.3";
+var PORTAL_VERSION = "2026.09.04.4";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -6513,9 +6513,9 @@ function emptyGroupDraft() {
 }
 function issuerHost(url) {
   try {
-    return new URL(String(url || "")).host || "—";
+    return new URL(String(url || "")).host || "";
   } catch {
-    return "—";
+    return "";
   }
 }
 function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLoginOrder }) {
@@ -6534,6 +6534,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
   orderRef.current = order;
   const [dragKey, setDragKey] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [oidcDraft, setOidcDraft] = useState(false);
   function patchDir(id, next) {
     setDirs((cur) => {
       const out = cur.map((d) =>
@@ -6579,7 +6580,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
         id: "local",
         name: t("lock.local"),
         type: t("access.idpTypeLocal"),
-        host: "—",
+        host: "",
         on: true,
         draggable: true,
       });
@@ -6591,7 +6592,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
       id: d.id,
       name: d.domain || t("ldap.directory"),
       type: t("access.idpTypeAd"),
-      host: d.host || "—",
+      host: d.host || "",
       on: Boolean(d.enabled),
       draggable: true,
       dir: d,
@@ -6602,29 +6603,22 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
       id: "local",
       name: t("lock.local"),
       type: t("access.idpTypeLocal"),
-      host: "—",
+      host: "",
       on: true,
       draggable: true,
     });
-  const extras = [
-    {
+  const extras = [];
+  const showOidc = oidcOn || Boolean(settings.oidcEnabled) || oidcDraft;
+  if (showOidc) {
+    extras.push({
       id: "oidc",
       name: settings.oidcLabel || t("access.oidc"),
       type: t("access.idpTypeOidc"),
       host: issuerHost(settings.oidcIssuer),
       on: oidcOn,
       draggable: false,
-    },
-    {
-      id: "entra",
-      name: t("access.entra"),
-      type: t("access.idpTypeEntra"),
-      host: "—",
-      on: false,
-      draggable: false,
-      soon: true,
-    },
-  ];
+    });
+  }
   const defaultId =
     order.find((id) => id === "local" || dirs.some((d) => d.id === id && d.enabled)) || "local";
   function toggleRow(id, edit) {
@@ -6659,14 +6653,14 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
     });
   }
   function setDefault(id) {
-    if (!id || id === "oidc" || id === "entra") return;
+    if (!id || id === "oidc") return;
     const next = [id, ...order.filter((x) => x !== id)];
     if (!next.includes("local")) next.unshift("local");
     setOrder(next);
     onSaveLoginOrder(next);
   }
   function removeProvider(id) {
-    if (id === "local" || id === "entra") return;
+    if (id === "local") return;
     if (id === "oidc") {
       onSaveOidc({
         oidcEnabled: false,
@@ -6676,6 +6670,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
         oidcLabel: settings.oidcLabel || "SSO",
         oidcAutoCreate: Boolean(settings.oidcAutoCreate),
       });
+      setOidcDraft(false);
       expand.requestClose();
       return;
     }
@@ -6760,7 +6755,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
         expanded={open}
         dragging={dragKey === r.id}
         grip={r.draggable}
-        onToggle={() => toggleRow(r.id, r.id !== "local" && r.id !== "entra")}
+        onToggle={() => toggleRow(r.id, r.id !== "local")}
         onAltMove={r.draggable ? (dir) => moveOrder(r.id, dir) : undefined}
         onGripDown={r.draggable ? (e) => onGripDown(e, r.id) : undefined}
         onGripMove={r.draggable ? onGripMove : undefined}
@@ -6768,7 +6763,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
         cells={[
           <span key="n" className="am-row-title">
             {r.name}
-            <span className="am-row-sub">{r.host}</span>
+            {r.host ? <span className="am-row-sub">{r.host}</span> : null}
           </span>,
           <span key="s" className={`am-status${r.on ? "" : " is-off"}`}>
             {r.on ? t("access.active") : t("access.disabled")}
@@ -6780,8 +6775,6 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
       >
         {r.id === "local" ? (
           <p className="am-note">{t("access.idpLocalHint")}</p>
-        ) : r.id === "entra" ? (
-          <p className="am-note">{t("access.entraSoon")}</p>
         ) : r.id === "oidc" ? (
           <>
             <OidcForm
@@ -6880,7 +6873,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
         <Button
           type="button"
           size="sm"
-          className="h-9 shrink-0"
+          className="am-create shrink-0"
           onClick={addAd}
           disabled={dirs.length >= 8}
         >
@@ -6889,9 +6882,12 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
         <Button
           type="button"
           size="sm"
-          variant="secondary"
-          className="h-9 shrink-0"
-          onClick={() => toggleRow("oidc", true)}
+          variant="outline"
+          className="am-create shrink-0"
+          onClick={() => {
+            setOidcDraft(true);
+            toggleRow("oidc", true);
+          }}
         >
           <Plus className="size-3.5" /> {t("access.idpAddOidc")}
         </Button>
@@ -6928,6 +6924,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
   );
 }
 function LdapDirFields({ d, patch }) {
+  const tlsOn = d.tls !== false;
   return (
     <>
       <div className="settings-toggles">
@@ -6958,7 +6955,7 @@ function LdapDirFields({ d, patch }) {
         <label>
           <input
             type="checkbox"
-            checked={d.tls !== false}
+            checked={tlsOn}
             onChange={(e) => {
               const on = e.target.checked;
               patch({
@@ -6969,20 +6966,19 @@ function LdapDirFields({ d, patch }) {
           />
           {t("ldap.tls")}
         </label>
-        {d.tls !== false ? (
-          <label>
-            <input
-              type="checkbox"
-              checked={d.tlsVerify !== false}
-              onChange={(e) =>
-                patch({
-                  tlsVerify: e.target.checked,
-                })
-              }
-            />
-            {t("ldap.tlsVerify")}
-          </label>
-        ) : null}
+        <label className={tlsOn ? "" : "is-disabled"}>
+          <input
+            type="checkbox"
+            checked={d.tlsVerify !== false}
+            disabled={!tlsOn}
+            onChange={(e) =>
+              patch({
+                tlsVerify: e.target.checked,
+              })
+            }
+          />
+          {t("ldap.tlsVerify")}
+        </label>
       </div>
       <div className="field-row">
         <Field label={t("ldap.domain")}>

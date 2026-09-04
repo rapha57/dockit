@@ -214,9 +214,9 @@ function bits(names) {
   return `${list.slice(0, 2).join(", ")} +${list.length - 2}`;
 }
 
-function FilterBar({ value, onChange, items }) {
+function FilterBar({ value, onChange, items, pills }) {
   return (
-    <div className="am-filters" role="tablist" aria-label={t("access.filterAll")}>
+    <div className={`am-filters${pills ? " is-pills" : ""}`} role="tablist" aria-label={t("access.filterAll")}>
       {items.map((f) => (
         <button
           key={f.id}
@@ -590,6 +590,7 @@ function PermBlocks({ user, dir, tabs, grants, setGrants, editing, why, setWhy, 
   return (
     <Section>
       <FilterBar
+        pills
         value={pane}
         onChange={setPane}
         items={[
@@ -641,12 +642,12 @@ function RowActions({ editing, onEdit, onCancel, onSave, saveDisabled, extra, da
   if (editing) {
     return (
       <div className="am-actions">
-        <button type="button" className="am-text-btn" onClick={onCancel}>
-          {t("actions.cancel")}
-        </button>
         <Button type="button" size="sm" disabled={saveDisabled} onClick={onSave}>
           {t("actions.save")}
         </Button>
+        <button type="button" className="am-text-btn" onClick={onCancel}>
+          {t("actions.cancel")}
+        </button>
       </div>
     );
   }
@@ -873,7 +874,7 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
             ]}
           />
           {canCreate ? (
-            <Button type="button" size="sm" className="h-9 shrink-0" onClick={openCreate}>
+            <Button type="button" size="sm" className="am-create shrink-0" onClick={openCreate}>
               <Plus className="size-3.5" /> {t("access.create")}
             </Button>
           ) : null}
@@ -1255,7 +1256,7 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
         <>
           <SearchField value={q} onChange={setQ} placeholder={t("nav.search")} />
           {canCreate ? (
-            <Button type="button" size="sm" className="h-9 shrink-0" onClick={openCreate}>
+            <Button type="button" size="sm" className="am-create shrink-0" onClick={openCreate}>
               <Plus className="size-3.5" /> {t("access.createGroup")}
             </Button>
           ) : null}
@@ -1589,7 +1590,7 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
               { id: "custom", label: t("access.custom") },
             ]}
           />
-          <Button type="button" size="sm" className="h-9 shrink-0" onClick={() => openCreate()}>
+          <Button type="button" size="sm" className="am-create shrink-0" onClick={() => openCreate()}>
             <Plus className="size-3.5" /> {t("access.createRole")}
           </Button>
         </>
