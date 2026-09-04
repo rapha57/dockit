@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, Copy, Lock, Plus, Search, X } from "lucide-react";
+import { Copy, Folder, Lock, Plus, Search, Shield, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EntityPicker } from "@/components/entity-picker";
+import { ExpandRow, NEW_ROW, useExpandSession } from "@/components/expand-row";
 import {
 	can,
 	effectiveAccess,
 	explain,
+	mergeGrant,
 	PORTAL_ACTIONS,
 	syntheticUserFromGroup,
 	TREE_ACTIONS
@@ -15,7 +18,7 @@ import { t, te, tp } from "@/lib/i18n";
 import { PASSWORD_MIN } from "@/lib/security";
 import { deleteGroup, deleteRole, deleteUser, listUsers, saveGroup, saveRole, saveUser } from "@/lib/portal";
 
-const INPUT = "field-input h-10 w-full rounded-md border border-border bg-transparent px-3 text-sm text-fg outline-none placeholder:text-subtle";
+const INPUT = "field-input h-9 w-full rounded-md border border-border bg-transparent px-3 text-sm text-fg outline-none placeholder:text-subtle";
 
 function sessionGone(err) {
 	return String(err?.message || err || "").includes("errors.sessionExpired");
@@ -50,6 +53,20 @@ function sourceLabel(src) {
 	}
 	if (src.kind === "role") return t("access.whyRole", { name: src.role?.name || t("access.aRole") });
 	return t("access.whyDirect");
+}
+
+function accountSource(src) {
+	if (src === "ad") return t("access.sourceAd");
+	if (src === "oidc") return t("access.sourceOidc");
+	return t("access.sourceLocal");
+}
+
+function pickerProviders(directories) {
+	const list = [{ id: "local", label: t("access.sourceLocal"), kind: "local" }];
+	for (const d of directories || []) {
+		list.push({ id: d.id, label: d.domain || t("ldap.directory"), kind: "ad" });
+	}
+	return list;
 }
 
 function localEffect(grants, res, id, action) {
@@ -93,17 +110,31 @@ function MiniDoc(dir) {
 	return { users: dir.users, groups: dir.groups, roles: dir.roles, tabs: dir.tabs };
 }
 
-function namesOf(ids, rows, key = "name") {
-	return (ids || []).map((id) => {
-		const row = rows.find((r) => r.id === id);
-		return row ? prettyLogin(row[key] || row.username || row.name) : null;
-	}).filter(Boolean);
+function inheritedGrantsOf(user, dir) {
+	const grants = [];
+	const roles = dir.roles || [];
+	const roleOf = (id) => roles.find((r) => r.id === id);
+	for (const rid of user?.roleIds || []) {
+		const role = roleOf(rid);
+		if (role) for (const g of role.grants || []) mergeGrant(grants, g);
+	}
+	const groups = (dir.groups || []).filter((g) => (user?.groupIds || []).includes(g.id) || (g.members || []).includes(user?.id));
+	for (const group of groups) {
+		for (const g of group.grants || []) mergeGrant(grants, g);
+		for (const rid of group.roleIds || []) {
+			const role = roleOf(rid);
+			if (role) for (const g of role.grants || []) mergeGrant(grants, g);
+		}
+	}
+	return grants;
 }
 
-function joinNames(list, empty) {
-	if (!list.length) return empty;
-	if (list.length <= 2) return list.join(", ");
-	return `${list.slice(0, 2).join(", ")} +${list.length - 2}`;
+function clone(value) {
+	return JSON.parse(JSON.stringify(value));
+}
+
+function same(a, b) {
+	return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function useDirectory(token) {
@@ -130,23 +161,34 @@ function useDirectory(token) {
 	return { users, groups, roles, tabs, busy, apply, setBusy };
 }
 
-function Workbench({ toolbar, master, detail, selected, onBack }) {
+function ListShell({ toolbar, children }) {
 	return (
-		<div className={`am-work${selected ? " has-detail" : ""}`}>
+		<div className="am-work">
 			<div className="am-toolbar">{toolbar}</div>
-			<div className="am-stage">
-				<div className="am-master" hidden={false}>{master}</div>
-				{selected ? (
-					<div className="am-inspector" role="region" aria-live="polite">
-						<button type="button" className="am-back" onClick={onBack}>
-							<ChevronLeft className="size-3.5" /> {t("access.backList")}
-						</button>
-						{detail}
-					</div>
-				) : null}
-			</div>
+			<div className="am-list-wrap">{children}</div>
 		</div>
 	);
+}
+
+function ListHead({ cells, grip }) {
+	return (
+		<div className="am-list-head" aria-hidden>
+			{grip ? <span className="am-chevron-spacer" /> : null}
+			<span className="am-chevron-spacer" />
+			<div className="am-row-cells">{cells}</div>
+		</div>
+	);
+}
+
+function holdersLine(users, groups) {
+	return `${tp("access.nUsers", users || 0)} · ${tp("access.nGroups", groups || 0)}`;
+}
+
+function bits(names) {
+	const list = (names || []).filter(Boolean);
+	if (!list.length) return "—";
+	if (list.length <= 2) return list.join(", ");
+	return `${list.slice(0, 2).join(", ")} +${list.length - 2}`;
 }
 
 function FilterBar({ value, onChange, items }) {
@@ -177,11 +219,16 @@ function SearchField({ value, onChange, placeholder }) {
 	);
 }
 
-function EmptyHint({ text, action }) {
+function EmptyHint({ text, action, icon: Icon }) {
 	return (
-		<div className="am-empty">
+		<div className="empty-page is-compact">
+			{Icon ? (
+				<div className="empty-page-mark">
+					<Icon className="size-7" aria-hidden />
+				</div>
+			) : null}
 			<p>{text}</p>
-			{action}
+			{action ? <div className="empty-page-action">{action}</div> : null}
 		</div>
 	);
 }
@@ -379,7 +426,7 @@ function WhyPanel({ info, onClose }) {
 	);
 }
 
-function ConfirmPopup({ title, body, onCancel, onOk, busy }) {
+export function ConfirmPopup({ title, body, onCancel, onOk, busy, okLabel, danger = true }) {
 	useEffect(() => {
 		const onKey = (e) => {
 			if (e.key !== "Escape") return;
@@ -404,7 +451,7 @@ function ConfirmPopup({ title, body, onCancel, onOk, busy }) {
 				<p className="mt-2 text-sm text-muted">{body}</p>
 				<div className="mt-5 flex justify-end gap-2">
 					<Button type="button" variant="secondary" onClick={onCancel} disabled={busy}>{t("actions.cancel")}</Button>
-					<Button type="button" variant="danger" onClick={onOk} disabled={busy}>{t("actions.delete")}</Button>
+					<Button type="button" variant={danger ? "danger" : undefined} onClick={onOk} disabled={busy}>{okLabel || t("actions.delete")}</Button>
 				</div>
 			</div>
 		</div>,
@@ -415,97 +462,236 @@ function ConfirmPopup({ title, body, onCancel, onOk, busy }) {
 function Section({ title, hint, children }) {
 	return (
 		<section className="am-sec">
-			<h5>{title}</h5>
+			{title ? <h5>{title}</h5> : null}
 			{hint ? <p className="am-note">{hint}</p> : null}
 			{children}
 		</section>
 	);
 }
 
-function CheckList({ items, values, onToggle, labelOf }) {
+function Pair({ children }) {
+	return <div className="am-pair">{children}</div>;
+}
+
+function DiscardAsk({ ask, onKeep, onDiscard }) {
+	if (!ask) return null;
 	return (
-		<ul className="am-check-list">
-			{items.map((item) => (
-				<li key={item.id}>
-					<label>
-						<input type="checkbox" checked={values.includes(item.id)} onChange={() => onToggle(item.id)} />
-						{labelOf(item)}
-					</label>
-				</li>
-			))}
-		</ul>
+		<ConfirmPopup
+			title={t("access.discardTitle")}
+			body={t("access.discardBody")}
+			okLabel={t("access.discard")}
+			onCancel={onKeep}
+			onOk={onDiscard}
+		/>
 	);
 }
 
-export function AccessUsers({ token, actor, tabs: seedTabs }) {
+function PermBlocks({ user, dir, tabs, grants, setGrants, editing, why, setWhy, hideDirectEdit }) {
+	const inherited = useMemo(() => inheritedGrantsOf(user, dir), [user, dir]);
+	const [pane, setPane] = useState(editing ? "direct" : "effective");
+	const [pq, setPq] = useState("");
+	const liveUser = user ? { ...user, grants: grants || user.grants || [] } : null;
+	useEffect(() => {
+		setPane(editing ? "direct" : "effective");
+	}, [editing]);
+	return (
+		<Section>
+			<FilterBar
+				value={pane}
+				onChange={setPane}
+				items={[
+					{ id: "direct", label: t("access.direct") },
+					{ id: "inherited", label: t("access.inherited") },
+					{ id: "effective", label: t("access.effective") }
+				]}
+			/>
+			{pane === "direct" ? (
+				<>
+					{editing && !hideDirectEdit ? <SearchField value={pq} onChange={setPq} placeholder={t("access.searchPerms")} /> : null}
+					{(grants || []).length || (editing && !hideDirectEdit) ? (
+						<ResourceTree tabs={tabs} grants={grants || []} setGrants={setGrants || (() => {})} query={editing ? pq : ""} readOnly={!editing || hideDirectEdit} />
+					) : <p className="am-note">{t("access.none")}</p>}
+				</>
+			) : null}
+			{pane === "inherited" ? (
+				inherited.length ? (
+					<ResourceTree tabs={tabs} grants={inherited} setGrants={() => {}} query="" readOnly />
+				) : <p className="am-note">{t("access.none")}</p>
+			) : null}
+			{pane === "effective" ? (
+				liveUser ? (
+					<>
+						<EffectiveTree user={liveUser} doc={MiniDoc(dir)} onWhy={setWhy} />
+						<WhyPanel info={why} onClose={() => setWhy(null)} />
+					</>
+				) : <p className="am-note">{t("access.none")}</p>
+			) : null}
+		</Section>
+	);
+}
+
+function RowActions({ editing, onEdit, onCancel, onSave, saveDisabled, extra, danger }) {
+	if (editing) {
+		return (
+			<div className="am-actions">
+				<button type="button" className="am-text-btn" onClick={onCancel}>{t("actions.cancel")}</button>
+				<Button type="button" size="sm" disabled={saveDisabled} onClick={onSave}>{t("actions.save")}</Button>
+			</div>
+		);
+	}
+	return (
+		<div className="am-actions">
+			{onEdit ? <Button type="button" size="sm" onClick={onEdit}>{t("actions.edit")}</Button> : null}
+			{extra}
+			{danger}
+		</div>
+	);
+}
+
+export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
 	const dir = useDirectory(token);
 	const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
+	const expand = useExpandSession();
+	const snap = useRef(null);
 	const [q, setQ] = useState("");
 	const [filter, setFilter] = useState("all");
-	const [sel, setSel] = useState(null);
+	const [draft, setDraft] = useState(null);
 	const [why, setWhy] = useState(null);
 	const [confirm, setConfirm] = useState(null);
-	const [draft, setDraft] = useState(null);
-	const creating = Boolean(draft && !draft.id);
+	const creating = expand.openId === NEW_ROW;
 	const people = dir.users;
+	const providers = pickerProviders(directories);
+	const canCreate = actor?.role === "admin" || actor?.canManageUsers;
+	const lockedOwner = draft?.id === "admin";
+	const current = people.find((u) => u.id === expand.openId);
+
 	const filtered = people.filter((u) => {
 		if (filter === "disabled" && !u.disabled) return false;
 		if (filter !== "all" && filter !== "disabled" && !(u.roleIds || []).includes(filter)) return false;
 		if (q && !prettyLogin(u.username).toLowerCase().includes(q.toLowerCase())) return false;
 		return true;
 	});
-	const canCreate = actor?.role === "admin" || actor?.canManageUsers;
-	const lockedOwner = draft?.id === "admin";
-	const current = people.find((u) => u.id === sel);
 
-	function open(u) {
-		setWhy(null);
-		setConfirm(null);
-		setSel(u.id);
-		setDraft({
+	function userDraft(u) {
+		return {
 			id: u.id,
 			username: u.username,
 			password: "",
+			password2: "",
 			roleIds: [...(u.roleIds || [])],
 			groupIds: [...(u.groupIds || [])],
-			grants: [...(u.grants || [])],
-			disabled: Boolean(u.disabled)
-		});
+			grants: clone(u.grants || []),
+			disabled: Boolean(u.disabled),
+			source: u.source || "local"
+		};
+	}
+	function blankDraft() {
+		return { id: "", username: "", password: "", password2: "", roleIds: ["lecteur"], groupIds: [], grants: [], disabled: false, source: "local" };
+	}
+	function load(next, edit) {
+		snap.current = next ? clone(next) : null;
+		setDraft(next);
+		setWhy(null);
+		expand.markDirty(false);
+		if (edit) expand.setEditing(true);
+	}
+	function patch(next) {
+		setDraft(next);
+		expand.markDirty(!same(next, snap.current));
+	}
+	function toggleRow(u) {
+		if (expand.openId === u.id) {
+			expand.requestClose(() => load(null));
+			return;
+		}
+		expand.requestOpen(u.id, { apply: () => load(userDraft(u)) });
 	}
 	function openCreate() {
-		setSel("new");
-		setDraft({ id: "", username: "", password: "", roleIds: ["lecteur"], groupIds: [], grants: [], disabled: false });
+		expand.requestOpen(NEW_ROW, { edit: true, apply: () => load(blankDraft(), true) });
 	}
-	function close() {
-		setSel(null);
-		setDraft(null);
-		setWhy(null);
-		setConfirm(null);
+	function beginEdit() {
+		if (!draft) return;
+		snap.current = clone(draft);
+		expand.markDirty(false);
+		expand.setEditing(true);
 	}
-	function toggle(list, id, fallback) {
-		const has = list.includes(id);
-		const next = has ? list.filter((x) => x !== id) : [...list, id];
-		return next.length ? next : fallback;
+	function cancelEdit() {
+		if (creating) {
+			expand.markDirty(false);
+			expand.requestClose(() => load(null));
+			return;
+		}
+		const restored = snap.current ? clone(snap.current) : draft;
+		load(restored);
+		expand.setEditing(false);
 	}
 	async function save() {
 		if (!draft?.username?.trim()) return;
+		const pwd = draft.password || "";
+		if (draft.id === "admin" && pwd) {
+			if (pwd !== (draft.password2 || "")) {
+				toast.error(t("access.passwordMismatch"));
+				return;
+			}
+			if (pwd.length < PASSWORD_MIN) {
+				toast.error(t("users.passwordMin", { n: PASSWORD_MIN }));
+				return;
+			}
+		}
 		dir.setBusy(true);
 		try {
-			dir.apply(await saveUser({
+			const res = await saveUser({
 				data: {
 					token,
 					id: draft.id || undefined,
 					username: draft.username,
-					password: draft.password || undefined,
+					password: pwd || undefined,
 					roleIds: draft.roleIds,
 					groupIds: draft.groupIds,
 					grants: draft.grants,
 					disabled: draft.disabled
 				}
+			});
+			dir.apply(res);
+			toast.success(t("toast.saved"));
+			const saved = (res.users || []).find((u) => u.id === draft.id)
+				|| (res.users || []).find((u) => u.username === draft.username.trim().toLowerCase());
+			if (saved) {
+				expand.stay(saved.id);
+				load(userDraft(saved));
+			} else {
+				expand.stay(draft.id || null);
+				patch({ ...draft, password: "" });
+				snap.current = clone({ ...draft, password: "" });
+				expand.markDirty(false);
+				expand.setEditing(false);
+			}
+		} catch (err) {
+			if (!sessionGone(err)) toast.error(te(err));
+		} finally {
+			dir.setBusy(false);
+		}
+	}
+	async function setDisabled(u, disabled) {
+		dir.setBusy(true);
+		try {
+			dir.apply(await saveUser({
+				data: {
+					token,
+					id: u.id,
+					username: u.username,
+					roleIds: u.roleIds,
+					groupIds: u.groupIds,
+					grants: u.grants,
+					disabled
+				}
 			}));
 			toast.success(t("toast.saved"));
-			if (!draft.id) close();
-			else setDraft({ ...draft, password: "" });
+			if (draft && draft.id === u.id) {
+				const next = { ...draft, disabled };
+				snap.current = clone({ ...snap.current, disabled });
+				setDraft(next);
+			}
 		} catch (err) {
 			if (!sessionGone(err)) toast.error(te(err));
 		} finally {
@@ -517,7 +703,9 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
 		try {
 			dir.apply(await deleteUser({ data: { token, id: u.id } }));
 			toast.success(t("users.deleted"));
-			close();
+			setConfirm(null);
+			expand.markDirty(false);
+			expand.requestClose(() => load(null));
 		} catch (err) {
 			if (!sessionGone(err)) toast.error(te(err));
 		} finally {
@@ -525,10 +713,11 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
 		}
 	}
 
+	const rows = creating ? [{ id: NEW_ROW, username: draft?.username || t("access.newUser"), roleIds: draft?.roleIds || [], disabled: false, phantom: true }, ...filtered] : filtered;
+	const empty = !dir.busy && !filtered.length && !creating;
+
 	return (
-		<Workbench
-			selected={Boolean(draft)}
-			onBack={close}
+		<ListShell
 			toolbar={(
 				<>
 					<SearchField value={q} onChange={setQ} placeholder={t("nav.search")} />
@@ -548,145 +737,227 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
 					) : null}
 				</>
 			)}
-			master={!dir.busy && !filtered.length ? (
-				<EmptyHint text={t("access.empty")} action={canCreate ? <Button type="button" size="sm" onClick={openCreate}>{t("access.create")}</Button> : null} />
+		>
+			{empty ? (
+				<EmptyHint icon={Users} text={t("access.empty")} action={canCreate ? <Button type="button" size="sm" onClick={openCreate}>{t("access.create")}</Button> : null} />
 			) : (
-				<table className="am-table">
-					<thead>
-						<tr>
-							<th>{t("access.colUser")}</th>
-							<th>{t("access.groups")}</th>
-							<th>{t("users.role")}</th>
-							<th>{t("access.colStatus")}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{filtered.map((u) => (
-							<tr key={u.id} className={sel === u.id ? "is-on" : ""} onClick={() => open(u)}>
-								<td>{prettyLogin(u.username)}</td>
-								<td className="am-dim">{joinNames(namesOf(u.groupIds, dir.groups), "—")}</td>
-								<td>{joinNames((u.roleIds || []).map((id) => roleTitle(id, dir.roles)), "—")}</td>
-								<td><StatusText off={u.disabled} /></td>
-							</tr>
-						))}
-					</tbody>
-				</table>
+				<div className="am-list" role="list">
+					<ListHead cells={[<span key="u">{t("access.colUser")}</span>, <span key="r">{t("users.role")}</span>, <span key="s" className="am-row-end">{t("access.colStatus")}</span>]} />
+					{rows.map((u) => {
+						const open = expand.openId === u.id || (u.phantom && creating);
+						const rowDraft = open ? draft : null;
+						const view = current && !u.phantom ? current : u;
+						return (
+							<ExpandRow
+								key={u.id}
+								id={u.id}
+								expanded={open}
+								onToggle={() => (u.phantom ? expand.requestClose(() => load(null)) : toggleRow(u))}
+								cells={[
+									<span key="n" className="am-row-title">{prettyLogin(rowDraft?.username || u.username) || t("access.newUser")}</span>,
+									<span key="c" className="am-dim">{bits((rowDraft?.roleIds || u.roleIds || []).map((id) => roleTitle(id, dir.roles)))}</span>,
+									<span key="s" className="am-row-end am-dim"><StatusText off={rowDraft ? rowDraft.disabled : u.disabled} /></span>
+								]}
+							>
+								{rowDraft ? (
+									<>
+										{expand.editing ? (
+											<Section>
+												{lockedOwner ? (
+													<>
+														<p className="am-meta">{t("access.roleLocked")}</p>
+														<Pair>
+															<label className="am-field">
+																<span>{t("users.newPassword")}</span>
+																<input className={INPUT} type="password" value={rowDraft.password} autoComplete="new-password" onChange={(e) => patch({ ...rowDraft, password: e.target.value })} />
+															</label>
+															<label className="am-field">
+																<span>{t("access.confirmPassword")}</span>
+																<input className={INPUT} type="password" value={rowDraft.password2 || ""} autoComplete="new-password" onChange={(e) => patch({ ...rowDraft, password2: e.target.value })} />
+															</label>
+														</Pair>
+														<p className="am-note">{t("users.passwordKeep")}</p>
+														{rowDraft.password && rowDraft.password !== (rowDraft.password2 || "") ? (
+															<p className="am-note is-warn">{t("access.passwordMismatch")}</p>
+														) : null}
+													</>
+												) : (
+													<>
+														<Pair>
+															<label className="am-field">
+																<span>{t("lock.username")}</span>
+																<input className={INPUT} value={rowDraft.username} autoComplete="off" onChange={(e) => patch({ ...rowDraft, username: e.target.value })} />
+															</label>
+															<label className="am-field">
+																<span>{creating ? t("lock.password") : t("users.newPassword")}</span>
+																<input className={INPUT} type="password" value={rowDraft.password} autoComplete="new-password" onChange={(e) => patch({ ...rowDraft, password: e.target.value })} />
+															</label>
+														</Pair>
+														<label className="am-inline">
+															<input type="checkbox" checked={Boolean(rowDraft.disabled)} onChange={() => patch({ ...rowDraft, disabled: !rowDraft.disabled })} />
+															{t("access.disabled")}
+														</label>
+													</>
+												)}
+											</Section>
+										) : (
+											<p className="am-meta">{accountSource(view.source || rowDraft.source)} · <StatusText off={rowDraft.disabled} /></p>
+										)}
+										{!lockedOwner ? (
+											<>
+												<Section>
+													<Pair>
+														<div>
+															<h5>{t("users.role")}</h5>
+															<EntityPicker
+																kind="role"
+																items={dir.roles.filter((r) => r.id !== "owner")}
+																selectedIds={rowDraft.roleIds || []}
+																labelOf={(r) => roleTitle(r.id, dir.roles)}
+																providers={[{ id: "local", label: t("access.sourceLocal"), kind: "local" }]}
+																readOnly={!expand.editing}
+																onChange={(ids) => patch({ ...rowDraft, roleIds: ids.length ? ids : ["lecteur"] })}
+															/>
+														</div>
+														<div>
+															<h5>{t("access.groupsOf")}</h5>
+															<EntityPicker
+																kind="group"
+																items={dir.groups}
+																selectedIds={rowDraft.groupIds || []}
+																labelOf={(g) => g.name}
+																providers={providers}
+																readOnly={!expand.editing}
+																onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
+															/>
+														</div>
+													</Pair>
+												</Section>
+												<PermBlocks
+													user={view.phantom ? null : { ...view, roleIds: rowDraft.roleIds, groupIds: rowDraft.groupIds, grants: rowDraft.grants }}
+													dir={dir}
+													tabs={tabs}
+													grants={rowDraft.grants || []}
+													setGrants={(g) => patch({ ...rowDraft, grants: g })}
+													editing={expand.editing}
+													why={why}
+													setWhy={setWhy}
+												/>
+											</>
+										) : null}
+										<RowActions
+											editing={expand.editing}
+											onEdit={canCreate && !lockedOwner ? beginEdit : (lockedOwner ? beginEdit : null)}
+											onCancel={cancelEdit}
+											onSave={() => void save()}
+											saveDisabled={dir.busy || !rowDraft.username.trim() || (creating && (rowDraft.password || "").length < PASSWORD_MIN) || (lockedOwner && Boolean(rowDraft.password) && (rowDraft.password !== (rowDraft.password2 || "") || rowDraft.password.length < PASSWORD_MIN))}
+											extra={!expand.editing && !creating && !lockedOwner ? (
+												<button type="button" className="am-text-btn" onClick={() => void setDisabled(view, !view.disabled)}>
+													{view.disabled ? t("access.enable") : t("access.disable")}
+												</button>
+											) : null}
+											danger={!expand.editing && !creating && !lockedOwner ? (
+												<button type="button" className="am-text-btn is-danger" onClick={() => setConfirm(view)}>{t("access.deleteConfirm")}</button>
+											) : null}
+										/>
+									</>
+								) : null}
+							</ExpandRow>
+						);
+					})}
+				</div>
 			)}
-			detail={draft ? (
-				<>
-					<header className="am-id-head">
-						<h4>{creating ? t("access.create") : prettyLogin(draft.username)}</h4>
-						{!creating ? <StatusText off={draft.disabled} /> : null}
-					</header>
-					<Section title={t("access.identity")}>
-						<label className="am-field">
-							<span>{t("lock.username")}</span>
-							<input className={INPUT} value={draft.username} disabled={lockedOwner} autoComplete="off" onChange={(e) => setDraft({ ...draft, username: e.target.value })} />
-						</label>
-						<label className="am-field">
-							<span>{creating ? t("lock.password") : t("users.newPassword")}</span>
-							<input className={INPUT} type="password" value={draft.password} autoComplete="new-password" onChange={(e) => setDraft({ ...draft, password: e.target.value })} />
-						</label>
-						{!lockedOwner ? (
-							<label className="am-inline">
-								<input type="checkbox" checked={Boolean(draft.disabled)} onChange={() => setDraft({ ...draft, disabled: !draft.disabled })} />
-								{t("access.disabled")}
-							</label>
-						) : <p className="am-note">{t("access.roleLocked")}</p>}
-					</Section>
-					{!lockedOwner ? (
-						<>
-							<Section title={t("users.role")}>
-								<CheckList
-									items={dir.roles.filter((r) => r.id !== "owner")}
-									values={draft.roleIds || []}
-									labelOf={(r) => roleTitle(r.id, dir.roles)}
-									onToggle={(id) => setDraft({ ...draft, roleIds: toggle(draft.roleIds, id, ["lecteur"]) })}
-								/>
-							</Section>
-							{dir.groups.length ? (
-								<Section title={t("access.groupsOf")}>
-									<CheckList
-										items={dir.groups}
-										values={draft.groupIds || []}
-										labelOf={(g) => g.name}
-										onToggle={(id) => setDraft({ ...draft, groupIds: toggle(draft.groupIds, id, []) })}
-									/>
-								</Section>
-							) : null}
-							<Section title={t("access.directPerms")} hint={t("access.directHint")}>
-								<ResourceTree tabs={tabs} grants={draft.grants || []} setGrants={(g) => setDraft({ ...draft, grants: g })} query="" />
-							</Section>
-						</>
-					) : null}
-					<div className="am-actions">
-						<Button type="button" size="sm" disabled={dir.busy || !draft.username.trim() || (creating && (draft.password || "").length < PASSWORD_MIN)} onClick={() => void save()}>
-							{t("actions.save")}
-						</Button>
-						{!creating && !lockedOwner ? (
-							<button type="button" className="am-text-btn is-danger" onClick={() => setConfirm(current)}>{t("access.deleteConfirm")}</button>
-						) : null}
-					</div>
-					{confirm ? (
-						<ConfirmPopup
-							title={t("access.deleteUserTitle", { name: prettyLogin(confirm.username) })}
-							body={t("access.deleteUserBody")}
-							busy={dir.busy}
-							onCancel={() => setConfirm(null)}
-							onOk={() => void remove(confirm)}
-						/>
-					) : null}
-					{current && !creating ? (
-						<Section title={t("access.effective")} hint={t("access.whyClick")}>
-							<EffectiveTree user={current} doc={MiniDoc(dir)} onWhy={setWhy} />
-							<WhyPanel info={why} onClose={() => setWhy(null)} />
-						</Section>
-					) : null}
-				</>
+			{confirm ? (
+				<ConfirmPopup
+					title={t("access.deleteUserTitle", { name: prettyLogin(confirm.username) })}
+					body={t("access.deleteUserBody")}
+					busy={dir.busy}
+					onCancel={() => setConfirm(null)}
+					onOk={() => void remove(confirm)}
+				/>
 			) : null}
-		/>
+			<DiscardAsk ask={expand.ask} onKeep={expand.dismissAsk} onDiscard={expand.confirmAsk} />
+		</ListShell>
 	);
 }
 
-export function AccessGroups({ token, actor, tabs: seedTabs }) {
+export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
 	const dir = useDirectory(token);
 	const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
+	const expand = useExpandSession();
+	const snap = useRef(null);
 	const [q, setQ] = useState("");
-	const [sel, setSel] = useState(null);
 	const [draft, setDraft] = useState(null);
 	const [why, setWhy] = useState(null);
 	const [confirm, setConfirm] = useState(null);
+	const creating = expand.openId === NEW_ROW;
 	const filtered = dir.groups.filter((g) => !q || g.name.toLowerCase().includes(q.toLowerCase()));
 	const canCreate = actor?.role === "admin" || actor?.canManageGroups || actor?.canManageUsers;
 	const people = dir.users.filter((u) => u.id !== "admin");
-	const current = dir.groups.find((g) => g.id === sel);
+	const current = dir.groups.find((g) => g.id === expand.openId);
+	const providers = pickerProviders(directories);
 
-	function open(g) {
-		setWhy(null);
-		setConfirm(null);
-		setSel(g.id);
-		setDraft({ id: g.id, name: g.name, roleIds: [...(g.roleIds || [])], members: [...(g.members || [])] });
+	function groupDraft(g) {
+		return { id: g.id, name: g.name, roleIds: [...(g.roleIds || [])], members: [...(g.members || [])], source: g.source || "local" };
 	}
-	function close() {
-		setSel(null);
-		setDraft(null);
-		setWhy(null);
-		setConfirm(null);
+	function blankDraft() {
+		return { id: "", name: "", roleIds: ["lecteur"], members: [], source: "local" };
 	}
-	function toggle(list, id, fallback) {
-		const has = list.includes(id);
-		const next = has ? list.filter((x) => x !== id) : [...list, id];
-		return next.length || fallback === undefined ? next : fallback;
+	function load(next, edit) {
+		snap.current = next ? clone(next) : null;
+		setDraft(next);
+		setWhy(null);
+		expand.markDirty(false);
+		if (edit) expand.setEditing(true);
+	}
+	function patch(next) {
+		setDraft(next);
+		expand.markDirty(!same(next, snap.current));
+	}
+	function toggleRow(g) {
+		if (expand.openId === g.id) {
+			expand.requestClose(() => load(null));
+			return;
+		}
+		expand.requestOpen(g.id, { apply: () => load(groupDraft(g)) });
+	}
+	function openCreate() {
+		expand.requestOpen(NEW_ROW, { edit: true, apply: () => load(blankDraft(), true) });
+	}
+	function beginEdit() {
+		if (!draft) return;
+		snap.current = clone(draft);
+		expand.markDirty(false);
+		expand.setEditing(true);
+	}
+	function cancelEdit() {
+		if (creating) {
+			expand.markDirty(false);
+			expand.requestClose(() => load(null));
+			return;
+		}
+		load(snap.current ? clone(snap.current) : draft);
+		expand.setEditing(false);
 	}
 	async function save() {
 		if (!draft?.name?.trim()) return;
 		dir.setBusy(true);
 		try {
-			dir.apply(await saveGroup({
+			const res = await saveGroup({
 				data: { token, id: draft.id || undefined, name: draft.name, roleIds: draft.roleIds, members: draft.members }
-			}));
+			});
+			dir.apply(res);
 			toast.success(t("toast.saved"));
-			if (!draft.id) close();
+			const saved = (res.groups || []).find((g) => g.id === draft.id)
+				|| (res.groups || []).find((g) => g.name.toLowerCase() === draft.name.trim().toLowerCase());
+			if (saved) {
+				expand.stay(saved.id);
+				load(groupDraft(saved));
+			} else {
+				expand.stay(draft.id || null);
+				expand.setEditing(false);
+				expand.markDirty(false);
+			}
 		} catch (err) {
 			if (!sessionGone(err)) toast.error(te(err));
 		} finally {
@@ -698,7 +969,9 @@ export function AccessGroups({ token, actor, tabs: seedTabs }) {
 		try {
 			dir.apply(await deleteGroup({ data: { token, id: g.id } }));
 			toast.success(t("access.deletedGroup"));
-			close();
+			setConfirm(null);
+			expand.markDirty(false);
+			expand.requestClose(() => load(null));
 		} catch (err) {
 			if (!sessionGone(err)) toast.error(te(err));
 		} finally {
@@ -706,108 +979,139 @@ export function AccessGroups({ token, actor, tabs: seedTabs }) {
 		}
 	}
 
+	const rows = creating ? [{ id: NEW_ROW, name: draft?.name || t("access.newGroup"), roleIds: draft?.roleIds || [], members: draft?.members || [], phantom: true }, ...filtered] : filtered;
+	const empty = !dir.busy && !filtered.length && !creating;
+
 	return (
-		<Workbench
-			selected={Boolean(draft)}
-			onBack={close}
+		<ListShell
 			toolbar={(
 				<>
 					<SearchField value={q} onChange={setQ} placeholder={t("nav.search")} />
 					{canCreate ? (
-						<Button type="button" size="sm" className="h-9 shrink-0" onClick={() => { setSel("new"); setDraft({ id: "", name: "", roleIds: ["lecteur"], members: [] }); }}>
+						<Button type="button" size="sm" className="h-9 shrink-0" onClick={openCreate}>
 							<Plus className="size-3.5" /> {t("access.createGroup")}
 						</Button>
 					) : null}
 				</>
 			)}
-			master={!dir.busy && !filtered.length ? (
-				<EmptyHint text={t("access.noGroups")} action={canCreate ? <Button type="button" size="sm" onClick={() => { setSel("new"); setDraft({ id: "", name: "", roleIds: ["lecteur"], members: [] }); }}>{t("access.createGroup")}</Button> : null} />
+		>
+			{empty ? (
+				<EmptyHint icon={Folder} text={t("access.noGroups")} action={canCreate ? <Button type="button" size="sm" onClick={openCreate}>{t("access.createGroup")}</Button> : null} />
 			) : (
-				<table className="am-table">
-					<thead>
-						<tr>
-							<th>{t("access.groupName")}</th>
-							<th>{t("access.members")}</th>
-							<th>{t("users.role")}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{filtered.map((g) => (
-							<tr key={g.id} className={sel === g.id ? "is-on" : ""} onClick={() => open(g)}>
-								<td>{g.name}</td>
-								<td className="am-dim">{tp("access.memberCount", (g.members || []).length)}</td>
-								<td>{joinNames((g.roleIds || []).map((id) => roleTitle(id, dir.roles)), "—")}</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
+				<div className="am-list" role="list">
+					<ListHead cells={[<span key="n">{t("access.groupName")}</span>, <span key="r">{t("users.role")}</span>, <span key="m" className="am-row-end">{t("access.members")}</span>]} />
+					{rows.map((g) => {
+						const open = expand.openId === g.id || (g.phantom && creating);
+						const rowDraft = open ? draft : null;
+						const view = current && !g.phantom ? current : g;
+						return (
+							<ExpandRow
+								key={g.id}
+								id={g.id}
+								expanded={open}
+								onToggle={() => (g.phantom ? expand.requestClose(() => load(null)) : toggleRow(g))}
+								cells={[
+									<span key="n" className="am-row-title">{rowDraft?.name || g.name || t("access.newGroup")}</span>,
+									<span key="c" className="am-dim">{bits((rowDraft?.roleIds || g.roleIds || []).map((id) => roleTitle(id, dir.roles)))}</span>,
+									<span key="m" className="am-row-end am-dim">{tp("access.memberCount", (rowDraft?.members || g.members || []).length)}</span>
+								]}
+							>
+								{rowDraft ? (
+									<>
+										{expand.editing ? (
+											<Section>
+												<label className="am-field">
+													<span>{t("access.groupName")}</span>
+													<input className={INPUT} value={rowDraft.name} onChange={(e) => patch({ ...rowDraft, name: e.target.value })} />
+												</label>
+											</Section>
+										) : view.source === "ad" ? (
+											<p className="am-meta">{t("access.sourceAd")}</p>
+										) : null}
+										<Section>
+											<Pair>
+												<div>
+													<h5>{t("users.role")}</h5>
+													<EntityPicker
+														kind="role"
+														items={dir.roles.filter((r) => r.id !== "owner")}
+														selectedIds={rowDraft.roleIds || []}
+														labelOf={(r) => roleTitle(r.id, dir.roles)}
+														providers={[{ id: "local", label: t("access.sourceLocal"), kind: "local" }]}
+														readOnly={!expand.editing}
+														onChange={(ids) => patch({ ...rowDraft, roleIds: ids.length ? ids : ["lecteur"] })}
+													/>
+												</div>
+												<div>
+													<h5>{t("access.members")}</h5>
+													<EntityPicker
+														kind="user"
+														items={people}
+														selectedIds={rowDraft.members || []}
+														labelOf={(u) => prettyLogin(u.username)}
+														providers={providers}
+														readOnly={!expand.editing || view.source === "ad"}
+														onChange={(ids) => patch({ ...rowDraft, members: ids })}
+													/>
+												</div>
+											</Pair>
+										</Section>
+										{view.id && !view.phantom ? (
+											<PermBlocks
+												user={syntheticUserFromGroup({ ...view, roleIds: rowDraft.roleIds, members: rowDraft.members })}
+												dir={{ ...dir, tabs }}
+												tabs={tabs}
+												grants={view.grants || []}
+												editing={false}
+												hideDirectEdit
+												why={why}
+												setWhy={setWhy}
+											/>
+										) : null}
+										<RowActions
+											editing={expand.editing}
+											onEdit={canCreate ? beginEdit : null}
+											onCancel={cancelEdit}
+											onSave={() => void save()}
+											saveDisabled={dir.busy || !rowDraft.name.trim()}
+											danger={!expand.editing && !creating ? (
+												<button type="button" className="am-text-btn is-danger" onClick={() => setConfirm(view)}>{t("access.deleteConfirm")}</button>
+											) : null}
+										/>
+									</>
+								) : null}
+							</ExpandRow>
+						);
+					})}
+				</div>
 			)}
-			detail={draft ? (
-				<>
-					<header className="am-id-head">
-						<h4>{draft.id ? draft.name || t("access.newGroup") : t("access.createGroup")}</h4>
-					</header>
-					<Section title={t("access.identity")}>
-						<label className="am-field">
-							<span>{t("access.groupName")}</span>
-							<input className={INPUT} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-						</label>
-					</Section>
-					<Section title={t("users.role")}>
-						<CheckList
-							items={dir.roles.filter((r) => r.id !== "owner")}
-							values={draft.roleIds || []}
-							labelOf={(r) => roleTitle(r.id, dir.roles)}
-							onToggle={(id) => setDraft({ ...draft, roleIds: toggle(draft.roleIds, id, ["lecteur"]) })}
-						/>
-					</Section>
-					<Section title={t("access.members")}>
-						{people.length ? (
-							<CheckList
-								items={people}
-								values={draft.members || []}
-								labelOf={(u) => prettyLogin(u.username)}
-								onToggle={(id) => setDraft({ ...draft, members: toggle(draft.members, id, []) })}
-							/>
-						) : <p className="am-note">{t("access.noMembers")}</p>}
-					</Section>
-					<div className="am-actions">
-						<Button type="button" size="sm" disabled={dir.busy || !draft.name.trim()} onClick={() => void save()}>{t("actions.save")}</Button>
-						{draft.id ? <button type="button" className="am-text-btn is-danger" onClick={() => setConfirm(current)}>{t("access.deleteConfirm")}</button> : null}
-					</div>
-					{confirm ? (
-						<ConfirmPopup
-							title={t("access.deleteGroupTitle", { name: confirm.name })}
-							body={t("access.deleteGroupBody", { n: (confirm.members || []).length })}
-							busy={dir.busy}
-							onCancel={() => setConfirm(null)}
-							onOk={() => void remove(confirm)}
-						/>
-					) : null}
-					{current && draft.id ? (
-						<Section title={t("access.effective")} hint={t("access.groupEffectiveHint", { n: (current.members || []).length })}>
-							<EffectiveTree user={syntheticUserFromGroup(current)} doc={MiniDoc({ ...dir, tabs })} onWhy={setWhy} />
-							<WhyPanel info={why} onClose={() => setWhy(null)} />
-						</Section>
-					) : null}
-				</>
+			{confirm ? (
+				<ConfirmPopup
+					title={t("access.deleteGroupTitle", { name: confirm.name })}
+					body={t("access.deleteGroupBody", { members: tp("access.memberCount", (confirm.members || []).length) })}
+					busy={dir.busy}
+					onCancel={() => setConfirm(null)}
+					onOk={() => void remove(confirm)}
+				/>
 			) : null}
-		/>
+			<DiscardAsk ask={expand.ask} onKeep={expand.dismissAsk} onDiscard={expand.confirmAsk} />
+		</ListShell>
 	);
 }
 
-export function AccessRoles({ token, actor, tabs: seedTabs }) {
+export function AccessRoles({ token, tabs: seedTabs, directories }) {
 	const dir = useDirectory(token);
 	const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
-	const [sel, setSel] = useState(null);
-	const [screen, setScreen] = useState("detail");
+	const expand = useExpandSession();
+	const snap = useRef(null);
 	const [draft, setDraft] = useState(null);
 	const [q, setQ] = useState("");
 	const [search, setSearch] = useState("");
 	const [basedOn, setBasedOn] = useState("");
 	const [confirm, setConfirm] = useState(null);
 	const [filter, setFilter] = useState("all");
-	const current = dir.roles.find((r) => r.id === sel);
+	const creating = expand.openId === NEW_ROW;
+	const current = dir.roles.find((r) => r.id === expand.openId);
 	const qn = search.trim().toLowerCase();
 	const filteredRoles = dir.roles.filter((r) => {
 		if (filter === "system" && !r.system) return false;
@@ -815,44 +1119,79 @@ export function AccessRoles({ token, actor, tabs: seedTabs }) {
 		if (qn && !roleTitle(r.id, dir.roles).toLowerCase().includes(qn)) return false;
 		return true;
 	});
+	const providers = pickerProviders(directories);
 
-	function open(r) {
-		setSel(r.id);
-		setScreen("detail");
-		setConfirm(null);
-		setDraft(null);
+	function holders(r) {
+		return {
+			userIds: dir.users.filter((u) => (u.roleIds || []).includes(r.id) && u.id !== "admin").map((u) => u.id),
+			groupIds: dir.groups.filter((g) => (g.roleIds || []).includes(r.id)).map((g) => g.id)
+		};
 	}
-	function startCreate(from) {
-		const src = from || dir.roles.find((r) => r.id === basedOn);
-		const copied = Boolean(from && src);
-		setScreen("edit");
-		setSel("new");
-		setDraft({
-			id: "",
-			name: copied ? `${String(src.name || "").replace(/\s*\((copie|copy)\)\s*$/i, "")} (${t("copy.suffix")})`.slice(0, 40) : "",
-			description: src?.description || "",
-			grants: src ? JSON.parse(JSON.stringify(src.grants || [])) : [],
-			userIds: [],
-			groupIds: []
-		});
-	}
-	function startEdit(r) {
-		if (r.id === "owner") return;
-		setScreen("edit");
-		setDraft({
+	function roleDraft(r) {
+		const h = holders(r);
+		return {
 			id: r.id,
 			name: r.name,
 			description: r.description || "",
-			grants: JSON.parse(JSON.stringify(r.grants || [])),
-			userIds: dir.users.filter((u) => (u.roleIds || []).includes(r.id) && u.id !== "admin").map((u) => u.id),
-			groupIds: dir.groups.filter((g) => (g.roleIds || []).includes(r.id)).map((g) => g.id)
-		});
+			grants: clone(r.grants || []),
+			userIds: h.userIds,
+			groupIds: h.groupIds,
+			system: Boolean(r.system)
+		};
+	}
+	function blankDraft(from) {
+		const src = from || dir.roles.find((r) => r.id === basedOn);
+		const copied = Boolean(from && src);
+		return {
+			id: "",
+			name: copied ? `${String(src.name || "").replace(/\s*\((copie|copy)\)\s*$/i, "")} (${t("copy.suffix")})`.slice(0, 40) : "",
+			description: src?.description || "",
+			grants: src ? clone(src.grants || []) : [],
+			userIds: [],
+			groupIds: [],
+			system: false
+		};
+	}
+	function load(next, edit) {
+		snap.current = next ? clone(next) : null;
+		setDraft(next);
+		expand.markDirty(false);
+		if (edit) expand.setEditing(true);
+	}
+	function patch(next) {
+		setDraft(next);
+		expand.markDirty(!same(next, snap.current));
+	}
+	function toggleRow(r) {
+		if (expand.openId === r.id) {
+			expand.requestClose(() => load(null));
+			return;
+		}
+		expand.requestOpen(r.id, { apply: () => load(roleDraft(r)) });
+	}
+	function openCreate(from) {
+		expand.requestOpen(NEW_ROW, { edit: true, apply: () => load(blankDraft(from), true) });
+	}
+	function beginEdit() {
+		if (!draft || draft.id === "owner") return;
+		snap.current = clone(draft);
+		expand.markDirty(false);
+		expand.setEditing(true);
+	}
+	function cancelEdit() {
+		if (creating) {
+			expand.markDirty(false);
+			expand.requestClose(() => load(null));
+			return;
+		}
+		load(snap.current ? clone(snap.current) : draft);
+		expand.setEditing(false);
 	}
 	async function save() {
 		if (!draft?.name?.trim()) return;
 		dir.setBusy(true);
 		try {
-			dir.apply(await saveRole({
+			const res = await saveRole({
 				data: {
 					token,
 					id: draft.id || undefined,
@@ -862,10 +1201,19 @@ export function AccessRoles({ token, actor, tabs: seedTabs }) {
 					userIds: draft.userIds,
 					groupIds: draft.groupIds
 				}
-			}));
+			});
+			dir.apply(res);
 			toast.success(t("toast.saved"));
-			setScreen("detail");
-			setDraft(null);
+			const saved = (res.roles || []).find((r) => r.id === draft.id)
+				|| (res.roles || []).find((r) => r.name.toLowerCase() === draft.name.trim().toLowerCase());
+			if (saved) {
+				expand.stay(saved.id);
+				load(roleDraft(saved));
+			} else {
+				expand.stay(draft.id || null);
+				expand.setEditing(false);
+				expand.markDirty(false);
+			}
 		} catch (err) {
 			if (!sessionGone(err)) toast.error(te(err));
 		} finally {
@@ -878,7 +1226,8 @@ export function AccessRoles({ token, actor, tabs: seedTabs }) {
 			dir.apply(await deleteRole({ data: { token, id: r.id } }));
 			toast.success(t("access.deletedRole"));
 			setConfirm(null);
-			setSel(null);
+			expand.markDirty(false);
+			expand.requestClose(() => load(null));
 		} catch (err) {
 			if (!sessionGone(err)) toast.error(te(err));
 		} finally {
@@ -886,68 +1235,12 @@ export function AccessRoles({ token, actor, tabs: seedTabs }) {
 		}
 	}
 
-	if (screen === "edit" && draft) {
-		const locked = draft.id === "owner";
-		return (
-			<div className="am-work is-editor">
-				<div className="am-toolbar">
-					<button type="button" className="am-back is-inline" onClick={() => { setScreen("detail"); setDraft(null); }}>
-						<ChevronLeft className="size-3.5" /> {t("access.backList")}
-					</button>
-					<span className="am-toolbar-title">{draft.id ? t("access.editRole") : t("access.createRole")}</span>
-				</div>
-				<div className="am-editor">
-					<div className="am-editor-meta">
-						<label className="am-field">
-							<span>{t("access.roleName")}</span>
-							<input className={INPUT} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-						</label>
-						<label className="am-field">
-							<span>{t("access.roleDesc")}</span>
-							<textarea className={`${INPUT} am-textarea`} rows={2} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-						</label>
-						{!draft.id ? (
-							<label className="am-field">
-								<span>{t("access.basedOn")}</span>
-								<select className={INPUT} value={basedOn} onChange={(e) => {
-									const id = e.target.value;
-									setBasedOn(id);
-									const src = dir.roles.find((r) => r.id === id);
-									if (src) setDraft({ ...draft, grants: JSON.parse(JSON.stringify(src.grants || [])) });
-								}}>
-									<option value="">{t("access.basedNone")}</option>
-									{dir.roles.map((r) => <option key={r.id} value={r.id}>{roleTitle(r.id, dir.roles)}</option>)}
-								</select>
-							</label>
-						) : null}
-						{!locked ? (
-							<>
-								<p className="am-kicker">{t("access.typeUser")}</p>
-								<CheckList items={dir.users.filter((u) => u.id !== "admin")} values={draft.userIds || []} labelOf={(u) => prettyLogin(u.username)} onToggle={(id) => setDraft({ ...draft, userIds: draft.userIds.includes(id) ? draft.userIds.filter((x) => x !== id) : [...draft.userIds, id] })} />
-								<p className="am-kicker">{t("access.typeGroup")}</p>
-								<CheckList items={dir.groups} values={draft.groupIds || []} labelOf={(g) => g.name} onToggle={(id) => setDraft({ ...draft, groupIds: draft.groupIds.includes(id) ? draft.groupIds.filter((x) => x !== id) : [...draft.groupIds, id] })} />
-							</>
-						) : <p className="am-note">{t("access.roleLocked")}</p>}
-					</div>
-					<div className="am-editor-body">
-						<p className="am-kicker">{t("access.permPortal")}</p>
-						<PortalActions grants={draft.grants} setGrants={(g) => setDraft({ ...draft, grants: g })} locked={locked} />
-						<SearchField value={q} onChange={setQ} placeholder={t("access.searchPerms")} />
-						<ResourceTree tabs={tabs} grants={draft.grants} setGrants={locked ? () => {} : (g) => setDraft({ ...draft, grants: g })} query={q} readOnly={locked} />
-					</div>
-				</div>
-				<div className="am-editor-foot">
-					<button type="button" className="am-text-btn" onClick={() => { setScreen("detail"); setDraft(null); }}>{t("actions.cancel")}</button>
-					<Button type="button" size="sm" disabled={dir.busy || !draft.name.trim()} onClick={() => void save()}>{draft.id ? t("actions.save") : t("access.createRole")}</Button>
-				</div>
-			</div>
-		);
-	}
+	const rows = creating ? [{ id: NEW_ROW, name: draft?.name || t("access.createRole"), system: false, userCount: 0, groupCount: 0, phantom: true }, ...filteredRoles] : filteredRoles;
+	const empty = !filteredRoles.length && !creating;
+	const locked = draft?.id === "owner";
 
 	return (
-		<Workbench
-			selected={Boolean(current)}
-			onBack={() => setSel(null)}
+		<ListShell
 			toolbar={(
 				<>
 					<SearchField value={search} onChange={setSearch} placeholder={t("access.searchRoles")} />
@@ -960,62 +1253,143 @@ export function AccessRoles({ token, actor, tabs: seedTabs }) {
 							{ id: "custom", label: t("access.custom") }
 						]}
 					/>
-					<Button type="button" size="sm" className="h-9 shrink-0" onClick={() => startCreate()}>
+					<Button type="button" size="sm" className="h-9 shrink-0" onClick={() => openCreate()}>
 						<Plus className="size-3.5" /> {t("access.createRole")}
 					</Button>
 				</>
 			)}
-			master={!filteredRoles.length ? (
-				<EmptyHint text={t("access.noCustomRoles")} action={<Button type="button" size="sm" onClick={() => startCreate()}>{t("access.createRole")}</Button>} />
+		>
+			{empty ? (
+				<EmptyHint icon={Shield} text={t("access.noCustomRoles")} action={<Button type="button" size="sm" onClick={() => openCreate()}>{t("access.createRole")}</Button>} />
 			) : (
-				<table className="am-table">
-					<thead>
-						<tr>
-							<th>{t("access.roleName")}</th>
-							<th>{t("access.roleHolders")}</th>
-							<th>{t("access.colType")}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{filteredRoles.map((r) => (
-							<tr key={r.id} className={sel === r.id ? "is-on" : ""} onClick={() => open(r)}>
-								<td>{roleTitle(r.id, dir.roles)}</td>
-								<td className="am-dim">{t("access.assignedPlain", { users: r.userCount || 0, groups: r.groupCount || 0 })}</td>
-								<td className="am-dim">{r.system ? t("access.system") : t("access.custom")}</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
+				<div className="am-list" role="list">
+					<ListHead cells={[<span key="n">{t("access.roleName")}</span>, <span key="h">{t("access.roleHolders")}</span>, <span key="t" className="am-row-end">{t("access.colType")}</span>]} />
+					{rows.map((r) => {
+						const open = expand.openId === r.id || (r.phantom && creating);
+						const rowDraft = open ? draft : null;
+						const view = current && !r.phantom ? current : r;
+						return (
+							<ExpandRow
+								key={r.id}
+								id={r.id}
+								expanded={open}
+								onToggle={() => (r.phantom ? expand.requestClose(() => load(null)) : toggleRow(r))}
+								cells={[
+									<span key="n" className="am-row-title">{rowDraft?.name || roleTitle(r.id, dir.roles) || t("access.createRole")}</span>,
+									<span key="h" className="am-dim">{holdersLine(view.userCount || (rowDraft?.userIds || []).length, view.groupCount || (rowDraft?.groupIds || []).length)}</span>,
+									<span key="t" className="am-row-end am-dim">{r.system ? t("access.system") : t("access.custom")}</span>
+								]}
+							>
+								{rowDraft ? (
+									<>
+										{expand.editing ? (
+											<Section>
+												<Pair>
+													<label className="am-field">
+														<span>{t("access.roleName")}</span>
+														<input className={INPUT} value={rowDraft.name} disabled={locked} onChange={(e) => patch({ ...rowDraft, name: e.target.value })} />
+													</label>
+													{creating ? (
+														<label className="am-field">
+															<span>{t("access.basedOn")}</span>
+															<select className={INPUT} value={basedOn} onChange={(e) => {
+																const id = e.target.value;
+																setBasedOn(id);
+																const src = dir.roles.find((x) => x.id === id);
+																if (src) patch({ ...rowDraft, grants: clone(src.grants || []) });
+															}}>
+																<option value="">{t("access.basedNone")}</option>
+																{dir.roles.map((x) => <option key={x.id} value={x.id}>{roleTitle(x.id, dir.roles)}</option>)}
+															</select>
+														</label>
+													) : (
+														<label className="am-field">
+															<span>{t("access.roleDesc")}</span>
+															<input className={INPUT} value={rowDraft.description} disabled={locked} onChange={(e) => patch({ ...rowDraft, description: e.target.value })} />
+														</label>
+													)}
+												</Pair>
+												{creating ? (
+													<label className="am-field">
+														<span>{t("access.roleDesc")}</span>
+														<input className={INPUT} value={rowDraft.description} onChange={(e) => patch({ ...rowDraft, description: e.target.value })} />
+													</label>
+												) : null}
+											</Section>
+										) : (
+											<p className="am-meta">{rowDraft.description || (view.system ? t("access.systemHint") : t("access.noDesc"))}</p>
+										)}
+										<Section>
+											<Pair>
+												<div>
+													<h5>{t("access.typeUser")}</h5>
+													<EntityPicker
+														kind="user"
+														items={dir.users.filter((u) => u.id !== "admin")}
+														selectedIds={rowDraft.userIds || []}
+														labelOf={(u) => prettyLogin(u.username)}
+														providers={providers}
+														readOnly={!expand.editing || locked}
+														onChange={(ids) => patch({ ...rowDraft, userIds: ids })}
+													/>
+												</div>
+												<div>
+													<h5>{t("access.typeGroup")}</h5>
+													<EntityPicker
+														kind="group"
+														items={dir.groups}
+														selectedIds={rowDraft.groupIds || []}
+														labelOf={(g) => g.name}
+														providers={providers}
+														readOnly={!expand.editing || locked}
+														onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
+													/>
+												</div>
+											</Pair>
+										</Section>
+										<Section title={t("access.permissions")}>
+											<p className="am-kicker">{t("access.permPortal")}</p>
+											<PortalActions grants={rowDraft.grants} setGrants={locked || !expand.editing ? () => {} : (g) => patch({ ...rowDraft, grants: g })} locked={locked || !expand.editing} />
+											{expand.editing && !locked ? <SearchField value={q} onChange={setQ} placeholder={t("access.searchPerms")} /> : null}
+											<ResourceTree
+												tabs={tabs}
+												grants={rowDraft.grants}
+												setGrants={locked || !expand.editing ? () => {} : (g) => patch({ ...rowDraft, grants: g })}
+												query={expand.editing ? q : ""}
+												readOnly={locked || !expand.editing}
+											/>
+										</Section>
+										<RowActions
+											editing={expand.editing}
+											onEdit={view.id !== "owner" && !view.phantom ? beginEdit : null}
+											onCancel={cancelEdit}
+											onSave={() => void save()}
+											saveDisabled={dir.busy || !rowDraft.name.trim()}
+											extra={!expand.editing && !creating ? (
+												<button type="button" className="am-text-btn" onClick={() => openCreate(view)}><Copy className="size-3.5" /> {t("access.duplicate")}</button>
+											) : null}
+											danger={!expand.editing && !creating && !view.system ? (
+												<button type="button" className="am-text-btn is-danger" onClick={() => setConfirm(view)}>{t("access.deleteConfirm")}</button>
+											) : null}
+										/>
+									</>
+								) : null}
+							</ExpandRow>
+						);
+					})}
+				</div>
 			)}
-			detail={current ? (
-				<>
-					<header className="am-id-head">
-						<div>
-							<h4>{roleTitle(current.id, dir.roles)}</h4>
-							<p className="am-note">{current.description || (current.system ? t("access.systemHint") : t("access.noDesc"))}</p>
-						</div>
-					</header>
-					<p className="am-stat">{t("access.roleStats", { users: current.userCount || 0, groups: current.groupCount || 0, n: current.grantCount || 0 })}</p>
-					<div className="am-actions">
-						{current.id !== "owner" ? <Button type="button" size="sm" onClick={() => startEdit(current)}>{t("access.editRole")}</Button> : null}
-						<button type="button" className="am-text-btn" onClick={() => startCreate(current)}><Copy className="size-3.5" /> {t("access.duplicate")}</button>
-						{!current.system ? <button type="button" className="am-text-btn is-danger" onClick={() => setConfirm(current)}>{t("access.deleteConfirm")}</button> : null}
-					</div>
-					{confirm ? (
-						<ConfirmPopup
-							title={t("access.deleteRoleTitle", { name: confirm.name })}
-							body={t("access.deleteRoleBody", { users: confirm.userCount || 0, groups: confirm.groupCount || 0 })}
-							busy={dir.busy}
-							onCancel={() => setConfirm(null)}
-							onOk={() => void remove(confirm)}
-						/>
-					) : null}
-					<Section title={t("access.permissions")}>
-						<EffectiveTree user={{ id: "_r", roleIds: [current.id], grants: [] }} doc={MiniDoc(dir)} />
-					</Section>
-				</>
+			{confirm ? (
+				<ConfirmPopup
+					title={t("access.deleteRoleTitle", { name: confirm.name })}
+					body={t("access.deleteRoleBody", { users: tp("access.nUsers", confirm.userCount || 0), groups: tp("access.nGroups", confirm.groupCount || 0) })}
+					busy={dir.busy}
+					onCancel={() => setConfirm(null)}
+					onOk={() => void remove(confirm)}
+				/>
 			) : null}
-		/>
+			<DiscardAsk ask={expand.ask} onKeep={expand.dismissAsk} onDiscard={expand.confirmAsk} />
+		</ListShell>
 	);
 }
 

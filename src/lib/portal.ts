@@ -19,7 +19,8 @@ import {
 	publicTrash,
 	emptyTrash
 } from "./history";
-import { t, withLocale } from "./i18n";
+import { t, withLocale, asTimeFormat, asTimeZone, DATE_FORMATS } from "./i18n";
+import { asDirectories, asLoginOrder, directoryReady, pickDirectory, syncLegacyLdap } from "./ldap-runtime";
 import { defaultTagHex, remapTagHex } from "./tag-colors";
 import {
 	absorbResourceAcl,
@@ -126,7 +127,9 @@ export type PortalSettings = {
   cssDark: string;
   documentTitle: string;
   locale: "en" | "fr";
-  dateFormat: "ymd" | "dmy" | "mdy" | "iso";
+  dateFormat: "ymd" | "yyyy" | "dmy" | "mdy" | "iso";
+  timeFormat: "24h" | "12h";
+  timezone: string;
   favicon: string;
   favsHideLabel: boolean;
   favNotes: boolean;
@@ -159,7 +162,21 @@ export type PortalSettings = {
   ldapUserFilter: string;
   ldapDomain: string;
   ldapAutoCreate: boolean;
-  loginOrder: Array<"local" | "ad">;
+  ldapDirectories: Array<{
+    id: string;
+    enabled: boolean;
+    host: string;
+    port: number;
+    tls: boolean;
+    tlsVerify: boolean;
+    bindDn: string;
+    bindPassword: string;
+    baseDn: string;
+    userFilter: string;
+    domain: string;
+    autoCreate: boolean;
+  }>;
+  loginOrder: string[];
 };
 
 export type CustomIcon = {
@@ -419,9 +436,12 @@ function defaultSettings() {
 		ldapUserFilter: "",
 		ldapDomain: "",
 		ldapAutoCreate: false,
-		loginOrder: ["local", "ad"],
+		ldapDirectories: [],
+		loginOrder: ["local"],
 		locale: "en",
-		dateFormat: "ymd"
+		dateFormat: "ymd",
+		timeFormat: "24h",
+		timezone: ""
 	};
 }
 function blankTabs() {
@@ -538,21 +558,6 @@ function asUsers(raw) {
 			source: row.source === "ad" || row.source === "oidc" ? row.source : "local"
 		};
 	}).filter((u) => u.username);
-}
-const LOGIN_REALMS = ["local", "ad"];
-function asLoginOrder(raw) {
-	const seen = /* @__PURE__ */ new Set();
-	const out = [];
-	if (Array.isArray(raw)) {
-		for (const value of raw) {
-			const id = value === "ad" ? "ad" : value === "local" ? "local" : "";
-			if (!id || seen.has(id)) continue;
-			seen.add(id);
-			out.push(id);
-		}
-	}
-	for (const id of LOGIN_REALMS) if (!seen.has(id)) out.push(id);
-	return out;
 }
 function asIdList(raw) {
 	if (!Array.isArray(raw)) return [];
@@ -948,9 +953,9 @@ async function emit(doc, user, tabId) {
 	if (out.session && user?.id === "admin") out.session.mustChangePassword = await isDefaultAdminPassword(doc);
 	return out;
 }
-function parisDayKey(d = /* @__PURE__ */ new Date()) {
+function dayKey(d = /* @__PURE__ */ new Date(), tz) {
 	return new Intl.DateTimeFormat("en-CA", {
-		timeZone: "Europe/Paris",
+		timeZone: asTimeZone(tz) || "UTC",
 		year: "numeric",
 		month: "2-digit",
 		day: "2-digit"
@@ -961,10 +966,11 @@ function computeClickStats(doc) {
 	for (const tab of doc.tabs) for (const cat of tab.categories) for (const app of cat.apps) if (app.kind === "app") all += app.clicks || 0;
 	const days = doc.clickDays ?? {};
 	const now = Date.now();
-	const today = parisDayKey();
-	const weekFrom = parisDayKey(/* @__PURE__ */ new Date(now - 5184e5));
-	const monthFrom = parisDayKey(/* @__PURE__ */ new Date(now - 25056e5));
-	const yearFrom = parisDayKey(/* @__PURE__ */ new Date(now - 314496e5));
+	const tz = doc.settings?.timezone;
+	const today = dayKey(new Date(now), tz);
+	const weekFrom = dayKey(/* @__PURE__ */ new Date(now - 5184e5), tz);
+	const monthFrom = dayKey(/* @__PURE__ */ new Date(now - 25056e5), tz);
+	const yearFrom = dayKey(/* @__PURE__ */ new Date(now - 314496e5), tz);
 	let todayN = 0;
 	let week = 0;
 	let month = 0;
@@ -989,10 +995,10 @@ function computeClickStats(doc) {
 	};
 }
 function bumpClickDay(doc) {
-	const key = parisDayKey();
+	const key = dayKey(new Date(), doc.settings?.timezone);
 	const days = { ...doc.clickDays ?? {} };
 	days[key] = (days[key] || 0) + 1;
-	const cutoff = parisDayKey(/* @__PURE__ */ new Date(Date.now() - 3456e7));
+	const cutoff = dayKey(/* @__PURE__ */ new Date(Date.now() - 3456e7), doc.settings?.timezone);
 	for (const k of Object.keys(days)) if (k < cutoff) delete days[k];
 	doc.clickDays = days;
 }
@@ -1038,20 +1044,13 @@ function asStore(raw) {
 			oidcClientSecret: String(doc.settings.oidcClientSecret || "").slice(0, 200),
 			oidcLabel: String(doc.settings.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
 			oidcAutoCreate: Boolean(doc.settings.oidcAutoCreate),
-			ldapEnabled: Boolean(doc.settings.ldapEnabled),
-			ldapHost: String(doc.settings.ldapHost || "").trim().slice(0, 253),
-			ldapPort: Math.max(1, Math.min(65535, Number(doc.settings.ldapPort) || 0)) || (doc.settings.ldapTls === false ? 389 : 636),
-			ldapTls: doc.settings.ldapTls !== false,
-			ldapTlsVerify: doc.settings.ldapTlsVerify !== false,
-			ldapBindDn: String(doc.settings.ldapBindDn || "").trim().slice(0, 300),
-			ldapBindPassword: String(doc.settings.ldapBindPassword || "").slice(0, 200),
-			ldapBaseDn: String(doc.settings.ldapBaseDn || "").trim().slice(0, 300),
-			ldapUserFilter: String(doc.settings.ldapUserFilter || "").trim().slice(0, 300),
-			ldapDomain: String(doc.settings.ldapDomain || "").trim().slice(0, 60),
-			ldapAutoCreate: Boolean(doc.settings.ldapAutoCreate),
-			loginOrder: asLoginOrder(doc.settings.loginOrder),
+			...syncLegacyLdap(asDirectories(doc.settings)),
+			ldapDirectories: asDirectories(doc.settings),
+			loginOrder: asLoginOrder(doc.settings.loginOrder, asDirectories(doc.settings)),
 			locale: doc.settings.locale === "fr" ? "fr" : "en",
-			dateFormat: ["dmy", "mdy", "iso"].includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd"
+			dateFormat: DATE_FORMATS.includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd",
+			timeFormat: asTimeFormat(doc.settings.timeFormat),
+			timezone: asTimeZone(doc.settings.timezone)
 		},
 		customIcons: (Array.isArray(doc.customIcons) ? doc.customIcons : []).slice(0, MAX_CUSTOM_ICONS),
 		lastTabId: typeof doc.lastTabId === "string" ? doc.lastTabId : void 0,
@@ -1210,6 +1209,8 @@ function manageTabs(doc) {
 }
 function clientSettings(doc, user) {
 	const s = doc.settings;
+	const dirs = asDirectories(s);
+	const realms = dirs.filter(directoryReady).map((d) => ({ id: d.id, label: d.domain }));
 	const out = {
 		...s,
 		logo: toClientAsset(s.logo),
@@ -1217,10 +1218,16 @@ function clientSettings(doc, user) {
 		oidcEnabled: Boolean(s.oidcEnabled) && Boolean(s.oidcIssuer) && Boolean(s.oidcClientId),
 		oidcLabel: String(s.oidcLabel || "SSO").slice(0, 40) || "SSO",
 		oidcHasSecret: Boolean(s.oidcClientSecret),
-		ldapEnabled: Boolean(s.ldapEnabled) && Boolean(s.ldapHost) && Boolean(s.ldapDomain),
-		ldapDomain: Boolean(s.ldapEnabled) && Boolean(s.ldapHost) && Boolean(s.ldapDomain) ? String(s.ldapDomain || "").slice(0, 60) : "",
-		ldapHasBindPassword: Boolean(s.ldapBindPassword),
-		loginOrder: asLoginOrder(s.loginOrder),
+		ldapEnabled: realms.length > 0,
+		ldapDomain: realms[0]?.label || "",
+		ldapHasBindPassword: dirs.some((d) => Boolean(d.bindPassword)),
+		ldapDirectories: dirs.map((d) => {
+			const row = { ...d, hasBindPassword: Boolean(d.bindPassword) };
+			delete row.bindPassword;
+			return row;
+		}),
+		ldapRealms: realms,
+		loginOrder: asLoginOrder(s.loginOrder, dirs),
 		devAdminNoPassword: isDevRuntime() && Boolean(s.devAdminNoPassword)
 	};
 	delete out.oidcClientSecret;
@@ -1239,6 +1246,7 @@ function clientSettings(doc, user) {
 		delete out.ldapUserFilter;
 		delete out.ldapAutoCreate;
 		delete out.ldapHasBindPassword;
+		delete out.ldapDirectories;
 	} else {
 		out.oidcIssuer = String(s.oidcIssuer || "");
 		out.oidcClientId = String(s.oidcClientId || "");
@@ -1251,6 +1259,11 @@ function clientSettings(doc, user) {
 		out.ldapBaseDn = String(s.ldapBaseDn || "");
 		out.ldapUserFilter = String(s.ldapUserFilter || "");
 		out.ldapAutoCreate = Boolean(s.ldapAutoCreate);
+		out.ldapDirectories = dirs.map((d) => {
+			const row = { ...d, hasBindPassword: Boolean(d.bindPassword) };
+			delete row.bindPassword;
+			return row;
+		});
 	}
 	return out;
 }
@@ -1489,7 +1502,7 @@ export const listHistory = createServerFn({ method: "POST" }).validator(z.object
 	pruneHistory(doc);
 	if ((doc.history || []).length !== before) await writeDocUnlocked(doc);
 	const visible = (doc.history || []).filter((ev) => historyVisible(doc, user, ev));
-	return withLocale(doc.settings?.locale, () => ({
+	return withLocale(doc.settings, () => ({
 		audit: user.canAudit || user.role === "admin" ? publicAudit(visible) : [],
 		trash: user.canRestore || user.role === "admin" ? publicTrash(visible) : [],
 		canEmpty: Boolean(user.canPurge || user.role === "admin"),
@@ -1518,7 +1531,7 @@ export const purgeTrash = createServerFn({ method: "POST" }).validator(z.object(
 	if (!user.canPurge && user.role !== "admin") throw new Error("errors.insufficient");
 	emptyTrash(doc);
 	const portal = await emit(doc, user);
-	return withLocale(doc.settings?.locale, () => ({
+	return withLocale(doc.settings, () => ({
 		portal,
 		audit: publicAudit(doc.history),
 		trash: publicTrash(doc.history),
@@ -1607,7 +1620,9 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	sessionHttpOnly: z.boolean().optional(),
 	devAdminNoPassword: z.boolean().optional(),
 	locale: z.enum(["en", "fr"]).optional(),
-	dateFormat: z.enum(["ymd", "dmy", "mdy", "iso"]).optional(),
+	dateFormat: z.enum(["ymd", "yyyy", "dmy", "mdy", "iso"]).optional(),
+	timeFormat: z.enum(["24h", "12h"]).optional(),
+	timezone: z.string().max(80).optional(),
 	tabId: z.string().optional()
 })).handler(async ({ data, request }) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
@@ -1634,7 +1649,9 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		probeAuthOnly: typeof data.probeAuthOnly === "boolean" ? data.probeAuthOnly : Boolean(doc.settings.probeAuthOnly),
 		sessionHttpOnly: typeof data.sessionHttpOnly === "boolean" ? data.sessionHttpOnly : Boolean(doc.settings.sessionHttpOnly),
 		devAdminNoPassword: typeof data.devAdminNoPassword === "boolean" ? data.devAdminNoPassword : Boolean(doc.settings.devAdminNoPassword),
-		dateFormat: ["ymd", "dmy", "mdy", "iso"].includes(data.dateFormat) ? data.dateFormat : doc.settings.dateFormat === "dmy" || doc.settings.dateFormat === "mdy" || doc.settings.dateFormat === "iso" ? doc.settings.dateFormat : "ymd",
+		dateFormat: DATE_FORMATS.includes(data.dateFormat) ? data.dateFormat : DATE_FORMATS.includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd",
+		timeFormat: data.timeFormat === "12h" || data.timeFormat === "24h" ? data.timeFormat : asTimeFormat(doc.settings.timeFormat),
+		timezone: typeof data.timezone === "string" ? asTimeZone(data.timezone) : asTimeZone(doc.settings.timezone),
 		locale: data.locale === "fr" || data.locale === "en" ? data.locale : doc.settings.locale === "fr" ? "fr" : "en"
 	};
 	pruneUnusedTags(doc);
@@ -1665,20 +1682,21 @@ export const updateThemeCss = createServerFn({ method: "POST" }).validator(z.obj
 export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object({
 	username: z.string().min(1).max(80),
 	password: z.string().max(120).optional().default(""),
-	domain: z.enum(["local", "ad"]).optional()
+	domain: z.string().min(1).max(80).optional()
 })).handler(async (ctx) => {
 	const data = ctx.data;
-	const { ldapAuthenticate, ldapLoginName, ldapReady } = await import("./ldap-runtime");
+	const { ldapAuthenticate, ldapLoginName } = await import("./ldap-runtime");
 	const username = ldapLoginName(data.username);
 	if (!username) throw new Error("errors.badLogin");
-	const domain = data.domain === "ad" ? "ad" : "local";
+	const domain = String(data.domain || "local");
 	const key = clientKey(`${domain}:${username}`, ctx.request);
 	if (loginBlocked(key)) throw new Error("errors.badLogin");
-	if (domain === "ad") {
+	if (domain !== "local") {
 		const snap = await readDoc();
-		if (!ldapReady(snap.settings)) throw new Error("errors.ldapOff");
+		const dir = pickDirectory(snap.settings, domain);
+		if (!directoryReady(dir)) throw new Error("errors.ldapOff");
 		try {
-			await ldapAuthenticate(snap.settings, username, data.password || "");
+			await ldapAuthenticate(dir, username, data.password || "");
 		} catch (err) {
 			loginFail(key);
 			throw err instanceof Error ? err : new Error("errors.ldapFail");
@@ -1687,7 +1705,7 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 			ensureUsers(doc);
 			let user = doc.users.find((u) => u.username === username);
 			if (!user) {
-				if (!doc.settings.ldapAutoCreate) {
+				if (!dir.autoCreate) {
 					loginFail(key);
 					throw new Error("errors.ldapUnknownUser");
 				}
@@ -1798,48 +1816,66 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 }));
 export const updateLdapSettings = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
-	ldapEnabled: z.boolean(),
-	ldapHost: z.string().max(253),
-	ldapPort: z.number().int().min(1).max(65535).optional(),
-	ldapTls: z.boolean().optional(),
-	ldapTlsVerify: z.boolean().optional(),
-	ldapBindDn: z.string().max(300).optional(),
-	ldapBindPassword: z.string().max(200).optional(),
-	ldapBaseDn: z.string().max(300).optional(),
-	ldapUserFilter: z.string().max(300).optional(),
-	ldapDomain: z.string().max(60).optional(),
-	ldapAutoCreate: z.boolean().optional(),
+	ldapDirectories: z.array(z.object({
+		id: z.string().min(1).max(80),
+		enabled: z.boolean(),
+		host: z.string().max(253),
+		port: z.number().int().min(1).max(65535).optional(),
+		tls: z.boolean().optional(),
+		tlsVerify: z.boolean().optional(),
+		bindDn: z.string().max(300).optional(),
+		bindPassword: z.string().max(200).optional(),
+		baseDn: z.string().max(300).optional(),
+		userFilter: z.string().max(300).optional(),
+		domain: z.string().max(60).optional(),
+		autoCreate: z.boolean().optional()
+	})).max(8),
 	tabId: z.string().optional()
 })).handler(async ({ data, request }) => mutate(async (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
-	const host = data.ldapHost.trim();
-	const domain = String(data.ldapDomain || "").trim();
-	const bindDn = String(data.ldapBindDn || "").trim();
-	const baseDn = String(data.ldapBaseDn || "").trim();
-	if (data.ldapEnabled) {
-		if (!host) throw new Error("errors.ldapHost");
-		if (/[\s/:]/.test(host)) throw new Error("errors.ldapHost");
-		if (!domain) throw new Error("errors.ldapDomain");
-		if (bindDn && !baseDn) throw new Error("errors.ldapBaseDn");
+	const prev = asDirectories(doc.settings);
+	const prevById = new Map(prev.map((d) => [d.id, d]));
+	const dirs = [];
+	const seen = new Set();
+	for (const row of data.ldapDirectories) {
+		if (seen.has(row.id)) continue;
+		seen.add(row.id);
+		const host = String(row.host || "").trim();
+		const domain = String(row.domain || "").trim();
+		const bindDn = String(row.bindDn || "").trim();
+		const baseDn = String(row.baseDn || "").trim();
+		if (row.enabled) {
+			if (!host) throw new Error("errors.ldapHost");
+			if (/[\s/:]/.test(host)) throw new Error("errors.ldapHost");
+			if (!domain) throw new Error("errors.ldapDomain");
+			if (bindDn && !baseDn) throw new Error("errors.ldapBaseDn");
+		}
+		const old = prevById.get(row.id);
+		let bindPassword = old?.bindPassword || "";
+		if (typeof row.bindPassword === "string" && row.bindPassword && row.bindPassword !== "********") {
+			bindPassword = row.bindPassword.slice(0, 200);
+		}
+		const tls = row.tls !== false;
+		dirs.push({
+			id: row.id,
+			enabled: Boolean(row.enabled),
+			host: host.slice(0, 253),
+			port: row.port || (tls ? 636 : 389),
+			tls,
+			tlsVerify: row.tlsVerify !== false,
+			bindDn: bindDn.slice(0, 300),
+			bindPassword,
+			baseDn: baseDn.slice(0, 300),
+			userFilter: String(row.userFilter || "").trim().slice(0, 300),
+			domain: domain.slice(0, 60),
+			autoCreate: Boolean(row.autoCreate)
+		});
 	}
-	let bindPassword = doc.settings.ldapBindPassword || "";
-	if (typeof data.ldapBindPassword === "string" && data.ldapBindPassword && data.ldapBindPassword !== "********") {
-		bindPassword = data.ldapBindPassword.slice(0, 200);
-	}
-	const tls = data.ldapTls !== false;
 	doc.settings = {
 		...doc.settings,
-		ldapEnabled: Boolean(data.ldapEnabled),
-		ldapHost: host.slice(0, 253),
-		ldapPort: data.ldapPort || (tls ? 636 : 389),
-		ldapTls: tls,
-		ldapTlsVerify: data.ldapTlsVerify !== false,
-		ldapBindDn: bindDn.slice(0, 300),
-		ldapBindPassword: bindPassword,
-		ldapBaseDn: baseDn.slice(0, 300),
-		ldapUserFilter: String(data.ldapUserFilter || "").trim().slice(0, 300),
-		ldapDomain: domain.slice(0, 60),
-		ldapAutoCreate: Boolean(data.ldapAutoCreate)
+		...syncLegacyLdap(dirs),
+		ldapDirectories: dirs,
+		loginOrder: asLoginOrder(doc.settings.loginOrder, dirs)
 	};
 	appendHistory(doc, user, {
 		type: "ldap.update",
@@ -1849,13 +1885,13 @@ export const updateLdapSettings = createServerFn({ method: "POST" }).validator(z
 }));
 export const updateLoginOrder = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
-	loginOrder: z.array(z.enum(["local", "ad"])).min(1).max(8),
+	loginOrder: z.array(z.string().min(1).max(80)).min(1).max(16),
 	tabId: z.string().optional()
 })).handler(async ({ data, request }) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
-		loginOrder: asLoginOrder(data.loginOrder)
+		loginOrder: asLoginOrder(data.loginOrder, asDirectories(doc.settings))
 	};
 	appendHistory(doc, user, {
 		type: "auth.update",

@@ -62,7 +62,8 @@ import {
   Server,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AccessUsers, AccessGroups, AccessRoles, MovePickDialog, MoveSectionDialog } from "@/components/access";
+import { AccessUsers, AccessGroups, AccessRoles, ConfirmPopup, MovePickDialog, MoveSectionDialog } from "@/components/access";
+import { ExpandRow, useExpandSession } from "@/components/expand-row";
 import {
   PortalIcon,
   DockitMark,
@@ -131,14 +132,13 @@ import { collectInventory, inventoryCsv, inventoryPdf } from "@/lib/inventory";
 import { CSS_MAX, sanitizeThemeCss } from "@/lib/theme-css";
 import { DEFAULT_UI_PREFS, clearUiPrefs, readUiPrefs, writeUiPrefs } from "@/lib/ui-prefs";
 import { PASSWORD_MIN } from "@/lib/security";
-import { t, te, tp, td, setLocale, asLocale, localeTag, setDateFormat, asDateFormat, formatWhen } from "@/lib/i18n";
+import { t, te, tp, td, asLocale, localeTag, applyDisplayPrefs, asDateFormat, asTimeFormat, asTimeZone, formatWhen, listTimeZones } from "@/lib/i18n";
 import { TAG_PALETTE, defaultTagHex, randomTagHex, remapTagHex, tagInk, tagTone } from "@/lib/tag-colors";
 
 export const Route = createFileRoute("/")({
   loader: async () => {
     const data = await getPortal({ data: {} });
-    setLocale(data.settings?.locale);
-    setDateFormat(data.settings?.dateFormat);
+    applyDisplayPrefs(data.settings);
     return data;
   },
   component: Home,
@@ -146,7 +146,7 @@ export const Route = createFileRoute("/")({
 
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.04.1";
+var PORTAL_VERSION = "2026.09.04.2";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -670,8 +670,7 @@ function AccountMenu({ loggedIn, editMode, canEdit, canOpenSettings, canManageUs
 function Home() {
 	const initial = Route.useLoaderData();
 	const [data, setData] = useState(initial);
-	setLocale(data.settings?.locale);
-	setDateFormat(data.settings?.dateFormat);
+	applyDisplayPrefs(data.settings);
 	const [editMode, setEditMode] = useState(false);
 	const [token, setToken] = useState("");
 	const [session, setSession] = useState(null);
@@ -2028,8 +2027,7 @@ function Home() {
 	};
 	useEffect(() => {
 		const loc = asLocale(data.settings?.locale);
-		setLocale(loc);
-		setDateFormat(data.settings?.dateFormat);
+		applyDisplayPrefs(data.settings);
 		document.documentElement.lang = loc;
 		const name = String(data.settings.documentTitle || "").trim() || "Dockit";
 		document.title = name;
@@ -2049,7 +2047,9 @@ function Home() {
 		data.settings.documentTitle,
 		data.settings.favicon,
 		data.settings.locale,
-		data.settings.dateFormat
+		data.settings.dateFormat,
+		data.settings.timeFormat,
+		data.settings.timezone
 	]);
 	return /* @__PURE__ */ jsxs("div", {
 		className: "min-h-dvh",
@@ -2872,6 +2872,7 @@ function Home() {
 						oidcLabel: data.settings.oidcLabel || "SSO",
 						ldapEnabled: Boolean(data.settings.ldapEnabled),
 						ldapDomain: data.settings.ldapDomain || "",
+						ldapRealms: data.settings.ldapRealms || [],
 						loginOrder: data.settings.loginOrder,
 						noPassword: Boolean(data.runtime?.isDev && data.settings.devAdminNoPassword),
 						onCancel: () => setModal({ kind: "none" }),
@@ -4417,271 +4418,142 @@ function OidcForm({ initial, onSave, busy }) {
 		},
 		children: [
 			/* @__PURE__ */ jsxs("div", {
-				className: "settings-toggles",
-				children: [/* @__PURE__ */ jsxs("label", {
-					children: [/* @__PURE__ */ jsx("input", {
-						type: "checkbox",
-						checked: oidcEnabled,
-						onChange: (e) => setOidcEnabled(e.target.checked)
-					}), t("oidc.enable")]
-				})]
-			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("oidc.issuer"),
+				className: "settings-card",
 				children: [
-					/* @__PURE__ */ jsx("input", {
-						className: inputClass,
-						value: oidcIssuer,
-						onChange: (e) => setOidcIssuer(e.target.value),
-						placeholder: "https://keycloak.exemple/realms/dockit",
-						required: oidcEnabled
+					/* @__PURE__ */ jsx("p", { className: "settings-kicker", children: t("oidc.boxService") }),
+					/* @__PURE__ */ jsxs("div", {
+						className: "settings-toggles",
+						children: [
+							/* @__PURE__ */ jsxs("label", {
+								children: [/* @__PURE__ */ jsx("input", {
+									type: "checkbox",
+									checked: oidcEnabled,
+									onChange: (e) => setOidcEnabled(e.target.checked)
+								}), t("oidc.enable")]
+							}),
+							/* @__PURE__ */ jsxs("label", {
+								children: [/* @__PURE__ */ jsx("input", {
+									type: "checkbox",
+									checked: oidcAutoCreate,
+									onChange: (e) => setOidcAutoCreate(e.target.checked)
+								}), t("oidc.autoCreate")]
+							})
+						]
 					}),
-					/* @__PURE__ */ jsx("p", {
-						className: "settings-hint",
-						children: t("oidc.issuerHint")
+					/* @__PURE__ */ jsxs(Field, {
+						label: t("oidc.buttonLabel"),
+						children: [/* @__PURE__ */ jsx("input", {
+							className: inputClass,
+							value: oidcLabel,
+							onChange: (e) => setOidcLabel(e.target.value),
+							placeholder: "SSO"
+						})]
 					})
 				]
 			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("oidc.clientId"),
-				children: [/* @__PURE__ */ jsx("input", {
-					className: inputClass,
-					value: oidcClientId,
-					onChange: (e) => setOidcClientId(e.target.value),
-					required: oidcEnabled
-				})]
-			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("oidc.clientSecret"),
+			/* @__PURE__ */ jsxs("div", {
+				className: "settings-card",
 				children: [
-					/* @__PURE__ */ jsx("input", {
-						className: inputClass,
-						type: "password",
-						value: oidcClientSecret,
-						onChange: (e) => setOidcClientSecret(e.target.value),
-						placeholder: initial.oidcHasSecret ? t("oidc.secretUnchanged") : t("oidc.secretOptional")
+					/* @__PURE__ */ jsx("p", { className: "settings-kicker", children: t("oidc.boxClient") }),
+					/* @__PURE__ */ jsxs(Field, {
+						label: t("oidc.issuer"),
+						children: [
+							/* @__PURE__ */ jsx("input", {
+								className: inputClass,
+								value: oidcIssuer,
+								onChange: (e) => setOidcIssuer(e.target.value),
+								placeholder: "https://keycloak.exemple/realms/dockit",
+								required: oidcEnabled
+							}),
+							/* @__PURE__ */ jsx("p", {
+								className: "settings-hint",
+								children: t("oidc.issuerHint")
+							})
+						]
 					}),
-					/* @__PURE__ */ jsx("p", {
-						className: "settings-hint",
-						children: t("oidc.secretHint")
+					/* @__PURE__ */ jsxs(Field, {
+						label: t("oidc.clientId"),
+						children: [/* @__PURE__ */ jsx("input", {
+							className: inputClass,
+							value: oidcClientId,
+							onChange: (e) => setOidcClientId(e.target.value),
+							required: oidcEnabled
+						})]
+					}),
+					/* @__PURE__ */ jsxs(Field, {
+						label: t("oidc.clientSecret"),
+						children: [
+							/* @__PURE__ */ jsx("input", {
+								className: inputClass,
+								type: "password",
+								value: oidcClientSecret,
+								onChange: (e) => setOidcClientSecret(e.target.value),
+								placeholder: initial.oidcHasSecret ? t("oidc.secretUnchanged") : t("oidc.secretOptional")
+							}),
+							/* @__PURE__ */ jsx("p", {
+								className: "settings-hint",
+								children: t("oidc.secretHint")
+							})
+						]
 					})
 				]
 			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("oidc.buttonLabel"),
-				children: [/* @__PURE__ */ jsx("input", {
-					className: inputClass,
-					value: oidcLabel,
-					onChange: (e) => setOidcLabel(e.target.value),
-					placeholder: "SSO"
-				})]
-			}),
 			/* @__PURE__ */ jsxs("div", {
-				className: "settings-toggles",
-				children: [/* @__PURE__ */ jsxs("label", {
-					children: [/* @__PURE__ */ jsx("input", {
-						type: "checkbox",
-						checked: oidcAutoCreate,
-						onChange: (e) => setOidcAutoCreate(e.target.checked)
-					}), t("oidc.autoCreate")]
-				})]
-			}),
-			/* @__PURE__ */ jsxs("div", {
-				className: "settings-note",
+				className: "settings-card",
 				children: [
-					/* @__PURE__ */ jsx("p", {
-						children: t("oidc.redirect")
-					}),
+					/* @__PURE__ */ jsx("p", { className: "settings-kicker", children: t("oidc.redirect") }),
 					/* @__PURE__ */ jsx("p", {
 						className: "settings-hint",
 						children: redirectUri
 					})
 				]
-			}),
-			/* @__PURE__ */ jsx(Button, {
-				type: "submit",
-				size: "sm",
-				disabled: busy,
-				children: t("actions.save")
 			})
 		]
 	});
 }
-function LdapForm({ initial, onSave, busy }) {
-	const [ldapEnabled, setLdapEnabled] = useState(Boolean(initial.ldapEnabled));
-	const [ldapHost, setLdapHost] = useState(initial.ldapHost || "");
-	const [ldapTls, setLdapTls] = useState(initial.ldapTls !== false);
-	const [ldapPort, setLdapPort] = useState(Number(initial.ldapPort) || (initial.ldapTls === false ? 389 : 636));
-	const [ldapTlsVerify, setLdapTlsVerify] = useState(initial.ldapTlsVerify !== false);
-	const [ldapBindDn, setLdapBindDn] = useState(initial.ldapBindDn || "");
-	const [ldapBindPassword, setLdapBindPassword] = useState("");
-	const [ldapBaseDn, setLdapBaseDn] = useState(initial.ldapBaseDn || "");
-	const [ldapUserFilter, setLdapUserFilter] = useState(initial.ldapUserFilter || "");
-	const [ldapDomain, setLdapDomain] = useState(initial.ldapDomain || "");
-	const [ldapAutoCreate, setLdapAutoCreate] = useState(Boolean(initial.ldapAutoCreate));
-	return /* @__PURE__ */ jsxs("form", {
-		className: "settings-stack",
-		onSubmit: (e) => {
-			e.preventDefault();
-			onSave({
-				ldapEnabled,
-				ldapHost: ldapHost.trim(),
-				ldapPort: Number(ldapPort) || (ldapTls ? 636 : 389),
-				ldapTls,
-				ldapTlsVerify,
-				ldapBindDn: ldapBindDn.trim(),
-				ldapBindPassword,
-				ldapBaseDn: ldapBaseDn.trim(),
-				ldapUserFilter: ldapUserFilter.trim(),
-				ldapDomain: ldapDomain.trim(),
-				ldapAutoCreate
-			});
-		},
-		children: [
-			/* @__PURE__ */ jsxs("div", {
-				className: "settings-toggles",
-				children: [/* @__PURE__ */ jsxs("label", {
-					children: [/* @__PURE__ */ jsx("input", {
-						type: "checkbox",
-						checked: ldapEnabled,
-						onChange: (e) => setLdapEnabled(e.target.checked)
-					}), t("ldap.enable")]
-				})]
-			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("ldap.domain"),
-				children: [
-					/* @__PURE__ */ jsx("input", {
-						className: inputClass,
-						value: ldapDomain,
-						onChange: (e) => setLdapDomain(e.target.value),
-						placeholder: "CORP",
-						required: ldapEnabled
-					}),
-					/* @__PURE__ */ jsx("p", {
-						className: "settings-hint",
-						children: t("ldap.domainHint")
-					})
-				]
-			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("ldap.host"),
-				children: [
-					/* @__PURE__ */ jsx("input", {
-						className: inputClass,
-						value: ldapHost,
-						onChange: (e) => setLdapHost(e.target.value),
-						placeholder: "dc.example.local",
-						required: ldapEnabled
-					}),
-					/* @__PURE__ */ jsx("p", {
-						className: "settings-hint",
-						children: t("ldap.hostHint")
-					})
-				]
-			}),
-			/* @__PURE__ */ jsxs("div", {
-				className: "settings-toggles",
-				children: [
-					/* @__PURE__ */ jsxs("label", {
-						children: [/* @__PURE__ */ jsx("input", {
-							type: "checkbox",
-							checked: ldapTls,
-							onChange: (e) => {
-								const on = e.target.checked;
-								setLdapTls(on);
-								if (ldapPort === 389 || ldapPort === 636) setLdapPort(on ? 636 : 389);
-							}
-						}), t("ldap.tls")]
-					}),
-					ldapTls ? /* @__PURE__ */ jsxs("label", {
-						children: [/* @__PURE__ */ jsx("input", {
-							type: "checkbox",
-							checked: ldapTlsVerify,
-							onChange: (e) => setLdapTlsVerify(e.target.checked)
-						}), t("ldap.tlsVerify")]
-					}) : null
-				]
-			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("ldap.port"),
-				children: [/* @__PURE__ */ jsx("input", {
-					className: inputClass,
-					type: "number",
-					min: 1,
-					max: 65535,
-					value: ldapPort,
-					onChange: (e) => setLdapPort(Number(e.target.value) || 0)
-				})]
-			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("ldap.bindDn"),
-				children: [
-					/* @__PURE__ */ jsx("input", {
-						className: inputClass,
-						value: ldapBindDn,
-						onChange: (e) => setLdapBindDn(e.target.value),
-						placeholder: "CN=dockit,OU=Services,DC=example,DC=local"
-					}),
-					/* @__PURE__ */ jsx("p", {
-						className: "settings-hint",
-						children: t("ldap.bindHint")
-					})
-				]
-			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("ldap.bindPassword"),
-				children: [/* @__PURE__ */ jsx("input", {
-					className: inputClass,
-					type: "password",
-					value: ldapBindPassword,
-					onChange: (e) => setLdapBindPassword(e.target.value),
-					placeholder: initial.ldapHasBindPassword ? t("oidc.secretUnchanged") : t("oidc.secretOptional")
-				})]
-			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("ldap.baseDn"),
-				children: [/* @__PURE__ */ jsx("input", {
-					className: inputClass,
-					value: ldapBaseDn,
-					onChange: (e) => setLdapBaseDn(e.target.value),
-					placeholder: "DC=example,DC=local",
-					required: ldapEnabled && Boolean(ldapBindDn.trim())
-				})]
-			}),
-			/* @__PURE__ */ jsxs(Field, {
-				label: t("ldap.filter"),
-				children: [
-					/* @__PURE__ */ jsx("input", {
-						className: inputClass,
-						value: ldapUserFilter,
-						onChange: (e) => setLdapUserFilter(e.target.value),
-						placeholder: "(&(objectClass=user)(sAMAccountName={username}))"
-					}),
-					/* @__PURE__ */ jsx("p", {
-						className: "settings-hint",
-						children: t("ldap.filterHint")
-					})
-				]
-			}),
-			/* @__PURE__ */ jsxs("div", {
-				className: "settings-toggles",
-				children: [/* @__PURE__ */ jsxs("label", {
-					children: [/* @__PURE__ */ jsx("input", {
-						type: "checkbox",
-						checked: ldapAutoCreate,
-						onChange: (e) => setLdapAutoCreate(e.target.checked)
-					}), t("ldap.autoCreate")]
-				})]
-			}),
-			/* @__PURE__ */ jsx(Button, {
-				type: "submit",
-				size: "sm",
-				disabled: busy,
-				children: t("actions.save")
-			})
-		]
-	});
+function blankLdapDir() {
+	return {
+		id: crypto.randomUUID(),
+		enabled: false,
+		host: "",
+		port: 636,
+		tls: true,
+		tlsVerify: true,
+		bindDn: "",
+		bindPassword: "",
+		baseDn: "",
+		userFilter: "",
+		domain: "",
+		autoCreate: false
+	};
+}
+function seedLdapDirs(initial) {
+	if (Array.isArray(initial.ldapDirectories) && initial.ldapDirectories.length) {
+		return initial.ldapDirectories.map((d) => ({
+			...blankLdapDir(),
+			...d,
+			bindPassword: ""
+		}));
+	}
+	if (initial.ldapHost || initial.ldapDomain || initial.ldapEnabled) {
+		return [{
+			...blankLdapDir(),
+			id: "ad",
+			enabled: Boolean(initial.ldapEnabled),
+			host: initial.ldapHost || "",
+			port: Number(initial.ldapPort) || (initial.ldapTls === false ? 389 : 636),
+			tls: initial.ldapTls !== false,
+			tlsVerify: initial.ldapTlsVerify !== false,
+			bindDn: initial.ldapBindDn || "",
+			bindPassword: "",
+			baseDn: initial.ldapBaseDn || "",
+			userFilter: initial.ldapUserFilter || "",
+			domain: initial.ldapDomain || "",
+			autoCreate: Boolean(initial.ldapAutoCreate),
+			hasBindPassword: Boolean(initial.ldapHasBindPassword)
+		}];
+	}
+	return [];
 }
 function ResetForm({ busy, onReset }) {
 	return /* @__PURE__ */ jsx("div", {
@@ -4723,6 +4595,8 @@ function settingsBase(initial) {
 		navRichIcons: Boolean(initial.navRichIcons),
 		locale: asLocale(initial.locale),
 		dateFormat: asDateFormat(initial.dateFormat),
+		timeFormat: asTimeFormat(initial.timeFormat),
+		timezone: asTimeZone(initial.timezone),
 		probeBlink: Boolean(initial.probeBlink),
 		annexFade: Boolean(initial.annexFade),
 		catCounts: Boolean(initial.catCounts),
@@ -4891,9 +4765,36 @@ function SettingsForm({ initial, busy, embedded, onCancel, onSave }) {
 		]
 	});
 }
+function TimeZoneField({ value, onChange }) {
+	const groups = useMemo(() => listTimeZones(), []);
+	return /* @__PURE__ */ jsxs(Field, {
+		label: t("lang.timezone"),
+		children: [
+			/* @__PURE__ */ jsxs("select", {
+				className: inputClass,
+				value,
+				onChange: (e) => onChange(asTimeZone(e.target.value)),
+				children: [
+					/* @__PURE__ */ jsx("option", { value: "", children: t("lang.timezoneLocal") }),
+					groups.map((g) => /* @__PURE__ */ jsx("optgroup", {
+						label: g.region,
+						children: g.zones.map((z) => /* @__PURE__ */ jsx("option", {
+							value: z.id,
+							children: z.label
+						}, z.id))
+					}, g.region))
+				]
+			}),
+			/* @__PURE__ */ jsx("p", { className: "settings-hint", children: t("lang.timezoneHint") })
+		]
+	});
+}
 function LocalesForm({ initial, onSave }) {
 	const [locale, setLocaleDraft] = useState(asLocale(initial.locale));
 	const [dateFormat, setDateDraft] = useState(asDateFormat(initial.dateFormat));
+	const [timeFormat, setTimeDraft] = useState(asTimeFormat(initial.timeFormat));
+	const [timezone, setZoneDraft] = useState(asTimeZone(initial.timezone));
+	const sample = formatWhen(new Date(), true, { dateFormat, timeFormat, timezone });
 	return /* @__PURE__ */ jsxs("form", {
 		id: "settings-form",
 		className: "settings-stack",
@@ -4902,7 +4803,9 @@ function LocalesForm({ initial, onSave }) {
 			onSave({
 				...settingsBase(initial),
 				locale: asLocale(locale),
-				dateFormat: asDateFormat(dateFormat)
+				dateFormat: asDateFormat(dateFormat),
+				timeFormat: asTimeFormat(timeFormat),
+				timezone: asTimeZone(timezone)
 			});
 		},
 		children: [
@@ -4924,23 +4827,57 @@ function LocalesForm({ initial, onSave }) {
 							}),
 							/* @__PURE__ */ jsx("p", { className: "settings-hint", children: t("lang.hint") })
 						]
-					}),
-					/* @__PURE__ */ jsxs(Field, {
-						label: t("lang.dateFormat"),
+					})
+				]
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: "settings-card",
+				children: [
+					/* @__PURE__ */ jsxs("div", {
+						className: "field-row",
 						children: [
-							/* @__PURE__ */ jsxs("select", {
-								className: inputClass,
-								value: dateFormat,
-								onChange: (e) => setDateDraft(asDateFormat(e.target.value)),
+							/* @__PURE__ */ jsxs(Field, {
+								label: t("lang.dateFormat"),
 								children: [
-									/* @__PURE__ */ jsx("option", { value: "ymd", children: t("lang.dateYmd") }),
-									/* @__PURE__ */ jsx("option", { value: "dmy", children: t("lang.dateDmy") }),
-									/* @__PURE__ */ jsx("option", { value: "mdy", children: t("lang.dateMdy") }),
-									/* @__PURE__ */ jsx("option", { value: "iso", children: t("lang.dateIso") })
+									/* @__PURE__ */ jsxs("select", {
+										className: inputClass,
+										value: dateFormat,
+										onChange: (e) => setDateDraft(asDateFormat(e.target.value)),
+										children: [
+											/* @__PURE__ */ jsx("option", { value: "ymd", children: t("lang.dateYmd") }),
+											/* @__PURE__ */ jsx("option", { value: "yyyy", children: t("lang.dateYyyy") }),
+											/* @__PURE__ */ jsx("option", { value: "dmy", children: t("lang.dateDmy") }),
+											/* @__PURE__ */ jsx("option", { value: "mdy", children: t("lang.dateMdy") }),
+											/* @__PURE__ */ jsx("option", { value: "iso", children: t("lang.dateIso") })
+										]
+									}),
+									/* @__PURE__ */ jsx("p", { className: "settings-hint", children: t("lang.dateHint") })
 								]
 							}),
-							/* @__PURE__ */ jsx("p", { className: "settings-hint", children: t("lang.dateHint") })
+							/* @__PURE__ */ jsxs(Field, {
+								label: t("lang.timeFormat"),
+								children: [
+									/* @__PURE__ */ jsxs("select", {
+										className: inputClass,
+										value: timeFormat,
+										onChange: (e) => setTimeDraft(asTimeFormat(e.target.value)),
+										children: [
+											/* @__PURE__ */ jsx("option", { value: "24h", children: t("lang.time24") }),
+											/* @__PURE__ */ jsx("option", { value: "12h", children: t("lang.time12") })
+										]
+									}),
+									/* @__PURE__ */ jsx("p", { className: "settings-hint", children: t("lang.timeHint") })
+								]
+							})
 						]
+					}),
+					/* @__PURE__ */ jsx(TimeZoneField, {
+						value: timezone,
+						onChange: setZoneDraft
+					}),
+					/* @__PURE__ */ jsx("p", {
+						className: "settings-hint tz-preview",
+						children: t("lang.preview", { sample })
 					})
 				]
 			})
@@ -5398,12 +5335,12 @@ function DebugPanel({ settings, runtime, session }) {
 			title: t("debug.autoCreateTitle"),
 			detail: t("debug.autoCreateDetail")
 		} : null,
-		s.ldapEnabled && s.ldapTls === false ? {
+		(Array.isArray(s.ldapDirectories) ? s.ldapDirectories : []).some((d) => d.enabled && d.tls === false) || s.ldapEnabled && s.ldapTls === false ? {
 			level: "warn",
 			title: t("debug.ldapTlsTitle"),
 			detail: t("debug.ldapTlsDetail")
 		} : null,
-		s.ldapAutoCreate ? {
+		(Array.isArray(s.ldapDirectories) ? s.ldapDirectories : []).some((d) => d.enabled && d.autoCreate) || s.ldapAutoCreate ? {
 			level: "warn",
 			title: t("debug.ldapAutoTitle"),
 			detail: t("debug.ldapAutoDetail")
@@ -5716,20 +5653,24 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
 		]
 	});
 }
-function LockForm({ busy, oidcEnabled, oidcLabel, ldapEnabled, ldapDomain, loginOrder, noPassword, onCancel, onUnlock, onOidc }) {
+function LockForm({ busy, oidcEnabled, oidcLabel, ldapEnabled, ldapDomain, ldapRealms, loginOrder, noPassword, onCancel, onUnlock, onOidc }) {
 	const [username, setUsername] = useState(noPassword ? "admin" : "");
 	const [password, setPassword] = useState("");
-	const showDomain = Boolean(ldapEnabled) && Boolean(ldapDomain);
+	const realms = Array.isArray(ldapRealms) ? ldapRealms : ldapEnabled && ldapDomain ? [{ id: "ad", label: ldapDomain }] : [];
+	const showDomain = realms.length > 0;
 	const domainOptions = [];
-	for (const id of Array.isArray(loginOrder) && loginOrder.length ? loginOrder : ["local", "ad"]) {
+	for (const id of Array.isArray(loginOrder) && loginOrder.length ? loginOrder : ["local", ...realms.map((r) => r.id)]) {
 		if (id === "local") domainOptions.push({
 			value: "local",
 			label: t("lock.local")
 		});
-		else if (id === "ad" && showDomain) domainOptions.push({
-			value: "ad",
-			label: ldapDomain
-		});
+		else {
+			const realm = realms.find((r) => r.id === id) || (id === "ad" ? realms[0] : null);
+			if (realm) domainOptions.push({
+				value: realm.id,
+				label: realm.label
+			});
+		}
 	}
 	if (!domainOptions.some((o) => o.value === "local")) domainOptions.unshift({
 		value: "local",
@@ -5899,27 +5840,345 @@ function emptyGroupDraft() {
 		canCreateTabs: false
 	};
 }
+
+function issuerHost(url) {
+	try {
+		return new URL(String(url || "")).host || "—";
+	} catch {
+		return "—";
+	}
+}
+function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLoginOrder }) {
+	const expand = useExpandSession();
+	const listRef = useRef(null);
+	const dragRef = useRef(null);
+	const didDrag = useRef(false);
+	const snap = useRef(null);
+	const [dirs, setDirs] = useState(() => seedLdapDirs(settings));
+	const [order, setOrder] = useState(() => Array.isArray(settings.loginOrder) && settings.loginOrder.length ? settings.loginOrder : ["local", ...seedLdapDirs(settings).map((d) => d.id)]);
+	const orderRef = useRef(order);
+	orderRef.current = order;
+	const [dragKey, setDragKey] = useState(null);
+	const [confirm, setConfirm] = useState(null);
+	function patchDir(id, next) {
+		setDirs((cur) => {
+			const out = cur.map((d) => d.id === id ? { ...d, ...next } : d);
+			expand.markDirty(JSON.stringify(out) !== snap.current);
+			return out;
+		});
+	}
+	function persistDirs(nextDirs, nextOrder) {
+		const list = nextDirs || dirs;
+		onSaveLdap({
+			ldapDirectories: list.map((d) => ({
+				id: d.id,
+				enabled: Boolean(d.enabled),
+				host: String(d.host || "").trim(),
+				port: Number(d.port) || (d.tls === false ? 389 : 636),
+				tls: d.tls !== false,
+				tlsVerify: d.tlsVerify !== false,
+				bindDn: String(d.bindDn || "").trim(),
+				bindPassword: d.bindPassword || "",
+				baseDn: String(d.baseDn || "").trim(),
+				userFilter: String(d.userFilter || "").trim(),
+				domain: String(d.domain || "").trim(),
+				autoCreate: Boolean(d.autoCreate)
+			}))
+		});
+		if (nextOrder) onSaveLoginOrder(nextOrder);
+		snap.current = JSON.stringify(list);
+		expand.markDirty(false);
+	}
+	const oidcOn = Boolean(settings.oidcEnabled) && Boolean(settings.oidcIssuer) && Boolean(settings.oidcClientId);
+	const ranked = [];
+	for (const id of order) {
+		if (id === "local") {
+			ranked.push({ id: "local", name: t("lock.local"), type: t("access.idpTypeLocal"), host: "—", on: true, draggable: true });
+			continue;
+		}
+		const d = dirs.find((x) => x.id === id);
+		if (!d) continue;
+		ranked.push({
+			id: d.id,
+			name: d.domain || t("ldap.directory"),
+			type: t("access.idpTypeAd"),
+			host: d.host || "—",
+			on: Boolean(d.enabled),
+			draggable: true,
+			dir: d
+		});
+	}
+	if (!ranked.some((r) => r.id === "local")) ranked.unshift({ id: "local", name: t("lock.local"), type: t("access.idpTypeLocal"), host: "—", on: true, draggable: true });
+	const extras = [
+		{ id: "oidc", name: settings.oidcLabel || t("access.oidc"), type: t("access.idpTypeOidc"), host: issuerHost(settings.oidcIssuer), on: oidcOn, draggable: false },
+		{ id: "entra", name: t("access.entra"), type: t("access.idpTypeEntra"), host: "—", on: false, draggable: false, soon: true }
+	];
+	const defaultId = order.find((id) => id === "local" || dirs.some((d) => d.id === id && d.enabled)) || "local";
+	function toggleRow(id, edit) {
+		if (didDrag.current) {
+			didDrag.current = false;
+			return;
+		}
+		if (expand.openId === id) {
+			expand.requestClose();
+			return;
+		}
+		expand.requestOpen(id, {
+			edit: Boolean(edit),
+			apply: () => {
+				snap.current = JSON.stringify(dirs);
+				expand.markDirty(false);
+			}
+		});
+	}
+	function addAd() {
+		if (dirs.length >= 8) return;
+		const d = blankLdapDir();
+		const nextDirs = [...dirs, d];
+		const nextOrder = [...order.filter((id) => id !== d.id), d.id];
+		if (!nextOrder.includes("local")) nextOrder.unshift("local");
+		setDirs(nextDirs);
+		setOrder(nextOrder);
+		snap.current = JSON.stringify(nextDirs);
+		expand.requestOpen(d.id, { edit: true, apply: () => expand.markDirty(false) });
+	}
+	function setDefault(id) {
+		if (!id || id === "oidc" || id === "entra") return;
+		const next = [id, ...order.filter((x) => x !== id)];
+		if (!next.includes("local")) next.unshift("local");
+		setOrder(next);
+		onSaveLoginOrder(next);
+	}
+	function removeProvider(id) {
+		if (id === "local" || id === "entra") return;
+		if (id === "oidc") {
+			onSaveOidc({
+				oidcEnabled: false,
+				oidcIssuer: settings.oidcIssuer || "",
+				oidcClientId: settings.oidcClientId || "",
+				oidcClientSecret: "",
+				oidcLabel: settings.oidcLabel || "SSO",
+				oidcAutoCreate: Boolean(settings.oidcAutoCreate)
+			});
+			expand.requestClose();
+			return;
+		}
+		const nextDirs = dirs.filter((d) => d.id !== id);
+		const nextOrder = order.filter((x) => x !== id);
+		setDirs(nextDirs);
+		setOrder(nextOrder);
+		persistDirs(nextDirs, nextOrder);
+		expand.markDirty(false);
+		expand.requestClose();
+	}
+	function moveOrder(id, dir) {
+		const i = order.indexOf(id);
+		const j = i + dir;
+		if (i < 0 || j < 0 || j >= order.length) return;
+		const next = [...order];
+		const [row] = next.splice(i, 1);
+		next.splice(j, 0, row);
+		setOrder(next);
+		onSaveLoginOrder(next);
+	}
+	function endDrag(el, pointerId) {
+		dragRef.current = null;
+		setDragKey(null);
+		try {
+			el?.releasePointerCapture(pointerId);
+		} catch {}
+	}
+	function onGripDown(e, key) {
+		if (order.length < 2 || e.button !== 0) return;
+		e.preventDefault();
+		e.stopPropagation();
+		e.currentTarget.setPointerCapture(e.pointerId);
+		dragRef.current = { key, pointerId: e.pointerId };
+		didDrag.current = false;
+		setDragKey(key);
+	}
+	function onGripMove(e) {
+		const drag = dragRef.current;
+		if (!drag || drag.pointerId !== e.pointerId) return;
+		const root = listRef.current;
+		if (!root) return;
+		const others = [...root.querySelectorAll("[data-row-id]")].filter((row) => {
+			const id = row.getAttribute("data-row-id");
+			return id && id !== drag.key && order.includes(id);
+		});
+		let to = others.length;
+		for (let i = 0; i < others.length; i++) {
+			const box = others[i].getBoundingClientRect();
+			if (e.clientY < box.top + box.height / 2) {
+				to = i;
+				break;
+			}
+		}
+		setOrder((cur) => {
+			const from = cur.findIndex((id) => id === drag.key);
+			if (from < 0 || from === to) return cur;
+			didDrag.current = true;
+			const rest = cur.filter((id) => id !== drag.key);
+			rest.splice(to, 0, cur[from]);
+			return rest;
+		});
+	}
+	function onGripUp(e) {
+		const drag = dragRef.current;
+		if (!drag || drag.pointerId !== e.pointerId) return;
+		endDrag(e.currentTarget, e.pointerId);
+		if (didDrag.current) onSaveLoginOrder(orderRef.current);
+	}
+	function renderCard(r) {
+		const open = expand.openId === r.id;
+		const isDefault = r.id === defaultId;
+		const dir = r.dir || dirs.find((d) => d.id === r.id);
+		return (
+			<ExpandRow
+				key={r.id}
+				id={r.id}
+				className="is-provider"
+				expanded={open}
+				dragging={dragKey === r.id}
+				grip={r.draggable}
+				onToggle={() => toggleRow(r.id, r.id !== "local" && r.id !== "entra")}
+				onAltMove={r.draggable ? (dir) => moveOrder(r.id, dir) : undefined}
+				onGripDown={r.draggable ? (e) => onGripDown(e, r.id) : undefined}
+				onGripMove={r.draggable ? onGripMove : undefined}
+				onGripUp={r.draggable ? onGripUp : undefined}
+				cells={[
+					<span key="n" className="am-row-title">
+						{r.name}
+						<span className="am-row-sub">{r.host}</span>
+					</span>,
+					<span key="s" className={`am-status${r.on ? "" : " is-off"}`}>{r.on ? t("access.active") : t("access.disabled")}</span>,
+					<span key="d" className="am-row-end">{isDefault ? <span className="am-badge">{t("access.idpDefault")}</span> : null}</span>
+				]}
+			>
+				{r.id === "local" ? (
+					<p className="am-note">{t("access.idpLocalHint")}</p>
+				) : r.id === "entra" ? (
+					<p className="am-note">{t("access.entraSoon")}</p>
+				) : r.id === "oidc" ? (
+					<>
+						<OidcForm initial={settings} busy={busy} onSave={(payload) => { onSaveOidc(payload); expand.markDirty(false); }} />
+						<div className="am-actions">
+							<button type="button" className="am-text-btn is-danger" onClick={() => setConfirm({ id: "oidc" })}>{t("access.idpRemove")}</button>
+							<Button type="submit" form="oidc-form" size="sm" disabled={busy}>{t("actions.save")}</Button>
+						</div>
+					</>
+				) : dir ? (
+					<form id={`ldap-form-${dir.id}`} className="settings-stack" onSubmit={(e) => { e.preventDefault(); persistDirs(dirs, order); }}>
+						<LdapDirFields d={dir} patch={(next) => patchDir(dir.id, next)} />
+						<div className="am-actions">
+							<button type="button" className="am-text-btn" onClick={() => { persistDirs(dirs.map((d) => d.id === dir.id ? { ...d, enabled: !d.enabled } : d), order); setDirs((cur) => cur.map((d) => d.id === dir.id ? { ...d, enabled: !d.enabled } : d)); }}>
+								{dir.enabled ? t("access.disable") : t("access.enable")}
+							</button>
+							<button type="button" className="am-text-btn" onClick={() => setDefault(dir.id)}>{t("access.idpSetDefault")}</button>
+							<button type="button" className="am-text-btn is-danger" onClick={() => setConfirm({ id: dir.id, name: dir.domain || t("ldap.directory") })}>{t("access.idpRemove")}</button>
+							<Button type="submit" size="sm" disabled={busy}>{t("actions.save")}</Button>
+						</div>
+					</form>
+				) : null}
+			</ExpandRow>
+		);
+	}
+	return (
+		<div className="am-work">
+			<div className="am-toolbar">
+				<span className="am-toolbar-title">{t("access.idpSources")}</span>
+				<Button type="button" size="sm" className="h-9 shrink-0" onClick={addAd} disabled={dirs.length >= 8}>
+					<Plus className="size-3.5" /> {t("access.idpAddAd")}
+				</Button>
+				<Button type="button" size="sm" variant="secondary" className="h-9 shrink-0" onClick={() => toggleRow("oidc", true)}>
+					<Plus className="size-3.5" /> {t("access.idpAddOidc")}
+				</Button>
+			</div>
+			<div className="am-list-wrap">
+				<div ref={listRef} className="am-providers" role="list">
+					{ranked.map(renderCard)}
+					{extras.map(renderCard)}
+				</div>
+			</div>
+			{confirm ? (
+				<ConfirmPopup
+					title={t("access.idpRemove")}
+					body={confirm.id === "oidc" ? t("access.oidcLead") : t("access.ldapLead")}
+					busy={busy}
+					okLabel={t("access.idpRemove")}
+					onCancel={() => setConfirm(null)}
+					onOk={() => { removeProvider(confirm.id); setConfirm(null); }}
+				/>
+			) : null}
+			{expand.ask ? (
+				<ConfirmPopup
+					title={t("access.discardTitle")}
+					body={t("access.discardBody")}
+					okLabel={t("access.discard")}
+					onCancel={expand.dismissAsk}
+					onOk={expand.confirmAsk}
+				/>
+			) : null}
+		</div>
+	);
+}
+function LdapDirFields({ d, patch }) {
+	return (
+		<>
+			<div className="settings-toggles">
+				<label><input type="checkbox" checked={Boolean(d.enabled)} onChange={(e) => patch({ enabled: e.target.checked })} />{t("ldap.enable")}</label>
+				<label><input type="checkbox" checked={Boolean(d.autoCreate)} onChange={(e) => patch({ autoCreate: e.target.checked })} />{t("ldap.autoCreate")}</label>
+				<label><input type="checkbox" checked={d.tls !== false} onChange={(e) => {
+					const on = e.target.checked;
+					patch({ tls: on, port: d.port === 389 || d.port === 636 ? (on ? 636 : 389) : d.port });
+				}} />{t("ldap.tls")}</label>
+				{d.tls !== false ? <label><input type="checkbox" checked={d.tlsVerify !== false} onChange={(e) => patch({ tlsVerify: e.target.checked })} />{t("ldap.tlsVerify")}</label> : null}
+			</div>
+			<div className="field-row">
+				<Field label={t("ldap.domain")}>
+					<input className={inputClass} value={d.domain} onChange={(e) => patch({ domain: e.target.value })} placeholder="CORP" required={Boolean(d.enabled)} />
+					<p className="settings-hint">{t("ldap.domainHint")}</p>
+				</Field>
+				<Field label={t("ldap.host")}>
+					<input className={inputClass} value={d.host} onChange={(e) => patch({ host: e.target.value })} placeholder="dc.example.local" required={Boolean(d.enabled)} />
+					<p className="settings-hint">{t("ldap.hostHint")}</p>
+				</Field>
+			</div>
+			<Field label={t("ldap.port")}>
+				<input className={inputClass} type="number" min={1} max={65535} value={d.port} onChange={(e) => patch({ port: Number(e.target.value) || 0 })} />
+			</Field>
+			<Field label={t("ldap.bindDn")}>
+				<input className={inputClass} value={d.bindDn} onChange={(e) => patch({ bindDn: e.target.value })} placeholder="CN=dockit,OU=Services,DC=example,DC=local" />
+				<p className="settings-hint">{t("ldap.bindHint")}</p>
+			</Field>
+			<Field label={t("ldap.bindPassword")}>
+				<input className={inputClass} type="password" value={d.bindPassword} onChange={(e) => patch({ bindPassword: e.target.value })} placeholder={d.hasBindPassword ? t("oidc.secretUnchanged") : t("oidc.secretOptional")} />
+			</Field>
+			<Field label={t("ldap.baseDn")}>
+				<input className={inputClass} value={d.baseDn} onChange={(e) => patch({ baseDn: e.target.value })} placeholder="DC=example,DC=local" required={Boolean(d.enabled) && Boolean(String(d.bindDn || "").trim())} />
+			</Field>
+			<Field label={t("ldap.filter")}>
+				<input className={inputClass} value={d.userFilter} onChange={(e) => patch({ userFilter: e.target.value })} placeholder="(&(objectClass=user)(sAMAccountName={username}))" />
+				<p className="settings-hint">{t("ldap.filterHint")}</p>
+			</Field>
+		</>
+	);
+}
 function AccessFrame({ token, session, tabs, settings, busy, onClose, onSaveOidc, onSaveLdap, onSaveLoginOrder }) {
 	const [section, setSection] = useState("users");
 	const canAccess = Boolean(session?.canManageUsers || session?.canManageGroups || session?.canManageRoles || session?.role === "admin");
 	const canSettings = Boolean(session?.canManageSettings || session?.role === "admin");
 	const pane = canAccess || canSettings ? section : "users";
-	const current = pane === "ldap"
-		? { label: t("access.ldap"), lead: t("access.ldapLead") }
-		: pane === "oidc"
-			? { label: t("access.oidc"), lead: t("access.oidcLead") }
-			: pane === "entra"
-				? { label: t("access.entra"), lead: t("access.entraLead") }
-				: pane === "auth"
-					? { label: t("access.auth"), lead: t("access.authLead") }
-					: pane === "groups"
-						? { label: t("access.groups"), lead: t("access.groupsLead") }
-						: pane === "roles"
-							? { label: t("access.roles"), lead: t("access.rolesLead") }
-							: { label: t("access.users"), lead: t("access.usersLead") };
-	const accessPane = pane === "users" || pane === "groups" || pane === "roles";
+	const current = pane === "auth"
+		? { label: t("access.auth"), lead: t("access.authLead") }
+		: pane === "groups"
+			? { label: t("access.groups"), lead: t("access.groupsLead") }
+			: pane === "roles"
+				? { label: t("access.roles"), lead: t("access.rolesLead") }
+				: { label: t("access.users"), lead: t("access.usersLead") };
+	const accessPane = true;
 	return /* @__PURE__ */ jsxs("div", {
-		className: `settings-frame is-wide${accessPane ? " is-access" : ""}`,
+		className: "settings-frame is-wide is-access",
 		children: [
 			/* @__PURE__ */ jsxs("nav", {
 				className: "settings-nav",
@@ -5953,44 +6212,13 @@ function AccessFrame({ token, session, tabs, settings, busy, onClose, onSaveOidc
 							t("access.roles")
 						]
 					}) : null,
-					canSettings ? /* @__PURE__ */ jsxs(Fragment, {
+					canSettings ? /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						className: `settings-nav-item ${pane === "auth" ? "is-on" : ""}`,
+						onClick: () => setSection("auth"),
 						children: [
-							/* @__PURE__ */ jsxs("button", {
-								type: "button",
-								className: `settings-nav-item ${pane === "auth" ? "is-on" : ""}`,
-								onClick: () => setSection("auth"),
-								children: [
-									/* @__PURE__ */ jsx(LogIn, { className: "size-4 shrink-0" }),
-									t("access.auth")
-								]
-							}),
-							/* @__PURE__ */ jsxs("button", {
-								type: "button",
-								className: `settings-nav-item is-sub ${pane === "ldap" ? "is-on" : ""}`,
-								onClick: () => setSection("ldap"),
-								children: [
-									/* @__PURE__ */ jsx(Server, { className: "size-4 shrink-0" }),
-									t("access.ldap")
-								]
-							}),
-							/* @__PURE__ */ jsxs("button", {
-								type: "button",
-								className: `settings-nav-item is-sub ${pane === "oidc" ? "is-on" : ""}`,
-								onClick: () => setSection("oidc"),
-								children: [
-									/* @__PURE__ */ jsx(KeyRound, { className: "size-4 shrink-0" }),
-									t("access.oidc")
-								]
-							}),
-							/* @__PURE__ */ jsxs("button", {
-								type: "button",
-								className: `settings-nav-item is-sub ${pane === "entra" ? "is-on" : ""}`,
-								onClick: () => setSection("entra"),
-								children: [
-									/* @__PURE__ */ jsx(Cloud, { className: "size-4 shrink-0" }),
-									t("access.entra")
-								]
-							})
+							/* @__PURE__ */ jsx(LogIn, { className: "size-4 shrink-0" }),
+							t("access.auth")
 						]
 					}) : null
 				]
@@ -6020,142 +6248,30 @@ function AccessFrame({ token, session, tabs, settings, busy, onClose, onSaveOidc
 					}),
 					/* @__PURE__ */ jsx("div", {
 						className: `settings-pane${accessPane ? " is-access" : ""}`,
-						children: pane === "auth" ? /* @__PURE__ */ jsx(LoginOrderPanel, {
+						children: pane === "auth" ? /* @__PURE__ */ jsx(IdentitySourcesPanel, {
 							settings,
 							busy,
-							onSave: onSaveLoginOrder
-						}) : pane === "ldap" ? /* @__PURE__ */ jsx(LdapForm, {
-							initial: settings,
-							busy,
-							onSave: onSaveLdap
-						}) : pane === "oidc" ? /* @__PURE__ */ jsx(OidcForm, {
-							initial: settings,
-							busy,
-							onSave: onSaveOidc
-						}) : pane === "entra" ? /* @__PURE__ */ jsxs("div", {
-							className: "settings-card",
-							children: [
-								/* @__PURE__ */ jsx("p", { className: "settings-hint", children: t("access.entraSoon") })
-							]
+							onSaveLdap,
+							onSaveOidc,
+							onSaveLoginOrder
 						}) : pane === "roles" ? /* @__PURE__ */ jsx(AccessRoles, {
 							token,
 							actor: session,
-							tabs
+							tabs,
+							directories: seedLdapDirs(settings)
 						}) : pane === "groups" ? /* @__PURE__ */ jsx(AccessGroups, {
 							token,
 							actor: session,
-							tabs
+							tabs,
+							directories: seedLdapDirs(settings)
 						}) : /* @__PURE__ */ jsx(AccessUsers, {
 							token,
 							actor: session,
-							tabs
+							tabs,
+							directories: seedLdapDirs(settings)
 						})
 					})
 				]
-			})
-		]
-	});
-}
-function LoginOrderPanel({ settings, busy, onSave }) {
-	const listRef = useRef(null);
-	const dragRef = useRef(null);
-	const orderRef = useRef(["local", "ad"]);
-	const [dragKey, setDragKey] = useState(null);
-	const [order, setOrder] = useState(() => Array.isArray(settings.loginOrder) && settings.loginOrder.length ? settings.loginOrder : ["local", "ad"]);
-	orderRef.current = order;
-	const ldapLabel = String(settings.ldapDomain || "").trim() || t("access.ldap");
-	const ldapOn = Boolean(settings.ldapEnabled);
-	const rows = order.map((id) => ({
-		key: id,
-		id,
-		label: id === "ad" ? ldapLabel : t("lock.local"),
-		off: id === "ad" && !ldapOn
-	}));
-	function endDrag(el, pointerId) {
-		dragRef.current = null;
-		setDragKey(null);
-		try {
-			el?.releasePointerCapture(pointerId);
-		} catch {}
-	}
-	function onGripDown(e, key) {
-		if (rows.length < 2 || e.button !== 0) return;
-		e.preventDefault();
-		e.stopPropagation();
-		e.currentTarget.setPointerCapture(e.pointerId);
-		dragRef.current = {
-			key,
-			pointerId: e.pointerId
-		};
-		setDragKey(key);
-	}
-	function onGripMove(e) {
-		const drag = dragRef.current;
-		if (!drag || drag.pointerId !== e.pointerId) return;
-		const root = listRef.current;
-		if (!root) return;
-		const others = [...root.querySelectorAll("[data-link-key]")].filter((row) => row.getAttribute("data-link-key") !== drag.key);
-		let to = others.length;
-		for (let i = 0; i < others.length; i++) {
-			const box = others[i].getBoundingClientRect();
-			if (e.clientY < box.top + box.height / 2) {
-				to = i;
-				break;
-			}
-		}
-		setOrder((cur) => {
-			const from = cur.findIndex((id) => id === drag.key);
-			if (from < 0 || from === to) return cur;
-			const rest = cur.filter((id) => id !== drag.key);
-			rest.splice(to, 0, cur[from]);
-			orderRef.current = rest;
-			return rest;
-		});
-	}
-	function onGripUp(e) {
-		const drag = dragRef.current;
-		if (!drag || drag.pointerId !== e.pointerId) return;
-		endDrag(e.currentTarget, e.pointerId);
-		onSave?.(orderRef.current);
-	}
-	return /* @__PURE__ */ jsxs("div", {
-		className: "settings-stack",
-		children: [
-			/* @__PURE__ */ jsx("p", {
-				className: "settings-kicker",
-				children: t("access.loginList")
-			}),
-			/* @__PURE__ */ jsx("div", {
-				ref: listRef,
-				className: `extra-links${dragKey ? " is-sorting" : ""}`,
-				children: rows.map((row, i) => /* @__PURE__ */ jsxs("div", {
-					className: `extra-link login-order-row${dragKey === row.key ? " is-dragging" : ""}${row.off ? " is-off" : ""}`,
-					"data-link-key": row.key,
-					children: [
-						rows.length > 1 ? /* @__PURE__ */ jsx("button", {
-							type: "button",
-							className: "extra-link-grip",
-							"aria-label": t("item.dragReorder"),
-							disabled: busy,
-							onPointerDown: (e) => onGripDown(e, row.key),
-							onPointerMove: onGripMove,
-							onPointerUp: onGripUp,
-							onPointerCancel: onGripUp,
-							children: /* @__PURE__ */ jsx(GripVertical, { className: "size-4" })
-						}) : null,
-						/* @__PURE__ */ jsx("span", {
-							className: "login-order-name",
-							children: row.label
-						}),
-						i === 0 ? /* @__PURE__ */ jsx("span", {
-							className: "user-role",
-							children: t("access.loginDefault")
-						}) : row.off ? /* @__PURE__ */ jsx("span", {
-							className: "user-role",
-							children: t("access.loginOff")
-						}) : null
-					]
-				}, row.key))
 			})
 		]
 	});
