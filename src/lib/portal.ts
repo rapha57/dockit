@@ -1389,6 +1389,7 @@ function view(doc, tabId, user) {
 		...c,
 		apps: [...c.apps].filter((a) => can(user, "view", { res: "card", id: a.id }, doc)).sort((a, b) => a.sortOrder - b.sortOrder)
 	}));
+	const stripAcl = (cats) => sortCats(cats).map((c) => ({ ...c, viewers: [], editors: [] }));
 	const visibleIds = new Set(tabs.map((t) => t.id));
 	const catalog = [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder).filter((t) => visibleIds.has(t.id)).map((t) => ({
 		id: t.id,
@@ -1396,10 +1397,10 @@ function view(doc, tabId, user) {
 		icon: t.icon,
 		sortOrder: t.sortOrder,
 		restricted: Boolean(t.restricted),
-		viewers: t.viewers || [],
-		editors: t.editors || [],
+		viewers: [],
+		editors: [],
 		hideLabel: Boolean(t.hideLabel),
-		categories: sortCats(t.categories ?? [])
+		categories: stripAcl(t.categories ?? [])
 	}));
 	return {
 		settings: clientSettings(doc, user),
@@ -1649,10 +1650,22 @@ export const purgeTrash = createServerFn({ method: "POST" }).validator(z.object(
 		canEmpty: true
 	}));
 }));
-export const rememberTab = createServerFn({ method: "POST" }).validator(z.object({ tabId: z.string().min(1) })).handler(async ({ data, request }) => withLock(async () => {
+export const rememberTab = createServerFn({ method: "POST" }).validator(z.object({
+	tabId: z.string().min(1),
+	token: z.string().optional()
+})).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	if (doc.lastTabId === data.tabId) return;
-	if (!doc.tabs.some((t) => t.id === data.tabId)) return;
+	const tab = doc.tabs.find((t) => t.id === data.tabId);
+	if (!tab) return;
+	let user = null;
+	const token = tok(data, request);
+	if (token) try {
+		user = requireUser(doc, token);
+	} catch {
+		return;
+	}
+	if (!user || user.role !== "admin" || !tabCanSee(tab, user, doc)) return;
 	doc.lastTabId = data.tabId;
 	await writeDocUnlocked(doc);
 }));
@@ -1669,6 +1682,10 @@ export const recordClick = createServerFn({ method: "POST" }).validator(z.object
 		user = null;
 	}
 	const found = appOf(doc, data.id);
+	if (!tabCanSee(found.tab, user, doc) || !can(user, "view", { res: "card", id: found.app.id }, doc)) return {
+		id: data.id,
+		clicks: found.app.clicks || 0
+	};
 	if (found.app.kind !== "app") return {
 		id: data.id,
 		clicks: found.app.clicks || 0
@@ -2157,6 +2174,10 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 					label: user.username
 				});
 			}
+			if (user.disabled) {
+				loginFail(key);
+				throw new Error("errors.disabled");
+			}
 			loginOk(key);
 			appendHistory(doc, user, {
 				type: "login",
@@ -2191,7 +2212,8 @@ function cleanRoleIds(doc, ids, { allowOwner = false, allowEmpty = false } = {})
 	if (out.length) return out;
 	return allowEmpty ? [] : ["lecteur"];
 }
-export const listUsers = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => mutate((doc) => {
+export const listUsers = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
+	const doc = await readDocUnlocked();
 	const actor = requireAccountManager(doc, tok(data, request));
 	return directoryPayload(doc, actor);
 }));
@@ -2438,7 +2460,7 @@ export const createTab = createServerFn({ method: "POST" }).validator(z.object({
 	});
 	if (!isOwnerUser(user)) {
 		const live = doc.users.find((u) => u.id === user.id);
-		if (live) live.grants = mergeGrant(asGrants(live.grants), { res: "tab", id, allow: ["view", "open", "edit", "create", "delete"] });
+		if (live) live.grants = mergeGrant(asGrants(live.grants), { res: "tab", id, allow: ["view", "open", "edit", "create", "delete", "move"] });
 	}
 	appendHistory(doc, user, {
 		type: "tab.create",
@@ -3088,7 +3110,8 @@ export const exportPortal = createServerFn({ method: "POST" }).validator(z.objec
 }));
 export const exportAudit = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
-	const user = requireEdit(doc, tok(data, request));
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canAudit && user.role !== "admin") throw new Error("errors.insufficient");
 	const before = (doc.history || []).length;
 	pruneHistory(doc);
 	if ((doc.history || []).length !== before) await writeDocUnlocked(doc);

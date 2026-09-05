@@ -188,7 +188,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.05.3";
+var PORTAL_VERSION = "2026.09.06.1";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -2352,6 +2352,7 @@ function Home() {
       rememberTab({
         data: {
           tabId,
+          token: token || void 0,
         },
       }).catch(() => void 0);
       return;
@@ -8851,20 +8852,20 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.general")}</p>
                 <Field label={t("item.name")}>
-                  <Input
-                    className={FIELD_SM}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
-                </Field>
-                <Field label={t("item.icon")}>
-                  <IconPicker
-                    value={icon}
-                    onChange={setIcon}
-                    {...picker}
-                    pictosOnly={!picker.navRichIcons}
-                  />
+                  <div className="name-icon-row">
+                    <IconPicker
+                      value={icon}
+                      onChange={setIcon}
+                      {...picker}
+                      pictosOnly={!picker.navRichIcons}
+                    />
+                    <Input
+                      className={`${FIELD_SM} min-w-0 flex-1`}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                    />
+                  </div>
                 </Field>
                 <div className="settings-toggles">
                   <label>
@@ -9018,20 +9019,20 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.general")}</p>
                 <Field label={t("item.name")}>
-                  <Input
-                    className={FIELD_SM}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
-                </Field>
-                <Field label={t("item.icon")}>
-                  <IconPicker
-                    value={icon}
-                    onChange={setIcon}
-                    {...picker}
-                    pictosOnly={!picker.navRichIcons}
-                  />
+                  <div className="name-icon-row">
+                    <IconPicker
+                      value={icon}
+                      onChange={setIcon}
+                      {...picker}
+                      pictosOnly={!picker.navRichIcons}
+                    />
+                    <Input
+                      className={`${FIELD_SM} min-w-0 flex-1`}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                    />
+                  </div>
                 </Field>
               </div>
             </div>
@@ -9519,50 +9520,34 @@ function AppForm({
             <div className="settings-card">
               <p className="settings-kicker">{t("item.general")}</p>
               <Field label={kind === "app" ? t("item.name") : t("item.titleOptional")}>
-                <Input
-                  className={FIELD_SM}
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={
-                    kind === "app" ? t("item.placeholderName") : t("item.placeholderTitle")
-                  }
-                  required={kind === "app"}
-                />
-              </Field>
-              {kind === "app" ? (
-                <div className="icon-kind-row">
-                  <Field label={t("item.icon")}>
+                <div className="name-icon-row">
+                  {kind === "app" ? (
                     <IconPicker value={icon} onChange={setIcon} siteUrl={url} {...picker} />
-                  </Field>
-                  <Field label={t("item.category")}>
-                    <Select
-                      className={FIELD_SM}
-                      value={catId}
-                      onChange={(e) => setCatId(e.target.value)}
-                    >
-                      {catOptions.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
+                  ) : null}
+                  <Input
+                    className={`${FIELD_SM} min-w-0 flex-1`}
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder={
+                      kind === "app" ? t("item.placeholderName") : t("item.placeholderTitle")
+                    }
+                    required={kind === "app"}
+                  />
                 </div>
-              ) : (
-                <Field label={t("item.category")}>
-                  <Select
-                    className={FIELD_SM}
-                    value={catId}
-                    onChange={(e) => setCatId(e.target.value)}
-                  >
-                    {catOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              )}
+              </Field>
+              <Field label={t("item.category")}>
+                <Select
+                  className={FIELD_SM}
+                  value={catId}
+                  onChange={(e) => setCatId(e.target.value)}
+                >
+                  {catOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
             <div className="settings-card">
               <p className="settings-kicker">

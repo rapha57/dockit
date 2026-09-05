@@ -122,7 +122,7 @@ function requestOnce(
         rejectUnauthorized: Boolean(tlsVerify),
         headers: {
           Accept: "*/*",
-          "User-Agent": "PortailMetier-HealthCheck/1.0",
+          "User-Agent": "Dockit-HealthCheck/1.0",
         },
       },
       (res) => {
@@ -163,10 +163,20 @@ export async function probeHttp(id: string, rawUrl: string, tlsVerify = false): 
         }
         continue;
       }
-      if (res.status > 0) {
+      if (res.status >= 200 && res.status < 300) {
         return {
           id,
           ok: true,
+          mode: "http",
+          ms: now() - started,
+          detail: `HTTP ${res.status}`,
+          at: now(),
+        };
+      }
+      if (res.status > 0) {
+        return {
+          id,
+          ok: false,
           mode: "http",
           ms: now() - started,
           detail: `HTTP ${res.status}`,

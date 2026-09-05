@@ -1821,20 +1821,15 @@ html.dark .settings-hint.is-warn {
   padding: 0;
   color: inherit;
 }
-.icon-kind-row {
+.name-icon-row {
   display: flex;
-  align-items: flex-end;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 0.5rem;
 }
-.icon-kind-row > .settings-field:first-child {
-  flex: 0 0 auto;
-}
-.icon-kind-row > .settings-field:last-child {
-  flex: 1;
-  min-width: 0;
-}
-.icon-kind-row .kind-select {
-  width: 100%;
+.name-icon-row .icon-trigger {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
 }
 .size-preview-wrap {
   display: flex;

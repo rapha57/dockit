@@ -66,7 +66,6 @@ export function asGrants(raw) {
 		if (!allow.length && !deny.length) continue;
 		const grant = { res, id, allow, deny };
 		if (row?.scope === "public") grant.scope = "public";
-		if (grant.allow.includes("edit") && !grant.allow.includes("move")) grant.allow.push("move");
 		out.push(grant);
 	}
 	return out;
@@ -108,7 +107,7 @@ export function defaultRoles() {
 			description: "",
 			system: true,
 			grants: [
-				{ res: "portal", id: "*", allow: ["users.manage", "groups.manage", "roles.manage", "settings", "audit"] },
+				{ res: "portal", id: "*", allow: ["users.manage", "groups.manage", "roles.manage", "settings", "audit", "restore"] },
 				{ res: "tab", id: "*", allow: ["view", "open"] }
 			]
 		},
@@ -118,7 +117,7 @@ export function defaultRoles() {
 			description: "",
 			system: true,
 			grants: [
-				{ res: "portal", id: "*", allow: ["restore", "users.manage", "groups.manage"] },
+				{ res: "portal", id: "*", allow: ["restore"] },
 				{ res: "tab", id: "*", allow: ["view", "open", "edit", "create", "delete", "move"], scope: "public" }
 			]
 		},
@@ -433,7 +432,7 @@ export function absorbResourceAcl(doc) {
 		const editors = asIdList(tab.editors);
 		const viewers = asIdList(tab.viewers);
 		if (editors.length || viewers.length) moved = true;
-		for (const id of editors) addGrantToPrincipal(doc, id, { res: "tab", id: tab.id, allow: ["view", "open", "edit"] });
+		for (const id of editors) addGrantToPrincipal(doc, id, { res: "tab", id: tab.id, allow: ["view", "open", "edit", "move"] });
 		for (const id of viewers) {
 			if (editors.includes(id)) continue;
 			addGrantToPrincipal(doc, id, { res: "tab", id: tab.id, allow: ["view", "open"] });
@@ -444,7 +443,7 @@ export function absorbResourceAcl(doc) {
 			const cEditors = asIdList(cat.editors);
 			const cViewers = asIdList(cat.viewers);
 			if (cEditors.length || cViewers.length) moved = true;
-			for (const id of cEditors) addGrantToPrincipal(doc, id, { res: "cat", id: cat.id, allow: ["view", "open", "edit"] });
+			for (const id of cEditors) addGrantToPrincipal(doc, id, { res: "cat", id: cat.id, allow: ["view", "open", "edit", "move"] });
 			for (const id of cViewers) {
 				if (cEditors.includes(id)) continue;
 				addGrantToPrincipal(doc, id, { res: "cat", id: cat.id, allow: ["view", "open"] });
