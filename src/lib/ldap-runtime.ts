@@ -1,6 +1,59 @@
 const TIMEOUT_MS = 8000;
 export const LDAP_FILTER_DEFAULT = "(&(objectClass=user)(sAMAccountName={username}))";
 export const LDAP_MAX = 8;
+export const LDAP_GROUP_MAX = 20;
+const GROUP_OBJECTCLASS = "(|(objectClass=group)(objectClass=groupOfUniqueNames)(objectClass=groupOfNames))";
+
+function asStrings(value) {
+	if (value == null || value === "") return [];
+	const list = Array.isArray(value) ? value : [value];
+	const out = [];
+	for (const item of list) {
+		if (item == null) continue;
+		if (typeof item === "string") {
+			if (item) out.push(item);
+			continue;
+		}
+		if (typeof Buffer !== "undefined" && Buffer.isBuffer(item)) {
+			const s = item.toString("utf8");
+			if (s) out.push(s);
+			continue;
+		}
+		const s = String(item).trim();
+		if (s && s !== "[object Object]") out.push(s);
+	}
+	return out;
+}
+
+function attrOf(entry, name) {
+	if (!entry || typeof entry !== "object") return [];
+	if (name in entry) return asStrings(entry[name]);
+	const lower = String(name).toLowerCase();
+	for (const [k, v] of Object.entries(entry)) {
+		if (k.toLowerCase() === lower) return asStrings(v);
+	}
+	return [];
+}
+
+function entryDn(entry) {
+	return String(entry?.dn || entry?.objectName || attrOf(entry, "dn")[0] || "").trim();
+}
+
+function entryName(entry) {
+	const cn = attrOf(entry, "cn")[0] || attrOf(entry, "sAMAccountName")[0] || attrOf(entry, "name")[0] || "";
+	if (cn) return cn.slice(0, 60);
+	const dn = entryDn(entry);
+	const first = dn.split(",")[0] || "";
+	return first.replace(/^[^=]+=/i, "").slice(0, 60);
+}
+
+export function normDn(dn) {
+	return String(dn || "").trim().replace(/\s*,\s*/g, ",").replace(/\s+/g, " ").toLowerCase();
+}
+
+export function adGroupKey(dirId, dn) {
+	return `${String(dirId || "").slice(0, 80)}:${normDn(dn)}`.slice(0, 400);
+}
 
 export function blankDirectory() {
 	return {
@@ -192,6 +245,22 @@ function bindIdentity(d, sam) {
 	return sam;
 }
 
+async function searchUserEntry(client, dir, sam) {
+	const base = String(dir.baseDn || "").trim();
+	if (!base) return null;
+	const filterTpl = String(dir.userFilter || "").trim() || LDAP_FILTER_DEFAULT;
+	const filter = filterTpl.replaceAll("{username}", escapeFilter(sam));
+	const { searchEntries } = await client.search(base, {
+		scope: "sub",
+		filter,
+		sizeLimit: 2,
+		timeLimit: 8,
+		attributes: ["dn", "memberOf", "sAMAccountName", "cn"]
+	});
+	if (searchEntries?.length !== 1) return null;
+	return searchEntries[0];
+}
+
 export async function ldapAuthenticate(s, username, password) {
 	const sam = ldapLoginName(username);
 	if (!sam || !password) throw new Error("errors.badLogin");
@@ -199,37 +268,77 @@ export async function ldapAuthenticate(s, username, password) {
 	if (!directoryReady(dir)) throw new Error("errors.ldapOff");
 	try {
 		const bindDn = String(dir.bindDn || "").trim();
+		let memberOf = null;
 		if (bindDn) {
 			const base = String(dir.baseDn || "").trim();
 			if (!base) throw new Error("errors.ldapBaseDn");
-			const filterTpl = String(dir.userFilter || "").trim() || LDAP_FILTER_DEFAULT;
-			const filter = filterTpl.replaceAll("{username}", escapeFilter(sam));
-			const userDn = await withClient(dir, async (client) => {
+			const found = await withClient(dir, async (client) => {
 				await client.bind(bindDn, String(dir.bindPassword || ""));
-				const { searchEntries } = await client.search(base, {
-					scope: "sub",
-					filter,
-					sizeLimit: 2,
-					timeLimit: 8,
-					attributes: ["dn"]
-				});
-				if (searchEntries?.length !== 1) throw new Error("errors.badLogin");
-				return String(searchEntries[0].dn || "");
+				return searchUserEntry(client, dir, sam);
 			});
+			const userDn = entryDn(found);
 			if (!userDn) throw new Error("errors.badLogin");
+			memberOf = attrOf(found, "memberOf");
 			await withClient(dir, async (client) => {
 				await client.bind(userDn, password);
 			});
 		} else {
-			await withClient(dir, async (client) => {
+			memberOf = await withClient(dir, async (client) => {
 				await client.bind(bindIdentity(dir, sam), password);
+				const found = await searchUserEntry(client, dir, sam);
+				return found ? attrOf(found, "memberOf") : null;
 			});
 		}
-		return { username: sam };
+		return { username: sam, memberOf, directoryId: dir.id };
 	} catch (err) {
 		const name = err?.name || "";
 		const code = err?.code;
 		if (err instanceof Error && err.message.startsWith("errors.")) throw err;
+		if (name === "InvalidCredentialsError" || name === "NoSuchObjectError" || name === "InappropriateAuthError" || code === 49) throw new Error("errors.badLogin");
+		if (name === "UnavailableError" || name === "TimeLimitExceededError" || name === "TimeoutError" || name === "ConnectionError" || code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT" || code === "CERT_HAS_EXPIRED" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
+			throw new Error("errors.ldapUnreachable");
+		}
+		throw new Error("errors.ldapFail");
+	}
+}
+
+export async function ldapSearchGroups(dir, query) {
+	const d = asDirectory(dir);
+	if (!d || !directoryReady(d)) throw new Error("errors.ldapOff");
+	const needle = escapeFilter(String(query || "").trim());
+	if (needle.length < 2) return [];
+	const bindDn = String(d.bindDn || "").trim();
+	const base = String(d.baseDn || "").trim();
+	if (!bindDn || !base) throw new Error("errors.ldapBaseDn");
+	const filter = `(&${GROUP_OBJECTCLASS}(|(cn=*${needle}*)(sAMAccountName=*${needle}*)))`;
+	try {
+		return await withClient(d, async (client) => {
+			await client.bind(bindDn, String(d.bindPassword || ""));
+			const { searchEntries } = await client.search(base, {
+				scope: "sub",
+				filter,
+				sizeLimit: LDAP_GROUP_MAX,
+				timeLimit: 8,
+				attributes: ["dn", "cn", "sAMAccountName", "name"]
+			});
+			const out = [];
+			const seen = new Set();
+			for (const entry of searchEntries || []) {
+				const dn = entryDn(entry);
+				const name = entryName(entry);
+				if (!dn || !name) continue;
+				const key = adGroupKey(d.id, dn);
+				if (seen.has(key)) continue;
+				seen.add(key);
+				out.push({ id: key, dn, name, key });
+				if (out.length >= LDAP_GROUP_MAX) break;
+			}
+			return out;
+		});
+	} catch (err) {
+		if (err instanceof Error && err.message.startsWith("errors.")) throw err;
+		const name = err?.name || "";
+		const code = err?.code;
 		if (name === "InvalidCredentialsError" || name === "NoSuchObjectError" || name === "InappropriateAuthError" || code === 49) throw new Error("errors.badLogin");
 		if (name === "UnavailableError" || name === "TimeLimitExceededError" || name === "TimeoutError" || name === "ConnectionError" || code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT" || code === "CERT_HAS_EXPIRED" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
 			throw new Error("errors.ldapUnreachable");

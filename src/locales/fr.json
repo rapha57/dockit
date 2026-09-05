@@ -57,7 +57,8 @@
     "space": "Espace",
     "addSpace": "Espace",
     "dropHere": "Déposer ici",
-    "addTagOrName": "Ajouter un tag ou un nom…"
+    "addTagOrName": "Ajouter un tag ou un nom…",
+    "removeTag": "Retirer {name}"
   },
   "roles": {
     "admin": "admin",
@@ -406,7 +407,8 @@
     "faviconApplied": "Favicon appliqué",
     "cardsSorted": "Cartes triées de A à Z",
     "cardsSortedZa": "Cartes triées de Z à A",
-    "cardsReset": "Tailles des cartes remises à 1×1"
+    "cardsReset": "Tailles des cartes remises à 1×1",
+    "copied": "Copié dans le presse-papiers"
   },
   "errors": {
     "generic": "Erreur",
@@ -442,6 +444,7 @@
     "ldapUnreachable": "Annuaire injoignable",
     "ldapFail": "Connexion à l’annuaire impossible",
     "ldapUnknownUser": "Compte inconnu. Un admin doit créer l’accès.",
+
     "adminNotFound": "Admin introuvable",
     "adminPasswordOnly": "L'admin ne se modifie que via son mot de passe",
     "usernameTaken": "Identifiant déjà pris",
@@ -552,6 +555,8 @@
     "last12": "12 derniers mois",
     "total": "{n} ouverture au total",
     "total_other": "{n} ouvertures au total",
+    "downCount": "{n} sonde HS",
+    "downCount_other": "{n} sondes HS",
     "hs": "Sondes HS",
     "removeHs": "Retirer le filtre sondes HS",
     "statsIcon": "Icône d’ouverture des statistiques d’usage",
@@ -613,7 +618,11 @@
     "other": "Autre lien",
     "others": "Autres liens",
     "hint": "Clic droit pour un autre lien",
-    "hint_other": "Clic droit pour d’autres liens"
+    "hint_other": "Clic droit pour d’autres liens",
+    "copy": "Copier le lien",
+    "primary": "Lien principal",
+    "one": "Lien",
+    "linksTitle": "Liens"
   },
   "about": {
     "created": "Création",
@@ -686,7 +695,9 @@
     "navRichIconsHint": "Désactivé : espaces et catégories n’utilisent que des pictogrammes. Les cartes gardent toujours le sélecteur complet (pictos, import, bibliothèque produit, Iconify).",
     "annexFade": "Estomper le fond des menus d’autres liens",
     "showInfoBar": "Afficher la barre d’information",
-    "cardResize": "Redimensionner les cartes en tirant les bords"
+    "cardResize": "Redimensionner les cartes en tirant les bords",
+    "cardContextMenu": "Menu clic droit sur les cartes",
+    "cardDragCollapse": "Replier les autres catégories pendant le déplacement d’une carte"
   },
   "reach": {
     "probes": "Sondes",
@@ -706,7 +717,7 @@
     "httpOnly": "Cookie HttpOnly (hors sessionStorage)",
     "httpOnlyHint": "Le jeton n’est plus lisible en JavaScript. Prend effet à la prochaine connexion.",
     "noPassword": "Connexion admin sans mot de passe",
-    "noPasswordHintDev": "Un bouton « Entrer en admin » apparaît sur l’écran de connexion. Ignoré hors npm run dev.",
+    "noPasswordHintDev": "Le bouton Connexion est mis en couleur et ouvre une session propriétaire (vide ou admin, n’importe quel mot de passe). Ignoré hors npm run dev.",
     "noPasswordHintProd": "Disponible uniquement en mode développement (npm run dev)."
   },
   "debug": {
@@ -786,6 +797,7 @@
     "typeGroup": "Groupe",
     "sourceLocal": "Local",
     "sourceAd": "AD",
+    "sourceAdHint": "Groupe de l’annuaire. Assigner un rôle Dockit. Les membres viennent de l’AD à la connexion.",
     "sourceOidc": "OIDC",
     "createGroup": "Créer un groupe",
     "newGroup": "Nouveau groupe",
@@ -797,7 +809,7 @@
     "roleAdmin": "Admin — accès total",
     "deletedGroup": "Groupe supprimé",
     "auth": "Fournisseur d’identité",
-    "authLead": "Sources d’identité pour la connexion, comme dans vCenter SSO Configuration.",
+    "authLead": "Sources d’identité pour la connexion. L’identifiant local reste disponible.",
     "idpName": "Nom",
     "idpType": "Type",
     "idpDomain": "Domaine",
@@ -852,7 +864,7 @@
     "basedNone": "Aucun — partir de zéro",
     "system": "Système",
     "custom": "Personnalisé",
-    "systemHint": "Rôle intégré, non supprimable.",
+    "systemHint": "Rôle intégré. Nom et permissions non modifiables.",
     "noDesc": "Pas de description.",
     "noCustomRoles": "Aucun rôle personnalisé pour l’instant.",
     "assignedPlain": "{users} · {groups}",
@@ -865,6 +877,9 @@
     "nPerms_other": "{n} permissions",
     "addUser": "Ajouter un utilisateur",
     "addGroup": "Ajouter un groupe",
+    "addFromDir": "Ajouter depuis l’annuaire",
+    "groupsLinked": "{n} groupe lié",
+    "groupsLinked_other": "{n} groupes liés",
     "addRole": "Ajouter un rôle",
     "pickerTitleUser": "Ajouter des utilisateurs",
     "pickerTitleGroup": "Ajouter des groupes",
@@ -951,8 +966,10 @@
     "pickerSearch": "Rechercher…",
     "pickerType": "Saisir pour filtrer.",
     "pickerDirOff": "La recherche d’annuaire n’est pas encore connectée. Configurer le fournisseur dans Fournisseur d’identité.",
+    "pickerDirType": "Saisir au moins 2 caractères du CN du groupe.",
+    "pickerDirBusy": "Recherche dans l’annuaire…",
     "pickerAdd": "Ajouter la sélection",
-    "pickerNone": "Aucun.",
+    "pickerNone": "Aucun",
     "inheritedPerms": "Permissions héritées",
     "inheritedHint": "Issues des rôles et des groupes. Lecture seule.",
     "idpDrag": "Réordonner la source d’identité",
@@ -995,6 +1012,15 @@
     "roleViewer": "Lecteur",
     "publicPlus": "Publics + {list}",
     "passwordMin": "{n} caractères minimum.",
+    "passwordRemain": "Encore {n} caractère",
+    "passwordRemain_other": "Encore {n} caractères",
+    "passwordLeft": "{n} restant",
+    "passwordLeft_other": "{n} restants",
+    "pwShort": "Trop court",
+    "pwWeak": "Faible",
+    "pwFair": "Moyen",
+    "pwGood": "Bon",
+    "pwStrong": "Fort",
     "adminHint": "{name} — Accès total. Seul le mot de passe est modifiable."
   },
   "icons": {
@@ -1026,6 +1052,7 @@
     "alphaHint": "S’applique à la liste, aux filtres de recherche et aux pastilles sur les cartes.",
     "count": "{n} étiquette",
     "count_other": "{n} étiquettes",
+    "countCol": "Cartes",
     "none": "Aucune étiquette",
     "empty": "Aucune étiquette pour l’instant.",
     "manage": "Gérer les étiquettes",

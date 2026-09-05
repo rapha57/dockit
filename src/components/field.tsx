@@ -6,8 +6,8 @@ export function Field({ label, hint, error, className, children }) {
     <div className={cn("settings-field", className)} data-slot="field">
       {label ? <Label>{label}</Label> : null}
       {children}
-      {hint ? <p className="settings-hint">{hint}</p> : null}
-      {error ? <p className="settings-hint is-warn">{error}</p> : null}
+      {hint ? <p className="theme-css-meta">{hint}</p> : null}
+      {error ? <p className="theme-css-meta is-warn">{error}</p> : null}
     </div>
   );
 }

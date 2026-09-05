@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Copy, Folder, Lock, Plus, Search, Shield, Users, X } from "lucide-react";
 import { toast } from "sonner";
@@ -14,13 +14,14 @@ import {
   can,
   effectiveAccess,
   explain,
+  isSystemRole,
   mergeGrant,
   PORTAL_ACTIONS,
   syntheticUserFromGroup,
   TREE_ACTIONS,
 } from "@/lib/acl";
-import { t, te, tp } from "@/lib/i18n";
-import { PASSWORD_MIN } from "@/lib/security";
+import { t, te, tp, localeTag } from "@/lib/i18n";
+import { PASSWORD_MAX, PASSWORD_MIN, passwordMeter, passwordPolicyError } from "@/lib/security";
 import {
   deleteGroup,
   deleteRole,
@@ -29,6 +30,8 @@ import {
   saveGroup,
   saveRole,
   saveUser,
+  searchLdapGroups,
+  linkLdapGroups,
 } from "@/lib/portal";
 
 const INPUT_SM = "h-9 rounded-md bg-transparent";
@@ -195,11 +198,77 @@ function ListShell({ toolbar, children }) {
 
 function ListHead({ cells, grip }) {
   return (
-    <div className="am-list-head" aria-hidden>
+    <div className="am-list-head">
       {grip ? <span className="am-chevron-spacer" /> : null}
       <span className="am-chevron-spacer" />
       <div className="am-row-cells">{cells}</div>
     </div>
+  );
+}
+
+export function useColSort() {
+  const [sort, setSort] = useState({
+    key: null,
+    dir: "asc",
+  });
+  const toggle = useCallback((key) => {
+    setSort((cur) =>
+      cur.key === key
+        ? {
+            key,
+            dir: cur.dir === "asc" ? "desc" : "asc",
+          }
+        : {
+            key,
+            dir: "asc",
+          },
+    );
+  }, []);
+  const apply = useCallback(
+    (rows, get) => {
+      if (!sort.key || !rows?.length) return rows;
+      const sign = sort.dir === "asc" ? 1 : -1;
+      const key = sort.key;
+      return [...rows].sort((a, b) => {
+        const va = get(a, key);
+        const vb = get(b, key);
+        if (typeof va === "number" && typeof vb === "number") return (va - vb) * sign;
+        return (
+          String(va || "").localeCompare(String(vb || ""), localeTag(), {
+            sensitivity: "base",
+            numeric: true,
+          }) * sign
+        );
+      });
+    },
+    [sort],
+  );
+  return {
+    sort,
+    toggle,
+    apply,
+  };
+}
+
+export function SortLabel({ id, sort, onToggle, children, className }) {
+  const on = sort.key === id;
+  return (
+    <button
+      type="button"
+      className={`am-sort${on ? " is-on" : ""}${className ? ` ${className}` : ""}`}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggle(id);
+      }}
+    >
+      {children}
+      {on ? (
+        <span className="am-sort-dir" aria-hidden>
+          {sort.dir === "asc" ? "↑" : "↓"}
+        </span>
+      ) : null}
+    </button>
   );
 }
 
@@ -348,8 +417,27 @@ function ResourceTree({ tabs, grants, setGrants, query, readOnly }) {
     })
     .filter((tab) => !q || tab._hit);
 
+  const portalHit =
+    !q ||
+    hit(t("access.permPortal")) ||
+    PORTAL_ACTIONS.some((a) => actionLabel(a).toLowerCase().includes(q));
+
   return (
     <div className="am-tree" role="tree">
+      {portalHit ? (
+        <div className="am-tree-row" role="treeitem">
+          <span className="am-tree-name">{t("access.permPortal")}</span>
+          <PermLine
+            res="portal"
+            id="*"
+            actions={PORTAL_ACTIONS}
+            grants={grants}
+            setGrants={setGrants}
+            tabs={tabs}
+            readOnly={readOnly}
+          />
+        </div>
+      ) : null}
       {list.map((tab) => (
         <div key={tab.id} className="am-tree-block">
           <div className="am-tree-row" role="treeitem">
@@ -360,7 +448,7 @@ function ResourceTree({ tabs, grants, setGrants, query, readOnly }) {
             >
               {tab.name}
               {tab.restricted ? (
-                <Lock className="size-3" aria-label={t("access.restricted")} />
+                <Lock className="size-3" aria-label={t("access.restricted")} title={t("access.restricted")} />
               ) : null}
             </button>
             <PermLine
@@ -420,56 +508,35 @@ function ResourceTree({ tabs, grants, setGrants, query, readOnly }) {
   );
 }
 
-function PortalActions({ grants, setGrants, locked }) {
-  return (
-    <div className="am-perms is-portal">
-      {PORTAL_ACTIONS.map((action) => {
-        const state = localEffect(grants, "portal", "*", action);
-        return (
-          <PermWord
-            key={action}
-            action={action}
-            state={state}
-            inheritedOn={false}
-            readOnly={locked}
-            onCycle={() => setGrants(setEffect(grants, "portal", "*", action, cycleEffect(state)))}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
 function EffectiveTree({ user, doc, onWhy }) {
   const tree = useMemo(() => effectiveAccess(user, doc), [user, doc]);
   const [open, setOpen] = useState({});
-  function words(actions, res, id) {
+  function words(allowed, res, id, all) {
+    const on = new Set(allowed || []);
     return (
       <span className="am-perms">
-        {actions.map((a) => (
-          <button
-            key={a}
-            type="button"
-            className="am-perm is-on"
-            onClick={() => onWhy?.(explain(user, a, { res, id }, doc))}
-          >
-            {actionLabel(a)} ✓
-          </button>
-        ))}
+        {(all || allowed || []).map((a) => {
+          const ok = on.has(a);
+          return (
+            <button
+              key={a}
+              type="button"
+              className={`am-perm${ok ? " is-on" : ""}`}
+              onClick={() => onWhy?.(explain(user, a, { res, id }, doc))}
+            >
+              {actionLabel(a)} {ok ? "✓" : "—"}
+            </button>
+          );
+        })}
       </span>
     );
   }
   return (
     <div className="am-tree">
-      {tree.portal.length ? (
-        <div className="am-tree-row">
-          <span className="am-tree-name">{t("access.permPortal")}</span>
-          {words(tree.portal, "portal", "*")}
-        </div>
-      ) : null}
-      {tree.publicOnly ? (
-        <p className="am-public">{t("access.publicSpaces", { n: tree.publicOnly })}</p>
-      ) : null}
+      <div className="am-tree-row">
+        <span className="am-tree-name">{t("access.permPortal")}</span>
+        {words(tree.portal, "portal", "*", PORTAL_ACTIONS)}
+      </div>
       {tree.tabs.map((tab) => (
         <div key={tab.id}>
           <div className="am-tree-row">
@@ -480,7 +547,7 @@ function EffectiveTree({ user, doc, onWhy }) {
             >
               {tab.name}
             </button>
-            {words(tab.actions, "tab", tab.id)}
+            {words(tab.actions, "tab", tab.id, TREE_ACTIONS.tab)}
           </div>
           {open[tab.id]
             ? tab.cats.map((cat) => (
@@ -493,13 +560,13 @@ function EffectiveTree({ user, doc, onWhy }) {
                     >
                       {cat.name}
                     </button>
-                    {words(cat.actions, "cat", cat.id)}
+                    {words(cat.actions, "cat", cat.id, TREE_ACTIONS.cat)}
                   </div>
                   {open[cat.id]
                     ? cat.cards.map((card) => (
                         <div key={card.id} className="am-tree-row is-card">
                           <span className="am-tree-name">{card.name || t("empty.untitled")}</span>
-                          {words(card.actions, "card", card.id)}
+                          {words(card.actions, "card", card.id, TREE_ACTIONS.card)}
                         </div>
                       ))
                     : null}
@@ -528,6 +595,7 @@ function WhyPanel({ info, onClose }) {
           className="am-icon-btn"
           onClick={onClose}
           aria-label={t("actions.close")}
+          title={t("actions.close")}
         >
           <X className="size-3.5" />
         </button>
@@ -588,7 +656,7 @@ function PermBlocks({ user, dir, tabs, grants, setGrants, editing, why, setWhy, 
     setPane(editing ? "direct" : "effective");
   }, [editing]);
   return (
-    <Section>
+    <div className="am-perm-block">
       <FilterBar
         pills
         value={pane}
@@ -613,7 +681,7 @@ function PermBlocks({ user, dir, tabs, grants, setGrants, editing, why, setWhy, 
               readOnly={!editing || hideDirectEdit}
             />
           ) : (
-            <p className="am-note">{t("access.none")}</p>
+            <p className="am-empty-line">{t("access.none")}</p>
           )}
         </>
       ) : null}
@@ -621,7 +689,7 @@ function PermBlocks({ user, dir, tabs, grants, setGrants, editing, why, setWhy, 
         inherited.length ? (
           <ResourceTree tabs={tabs} grants={inherited} setGrants={() => {}} query="" readOnly />
         ) : (
-          <p className="am-note">{t("access.none")}</p>
+          <p className="am-empty-line">{t("access.none")}</p>
         )
       ) : null}
       {pane === "effective" ? (
@@ -631,10 +699,30 @@ function PermBlocks({ user, dir, tabs, grants, setGrants, editing, why, setWhy, 
             <WhyPanel info={why} onClose={() => setWhy(null)} />
           </>
         ) : (
-          <p className="am-note">{t("access.none")}</p>
+          <p className="am-empty-line">{t("access.none")}</p>
         )
       ) : null}
-    </Section>
+    </div>
+  );
+}
+
+function PasswordHint({ value, required = false }: { value?: string; required?: boolean }) {
+  const pwd = String(value || "");
+  if (!required && !pwd) return null;
+  const meter = passwordMeter(pwd);
+  const tone =
+    meter.strength === "short" || meter.strength === "weak"
+      ? "is-warn"
+      : meter.strength === "good" || meter.strength === "strong"
+        ? "is-ok"
+        : "";
+  const strength = pwd ? t(`users.pw${meter.strength[0].toUpperCase()}${meter.strength.slice(1)}`) : t("users.passwordMin", { n: PASSWORD_MIN });
+  const remain = meter.remaining > 0 ? tp("users.passwordRemain", meter.remaining) : tp("users.passwordLeft", meter.left);
+  return (
+    <p className={`theme-css-meta am-pw-hint ${tone}`}>
+      <span>{strength}</span>
+      <span>{remain}</span>
+    </p>
   );
 }
 
@@ -688,6 +776,18 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
     if (q && !prettyLogin(u.username).toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
+  const col = useColSort();
+  const sorted = useMemo(
+    () =>
+      col.apply(filtered, (u, key) => {
+        if (key === "user") return prettyLogin(u.username);
+        if (key === "role")
+          return (u.roleIds || []).map((id) => roleTitle(id, dir.roles)).join(", ");
+        if (key === "status") return u.disabled ? 1 : 0;
+        return "";
+      }),
+    [filtered, col, dir.roles],
+  );
 
   function userDraft(u) {
     return {
@@ -755,15 +855,14 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
   async function save() {
     if (!draft?.username?.trim()) return;
     const pwd = draft.password || "";
-    if (draft.id === "admin" && pwd) {
-      if (pwd !== (draft.password2 || "")) {
-        toast.error(t("access.passwordMismatch"));
-        return;
-      }
-      if (pwd.length < PASSWORD_MIN) {
-        toast.error(t("users.passwordMin", { n: PASSWORD_MIN }));
-        return;
-      }
+    if (draft.id === "admin" && pwd && pwd !== (draft.password2 || "")) {
+      toast.error(t("access.passwordMismatch"));
+      return;
+    }
+    const pwdErr = (creating || pwd) ? passwordPolicyError(pwd) : "";
+    if (pwdErr) {
+      toast.error(te(new Error(pwdErr)));
+      return;
     }
     dir.setBusy(true);
     try {
@@ -852,9 +951,9 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
           disabled: false,
           phantom: true,
         },
-        ...filtered,
+        ...sorted,
       ]
-    : filtered;
+    : sorted;
   const empty = !dir.busy && !filtered.length && !creating;
 
   return (
@@ -898,17 +997,21 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
         <div className="am-list" role="list">
           <ListHead
             cells={[
-              <span key="u">{t("access.colUser")}</span>,
-              <span key="r">{t("users.role")}</span>,
-              <span key="s" className="am-row-end">
+              <SortLabel key="u" id="user" sort={col.sort} onToggle={col.toggle}>
+                {t("access.colUser")}
+              </SortLabel>,
+              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle}>
+                {t("users.role")}
+              </SortLabel>,
+              <SortLabel key="s" id="status" sort={col.sort} onToggle={col.toggle} className="am-row-end">
                 {t("access.colStatus")}
-              </span>,
+              </SortLabel>,
             ]}
           />
           {rows.map((u) => {
             const open = expand.openId === u.id || (u.phantom && creating);
             const rowDraft = open ? draft : null;
-            const view = current && !u.phantom ? current : u;
+            const view = current?.id === u.id && !u.phantom ? current : u;
             return (
               <ExpandRow
                 key={u.id}
@@ -944,8 +1047,10 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
                                   type="password"
                                   value={rowDraft.password}
                                   autoComplete="new-password"
+                                  maxLength={PASSWORD_MAX}
                                   onChange={(e) => patch({ ...rowDraft, password: e.target.value })}
                                 />
+                                <PasswordHint value={rowDraft.password} />
                               </label>
                               <label className="am-field">
                                 <span>{t("access.confirmPassword")}</span>
@@ -954,10 +1059,12 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
                                   type="password"
                                   value={rowDraft.password2 || ""}
                                   autoComplete="new-password"
+                                  maxLength={PASSWORD_MAX}
                                   onChange={(e) =>
                                     patch({ ...rowDraft, password2: e.target.value })
                                   }
                                 />
+                                <PasswordHint value={rowDraft.password2 || ""} />
                               </label>
                             </Pair>
                             <p className="am-note">{t("users.passwordKeep")}</p>
@@ -987,8 +1094,10 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
                                   type="password"
                                   value={rowDraft.password}
                                   autoComplete="new-password"
+                                  maxLength={PASSWORD_MAX}
                                   onChange={(e) => patch({ ...rowDraft, password: e.target.value })}
                                 />
+                                <PasswordHint value={rowDraft.password} required={creating} />
                               </label>
                             </Pair>
                             <label className="am-inline">
@@ -1005,45 +1114,44 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
                         )}
                       </Section>
                     ) : (
-                      <p className="am-meta">
-                        {accountSource(view.source || rowDraft.source)} ·{" "}
-                        <StatusText off={rowDraft.disabled} />
-                      </p>
+                      <p className="am-meta">{accountSource(view.source || rowDraft.source)}</p>
                     )}
                     {!lockedOwner ? (
                       <>
-                        <Section>
-                          <Pair>
-                            <div>
-                              <h5>{t("users.role")}</h5>
-                              <EntityPicker
-                                kind="role"
-                                items={dir.roles.filter((r) => r.id !== "owner")}
-                                selectedIds={rowDraft.roleIds || []}
-                                labelOf={(r) => roleTitle(r.id, dir.roles)}
-                                providers={[
-                                  { id: "local", label: t("access.sourceLocal"), kind: "local" },
-                                ]}
-                                readOnly={!expand.editing}
-                                onChange={(ids) =>
-                                  patch({ ...rowDraft, roleIds: ids.length ? ids : ["lecteur"] })
-                                }
-                              />
-                            </div>
-                            <div>
-                              <h5>{t("access.groupsOf")}</h5>
-                              <EntityPicker
-                                kind="group"
-                                items={dir.groups}
-                                selectedIds={rowDraft.groupIds || []}
-                                labelOf={(g) => g.name}
-                                providers={providers}
-                                readOnly={!expand.editing}
-                                onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
-                              />
-                            </div>
-                          </Pair>
-                        </Section>
+                        {expand.editing ? (
+                          <Section>
+                            <Pair>
+                              <div>
+                                <h5>{t("users.role")}</h5>
+                                <EntityPicker
+                                  kind="role"
+                                  items={dir.roles.filter((r) => r.id !== "owner")}
+                                  selectedIds={rowDraft.roleIds || []}
+                                  labelOf={(r) => roleTitle(r.id, dir.roles)}
+                                  providers={[
+                                    { id: "local", label: t("access.sourceLocal"), kind: "local" },
+                                  ]}
+                                  readOnly={false}
+                                  onChange={(ids) =>
+                                    patch({ ...rowDraft, roleIds: ids.length ? ids : ["lecteur"] })
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <h5>{t("access.groupsOf")}</h5>
+                                <EntityPicker
+                                  kind="group"
+                                  items={dir.groups}
+                                  selectedIds={rowDraft.groupIds || []}
+                                  labelOf={(g) => g.name}
+                                  providers={[{ id: "local", label: t("access.sourceLocal"), kind: "local" }]}
+                                  readOnly={false}
+                                  onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
+                                />
+                              </div>
+                            </Pair>
+                          </Section>
+                        ) : null}
                         <PermBlocks
                           user={
                             view.phantom
@@ -1075,11 +1183,12 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
                       saveDisabled={
                         dir.busy ||
                         !rowDraft.username.trim() ||
-                        (creating && (rowDraft.password || "").length < PASSWORD_MIN) ||
+                        Boolean(
+                          (creating || rowDraft.password) && passwordPolicyError(rowDraft.password || ""),
+                        ) ||
                         (lockedOwner &&
                           Boolean(rowDraft.password) &&
-                          (rowDraft.password !== (rowDraft.password2 || "") ||
-                            rowDraft.password.length < PASSWORD_MIN))
+                          rowDraft.password !== (rowDraft.password2 || ""))
                       }
                       extra={
                         !expand.editing && !creating && !lockedOwner ? (
@@ -1136,10 +1245,48 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
   const [confirm, setConfirm] = useState(null);
   const creating = expand.openId === NEW_ROW;
   const filtered = dir.groups.filter((g) => !q || g.name.toLowerCase().includes(q.toLowerCase()));
+  const col = useColSort();
+  const sorted = useMemo(
+    () =>
+      col.apply(filtered, (g, key) => {
+        if (key === "name") return g.name || "";
+        if (key === "role")
+          return (g.roleIds || []).map((id) => roleTitle(id, dir.roles)).join(", ");
+        if (key === "members") return (g.members || []).length;
+        return "";
+      }),
+    [filtered, col, dir.roles],
+  );
   const canCreate = actor?.role === "admin" || actor?.canManageGroups || actor?.canManageUsers;
   const people = dir.users.filter((u) => u.id !== "admin");
   const current = dir.groups.find((g) => g.id === expand.openId);
   const providers = pickerProviders(directories);
+  const adProviders = providers.filter((p) => p.kind === "ad");
+
+  const searchDirGroups = useCallback(async (directoryId, query) => {
+    const res = await searchLdapGroups({ data: { token, directoryId, query } });
+    return res.groups || [];
+  }, [token]);
+  async function linkDirGroups(directoryId, rows) {
+    if (!rows.length) return;
+    dir.setBusy(true);
+    try {
+      dir.apply(
+        await linkLdapGroups({
+          data: {
+            token,
+            directoryId,
+            groups: rows.map((r) => ({ dn: r.dn, name: r.name })),
+          },
+        }),
+      );
+      toast.success(tp("access.groupsLinked", rows.length));
+    } catch (err) {
+      if (!sessionGone(err)) toast.error(te(err));
+    } finally {
+      dir.setBusy(false);
+    }
+  }
 
   function groupDraft(g) {
     return {
@@ -1147,11 +1294,12 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
       name: g.name,
       roleIds: [...(g.roleIds || [])],
       members: [...(g.members || [])],
+      grants: clone(g.grants || []),
       source: g.source || "local",
     };
   }
   function blankDraft() {
-    return { id: "", name: "", roleIds: ["lecteur"], members: [], source: "local" };
+    return { id: "", name: "", roleIds: ["lecteur"], members: [], grants: [], source: "local" };
   }
   function load(next, edit) {
     snap.current = next ? clone(next) : null;
@@ -1200,6 +1348,7 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
           name: draft.name,
           roleIds: draft.roleIds,
           members: draft.members,
+          grants: draft.grants,
         },
       });
       dir.apply(res);
@@ -1245,9 +1394,9 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
           members: draft?.members || [],
           phantom: true,
         },
-        ...filtered,
+        ...sorted,
       ]
-    : filtered;
+    : sorted;
   const empty = !dir.busy && !filtered.length && !creating;
 
   return (
@@ -1255,6 +1404,20 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
       toolbar={
         <>
           <SearchField value={q} onChange={setQ} placeholder={t("nav.search")} />
+          {canCreate && adProviders.length ? (
+            <EntityPicker
+              kind="group"
+              items={[]}
+              selectedIds={[]}
+              trigger="button"
+              addLabel={t("access.addFromDir")}
+              providers={adProviders}
+              excludeIds={dir.groups.filter((g) => g.source === "ad").map((g) => g.externalId)}
+              labelOf={(g) => g.name}
+              searchRemote={searchDirGroups}
+              onRemoteAdd={linkDirGroups}
+            />
+          ) : null}
           {canCreate ? (
             <Button type="button" size="sm" className="am-create shrink-0" onClick={openCreate}>
               <Plus className="size-3.5" /> {t("access.createGroup")}
@@ -1280,17 +1443,21 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
         <div className="am-list" role="list">
           <ListHead
             cells={[
-              <span key="n">{t("access.groupName")}</span>,
-              <span key="r">{t("users.role")}</span>,
-              <span key="m" className="am-row-end">
+              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle}>
+                {t("access.groupName")}
+              </SortLabel>,
+              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle}>
+                {t("users.role")}
+              </SortLabel>,
+              <SortLabel key="m" id="members" sort={col.sort} onToggle={col.toggle} className="am-row-end">
                 {t("access.members")}
-              </span>,
+              </SortLabel>,
             ]}
           />
           {rows.map((g) => {
             const open = expand.openId === g.id || (g.phantom && creating);
             const rowDraft = open ? draft : null;
-            const view = current && !g.phantom ? current : g;
+            const view = current?.id === g.id && !g.phantom ? current : g;
             return (
               <ExpandRow
                 key={g.id}
@@ -1300,6 +1467,7 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
                 cells={[
                   <span key="n" className="am-row-title">
                     {rowDraft?.name || g.name || t("access.newGroup")}
+                    {g.source === "ad" ? <span className="am-dim"> · {t("access.sourceAd")}</span> : null}
                   </span>,
                   <span key="c" className="am-dim">
                     {bits(
@@ -1320,61 +1488,71 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
                           <Input
                             className={INPUT_SM}
                             value={rowDraft.name}
+                            disabled={view.source === "ad"}
                             onChange={(e) => patch({ ...rowDraft, name: e.target.value })}
                           />
                         </label>
                       </Section>
-                    ) : view.source === "ad" ? (
-                      <p className="am-meta">{t("access.sourceAd")}</p>
+                    ) : (
+                      <p className="am-meta">{accountSource(view.source || rowDraft.source)}</p>
+                    )}
+                    {expand.editing ? (
+                      <Section>
+                        <Pair>
+                          <div>
+                            <h5>{t("users.role")}</h5>
+                            <EntityPicker
+                              kind="role"
+                              items={dir.roles.filter((r) => r.id !== "owner")}
+                              selectedIds={rowDraft.roleIds || []}
+                              labelOf={(r) => roleTitle(r.id, dir.roles)}
+                              providers={[
+                                { id: "local", label: t("access.sourceLocal"), kind: "local" },
+                              ]}
+                              readOnly={false}
+                              onChange={(ids) =>
+                                patch({
+                                  ...rowDraft,
+                                  roleIds:
+                                    view.source === "ad" ? ids : ids.length ? ids : ["lecteur"],
+                                })
+                              }
+                            />
+                          </div>
+                          <div>
+                            <h5>{t("access.members")}</h5>
+                            <EntityPicker
+                              kind="user"
+                              items={people}
+                              selectedIds={rowDraft.members || []}
+                              labelOf={(u) => prettyLogin(u.username)}
+                              providers={providers}
+                              readOnly={view.source === "ad"}
+                              onChange={(ids) => patch({ ...rowDraft, members: ids })}
+                            />
+                          </div>
+                        </Pair>
+                      </Section>
                     ) : null}
-                    <Section>
-                      <Pair>
-                        <div>
-                          <h5>{t("users.role")}</h5>
-                          <EntityPicker
-                            kind="role"
-                            items={dir.roles.filter((r) => r.id !== "owner")}
-                            selectedIds={rowDraft.roleIds || []}
-                            labelOf={(r) => roleTitle(r.id, dir.roles)}
-                            providers={[
-                              { id: "local", label: t("access.sourceLocal"), kind: "local" },
-                            ]}
-                            readOnly={!expand.editing}
-                            onChange={(ids) =>
-                              patch({ ...rowDraft, roleIds: ids.length ? ids : ["lecteur"] })
-                            }
-                          />
-                        </div>
-                        <div>
-                          <h5>{t("access.members")}</h5>
-                          <EntityPicker
-                            kind="user"
-                            items={people}
-                            selectedIds={rowDraft.members || []}
-                            labelOf={(u) => prettyLogin(u.username)}
-                            providers={providers}
-                            readOnly={!expand.editing || view.source === "ad"}
-                            onChange={(ids) => patch({ ...rowDraft, members: ids })}
-                          />
-                        </div>
-                      </Pair>
-                    </Section>
-                    {view.id && !view.phantom ? (
-                      <PermBlocks
-                        user={syntheticUserFromGroup({
-                          ...view,
-                          roleIds: rowDraft.roleIds,
-                          members: rowDraft.members,
-                        })}
-                        dir={{ ...dir, tabs }}
-                        tabs={tabs}
-                        grants={view.grants || []}
-                        editing={false}
-                        hideDirectEdit
-                        why={why}
-                        setWhy={setWhy}
-                      />
-                    ) : null}
+                    <PermBlocks
+                      user={
+                        view.phantom
+                          ? null
+                          : syntheticUserFromGroup({
+                              ...view,
+                              roleIds: rowDraft.roleIds,
+                              grants: rowDraft.grants,
+                              members: rowDraft.members,
+                            })
+                      }
+                      dir={{ ...dir, tabs }}
+                      tabs={tabs}
+                      grants={rowDraft.grants || []}
+                      setGrants={(g) => patch({ ...rowDraft, grants: g })}
+                      editing={expand.editing}
+                      why={why}
+                      setWhy={setWhy}
+                    />
                     <RowActions
                       editing={expand.editing}
                       onEdit={canCreate ? beginEdit : null}
@@ -1436,6 +1614,18 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
     if (qn && !roleTitle(r.id, dir.roles).toLowerCase().includes(qn)) return false;
     return true;
   });
+  const col = useColSort();
+  const sortedRoles = useMemo(
+    () =>
+      col.apply(filteredRoles, (r, key) => {
+        if (key === "name") return roleTitle(r.id, dir.roles);
+        if (key === "holders")
+          return (r.userCount || 0) + (r.groupCount || 0);
+        if (key === "type") return r.system ? 0 : 1;
+        return "";
+      }),
+    [filteredRoles, col, dir.roles],
+  );
   const providers = pickerProviders(directories);
 
   function holders(r) {
@@ -1570,11 +1760,12 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
           groupCount: 0,
           phantom: true,
         },
-        ...filteredRoles,
+        ...sortedRoles,
       ]
-    : filteredRoles;
+    : sortedRoles;
   const empty = !filteredRoles.length && !creating;
-  const locked = draft?.id === "owner";
+  const defLocked = Boolean(draft?.system || isSystemRole(draft?.id));
+  const holdersLocked = draft?.id === "owner";
 
   return (
     <ListShell
@@ -1611,17 +1802,21 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
         <div className="am-list" role="list">
           <ListHead
             cells={[
-              <span key="n">{t("access.roleName")}</span>,
-              <span key="h">{t("access.roleHolders")}</span>,
-              <span key="t" className="am-row-end">
+              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle}>
+                {t("access.roleName")}
+              </SortLabel>,
+              <SortLabel key="h" id="holders" sort={col.sort} onToggle={col.toggle}>
+                {t("access.roleHolders")}
+              </SortLabel>,
+              <SortLabel key="t" id="type" sort={col.sort} onToggle={col.toggle} className="am-row-end">
                 {t("access.colType")}
-              </span>,
+              </SortLabel>,
             ]}
           />
           {rows.map((r) => {
             const open = expand.openId === r.id || (r.phantom && creating);
             const rowDraft = open ? draft : null;
-            const view = current && !r.phantom ? current : r;
+            const view = current?.id === r.id && !r.phantom ? current : r;
             return (
               <ExpandRow
                 key={r.id}
@@ -1634,8 +1829,8 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
                   </span>,
                   <span key="h" className="am-dim">
                     {holdersLine(
-                      view.userCount || (rowDraft?.userIds || []).length,
-                      view.groupCount || (rowDraft?.groupIds || []).length,
+                      r.phantom ? (rowDraft?.userIds || []).length : r.userCount || 0,
+                      r.phantom ? (rowDraft?.groupIds || []).length : r.groupCount || 0,
                     )}
                   </span>,
                   <span key="t" className="am-row-end am-dim">
@@ -1645,7 +1840,7 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
               >
                 {rowDraft ? (
                   <>
-                    {expand.editing ? (
+                    {expand.editing && !defLocked ? (
                       <Section>
                         <Pair>
                           <label className="am-field">
@@ -1653,7 +1848,6 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
                             <Input
                               className={INPUT_SM}
                               value={rowDraft.name}
-                              disabled={locked}
                               onChange={(e) => patch({ ...rowDraft, name: e.target.value })}
                             />
                           </label>
@@ -1684,7 +1878,6 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
                               <Input
                                 className={INPUT_SM}
                                 value={rowDraft.description}
-                                disabled={locked}
                                 onChange={(e) =>
                                   patch({ ...rowDraft, description: e.target.value })
                                 }
@@ -1709,46 +1902,40 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
                           (view.system ? t("access.systemHint") : t("access.noDesc"))}
                       </p>
                     )}
-                    <Section>
-                      <Pair>
-                        <div>
-                          <h5>{t("access.typeUser")}</h5>
-                          <EntityPicker
-                            kind="user"
-                            items={dir.users.filter((u) => u.id !== "admin")}
-                            selectedIds={rowDraft.userIds || []}
-                            labelOf={(u) => prettyLogin(u.username)}
-                            providers={providers}
-                            readOnly={!expand.editing || locked}
-                            onChange={(ids) => patch({ ...rowDraft, userIds: ids })}
-                          />
-                        </div>
-                        <div>
-                          <h5>{t("access.typeGroup")}</h5>
-                          <EntityPicker
-                            kind="group"
-                            items={dir.groups}
-                            selectedIds={rowDraft.groupIds || []}
-                            labelOf={(g) => g.name}
-                            providers={providers}
-                            readOnly={!expand.editing || locked}
-                            onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
-                          />
-                        </div>
-                      </Pair>
-                    </Section>
-                    <Section title={t("access.permissions")}>
-                      <p className="am-kicker">{t("access.permPortal")}</p>
-                      <PortalActions
-                        grants={rowDraft.grants}
-                        setGrants={
-                          locked || !expand.editing
-                            ? () => {}
-                            : (g) => patch({ ...rowDraft, grants: g })
-                        }
-                        locked={locked || !expand.editing}
-                      />
-                      {expand.editing && !locked ? (
+                    {expand.editing ? (
+                      <Section>
+                        <Pair>
+                          <div>
+                            <h5>{t("access.typeUser")}</h5>
+                            <EntityPicker
+                              kind="user"
+                              items={dir.users.filter((u) => u.id !== "admin")}
+                              selectedIds={rowDraft.userIds || []}
+                              labelOf={(u) => prettyLogin(u.username)}
+                              providers={providers}
+                              readOnly={holdersLocked}
+                              onChange={(ids) => patch({ ...rowDraft, userIds: ids })}
+                            />
+                          </div>
+                          <div>
+                            <h5>{t("access.typeGroup")}</h5>
+                            <EntityPicker
+                              kind="group"
+                              items={dir.groups}
+                              selectedIds={rowDraft.groupIds || []}
+                              labelOf={(g) => g.name}
+                              providers={[
+                                { id: "local", label: t("access.sourceLocal"), kind: "local" },
+                              ]}
+                              readOnly={holdersLocked}
+                              onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
+                            />
+                          </div>
+                        </Pair>
+                      </Section>
+                    ) : null}
+                    <div className="am-perm-block">
+                      {expand.editing && !defLocked ? (
                         <SearchField
                           value={q}
                           onChange={setQ}
@@ -1759,14 +1946,14 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
                         tabs={tabs}
                         grants={rowDraft.grants}
                         setGrants={
-                          locked || !expand.editing
+                          defLocked || !expand.editing
                             ? () => {}
                             : (g) => patch({ ...rowDraft, grants: g })
                         }
                         query={expand.editing ? q : ""}
-                        readOnly={locked || !expand.editing}
+                        readOnly={defLocked || !expand.editing}
                       />
-                    </Section>
+                    </div>
                     <RowActions
                       editing={expand.editing}
                       onEdit={view.id !== "owner" && !view.phantom ? beginEdit : null}
@@ -1778,6 +1965,7 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
                           <button
                             type="button"
                             className="am-text-btn"
+                            title={t("access.duplicate")}
                             onClick={() => openCreate(view)}
                           >
                             <Copy className="size-3.5" /> {t("access.duplicate")}

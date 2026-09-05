@@ -299,9 +299,10 @@ html.is-dragging .empty-well {
   color: var(--color-muted);
   font-weight: 600;
 }
-.account-panel .menu-kicker {
+.account-panel .menu-kicker,
+.card-ctx .menu-kicker {
   margin: 0;
-  padding: 0.3rem 0.7rem 0.05rem;
+  padding: 0.3rem 0.7rem 0.15rem;
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -568,6 +569,23 @@ html.dark select.field-input {
 .field-input:focus,
 .field-input:focus-visible {
   border-color: color-mix(in oklab, var(--color-ring) 55%, var(--color-border));
+}
+.field-ico-wrap {
+  position: relative;
+}
+.field-ico-wrap .field-ico {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  z-index: 2;
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-subtle);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+.field-ico-wrap .field-input {
+  padding-left: 2.15rem;
 }
 
 .item-grid {
@@ -930,8 +948,8 @@ html.dark .tag-chip {
   background: var(--tag-bg);
 }
 .tag-color-btn {
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 1.75rem;
+  height: 1.75rem;
   flex-shrink: 0;
   padding: 0;
   border: 1px solid color-mix(in oklab, var(--tag-fg, var(--color-border)) 18%, var(--tag-bg, var(--color-border)));
@@ -1092,8 +1110,12 @@ html.dark .fav-star:hover {
 html.dark .card-ctx-back.is-dim {
   background: color-mix(in oklab, var(--color-subtle) 14%, transparent);
 }
-html.card-ctx-dim body > *:not(.card-ctx):not(.card-ctx-back) {
+html.card-ctx-dim body > *:not(.card-ctx):not(.card-ctx-back):not(.portal-toaster) {
   filter: blur(2px);
+}
+.portal-toaster {
+  position: relative;
+  z-index: 200;
 }
 html.card-ctx-open .portal-card:hover {
   transform: none;
@@ -1118,13 +1140,20 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   transform: translateZ(0);
   box-shadow: 0 12px 32px -16px color-mix(in oklab, #050505 28%, transparent);
 }
+.card-ctx-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.1rem;
+}
 .card-ctx a {
   display: flex;
   width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 0.65rem;
-  height: 2.4rem;
-  padding: 0 0.7rem;
+  min-height: 2.55rem;
+  height: auto;
+  padding: 0.35rem 0.7rem;
   overflow: hidden;
   border: 0;
   border-radius: 0.5rem;
@@ -1134,6 +1163,48 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   text-align: left;
   text-decoration: none;
   cursor: pointer;
+}
+.card-ctx-copy-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.05rem;
+  line-height: 1.25;
+}
+.card-ctx-name {
+  display: block;
+  font-weight: 500;
+}
+.card-ctx-url {
+  display: block;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+.card-ctx-row a {
+  flex: 1;
+  width: auto;
+}
+.card-ctx-copy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.55rem;
+  min-height: 2.55rem;
+  height: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.card-ctx-copy:hover,
+.card-ctx-copy:focus-visible {
+  background: var(--color-elevated);
+  color: var(--color-fg);
+  outline: none;
 }
 .card-ctx a:hover,
 .card-ctx a:focus,
@@ -1445,7 +1516,7 @@ html.dark .debug-row.is-warn .debug-level {
 .settings-field {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.3rem;
 }
 .settings-field.is-disabled {
   opacity: 0.45;
@@ -1455,7 +1526,7 @@ html.dark .debug-row.is-warn .debug-level {
   cursor: not-allowed;
 }
 .app-form .settings-field {
-  gap: 0.55rem;
+  gap: 0.3rem;
 }
 .icon-pick-head {
   display: flex;
@@ -2141,24 +2212,17 @@ button.user-row-main:hover .user-row-name {
   padding: 0 0 0.15rem;
   list-style: none;
 }
-.tag-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0;
-  border-bottom: 1px solid var(--color-border);
-}
-.tag-row:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+.tag-list {
+  margin-top: 0.35rem;
 }
 .tag-item {
+  cursor: default;
   gap: 0.5rem;
 }
 .tag-item-name {
   min-width: 0;
   flex: 1;
-  height: 2rem;
+  height: 2.25rem;
   padding: 0 0.55rem;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -2923,9 +2987,23 @@ html.dark .dockit-mark {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  margin: 0;
   font-size: 0.8125rem;
+  line-height: 1.35;
   font-variant-numeric: tabular-nums;
   color: var(--color-muted);
+}
+.theme-css-meta.is-warn {
+  color: var(--color-danger);
+}
+.theme-css-meta.is-ok {
+  color: var(--color-ok);
+}
+.settings-field > .settings-hint,
+.settings-field > .theme-css-meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
 }
 
 .am-row.is-static .am-row-head {
@@ -3196,6 +3274,39 @@ html.dark .am-filters.is-pills button.is-on {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+.am-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.am-sort:hover,
+.am-sort.is-on {
+  color: var(--color-fg);
+}
+.am-sort-dir {
+  font-size: 0.62rem;
+  font-weight: 600;
+  opacity: 0.75;
+}
+.tag-list-head {
+  gap: 0.5rem;
+}
+.tag-list-head .am-sort {
+  flex: 1;
+  min-width: 0;
+}
+.tag-list-head .am-sort.am-row-end {
+  flex: 0 0 auto;
+}
 .am-chevron-spacer,
 .am-chevron,
 .am-row-grip {
@@ -3297,6 +3408,9 @@ html.dark .am-filters.is-pills button.is-on {
 .am-row-head {
   cursor: pointer;
 }
+.am-row-head.tag-item {
+  cursor: default;
+}
 .am-row-head:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--color-fg) 22%, transparent);
   outline-offset: 1px;
@@ -3316,8 +3430,20 @@ html.dark .am-filters.is-pills button.is-on {
 .am-expand > .am-sec:first-child,
 .am-expand > .am-meta:first-child {
   border-top: 0;
-  padding-top: 0.2rem;
+  padding-top: 0.15rem;
   margin-top: 0;
+}
+.am-expand > .am-sec {
+  padding: 0.55rem 0 0.35rem;
+}
+.am-perm-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+.am-expand > .am-meta + .am-perm-block {
+  margin-top: 0.4rem;
 }
 .am-expand .settings-card {
   padding: 0;
@@ -3540,8 +3666,10 @@ html.dark .am-filters.is-pills button.is-on {
   line-height: 1.5rem;
 }
 .am-meta {
-  margin: 0 0 0.15rem;
-  font-size: 0.75rem;
+  margin: 0;
+  min-height: 1.35rem;
+  font-size: 0.8125rem;
+  line-height: 1.35rem;
   color: var(--color-subtle);
 }
 .am-dl {
@@ -3633,6 +3761,33 @@ html.dark .am-filters.is-pills button.is-on {
 .am-note.is-warn {
   color: var(--color-danger);
 }
+.am-note.is-ok {
+  color: var(--color-ok);
+}
+.am-pw-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+.am-pw-hint.is-warn {
+  color: var(--color-danger);
+}
+.am-pw-hint.is-ok {
+  color: var(--color-ok);
+}
+.am-empty-line {
+  margin: 0;
+  min-height: 1.7rem;
+  font-size: 0.8125rem;
+  line-height: 1.7rem;
+  color: var(--color-subtle);
+}
 .am-sec > .am-note:last-child {
   margin-bottom: 0;
 }
@@ -3648,6 +3803,11 @@ html.dark .am-filters.is-pills button.is-on {
   margin-bottom: 0.4rem;
   font-size: 0.75rem;
   color: var(--color-muted);
+}
+.am-field > .am-pw-hint,
+.am-field > .theme-css-meta,
+.am-field > .settings-hint {
+  margin: 0;
 }
 .am-inline {
   display: flex;
@@ -3674,8 +3834,8 @@ html.dark .am-filters.is-pills button.is-on {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem 0.85rem;
-  margin: 0.15rem 0 0;
-  padding: 0.7rem 0 0.15rem;
+  margin: 1rem 0 0;
+  padding: 0.85rem 0 0.15rem;
   border-top: 1px solid color-mix(in oklab, var(--color-border) 55%, transparent);
 }
 .am-actions > button:not(.am-text-btn) {
@@ -3765,22 +3925,16 @@ html.dark .am-filters.is-pills button.is-on {
 .am-tree {
   display: flex;
   flex-direction: column;
-  margin-top: 0.2rem;
-}
-.am-public {
-  margin: 0.15rem 0 0.9rem;
-  padding: 0.15rem 0 0.55rem;
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--color-muted);
+  margin: 0;
 }
 .am-tree-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.2rem 0.75rem;
-  padding: 0.26rem 0;
+  min-height: 1.7rem;
+  padding: 0.2rem 0;
   border-bottom: 1px solid color-mix(in oklab, var(--color-border) 42%, transparent);
 }
 .am-tree-row.is-cat {
@@ -3801,8 +3955,12 @@ html.dark .am-filters.is-pills button.is-on {
   color: inherit;
   font-size: 0.8125rem;
   font-weight: 500;
+  line-height: 1.35;
   text-align: left;
   cursor: pointer;
+}
+span.am-tree-name {
+  cursor: default;
 }
 .am-perms {
   display: flex;
@@ -3834,7 +3992,7 @@ button.am-perm:hover {
   text-decoration: underline;
 }
 .am-perms.is-portal {
-  padding-bottom: 0.65rem;
+  padding-bottom: 0;
 }
 .am-why {
   margin-top: 0.65rem;

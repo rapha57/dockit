@@ -57,6 +57,7 @@ import {
   Type,
   Undo2,
   Upload,
+  User,
   Users,
   X,
   ScrollText,
@@ -77,6 +78,8 @@ import {
   ConfirmPopup,
   MovePickDialog,
   MoveSectionDialog,
+  useColSort,
+  SortLabel,
 } from "@/components/access";
 import { ExpandRow, useExpandSession } from "@/components/expand-row";
 import {
@@ -184,7 +187,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.05.1";
+var PORTAL_VERSION = "2026.09.05.2";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -684,8 +687,7 @@ function StatsBar({ stats, infoBar, geekTip, downCount, downOn, probeBlink, onDo
           >
             {" "}
             <AlertTriangle className="size-3" />
-            {downCount}
-            {downCount > 1 ? " sondes HS" : " sonde HS"}
+            {tp("info.downCount", downCount)}
           </button>
         ) : null}
       </div>
@@ -843,6 +845,7 @@ function AccountMenu({
         variant="ghost"
         size="icon-sm"
         aria-label={t("aria.account")}
+        title={t("aria.account")}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -982,6 +985,7 @@ function Home() {
   const healthBusy = useRef(false);
   const [drag, setDrag] = useState(null);
   const [over, setOver] = useState(null);
+  const [dragFold, setDragFold] = useState(null);
   const dragRef = useRef(drag);
   const overRef = useRef(over);
   const didDragRef = useRef(false);
@@ -1006,6 +1010,8 @@ function Home() {
   const markerRef = useRef(null);
   const carryRef = useRef(null);
   const tabHoverRef = useRef(null);
+  const catHoverRef = useRef(null);
+  const dragFoldRef = useRef(null);
   const dragPtrRef = useRef({
     x: 0,
     y: 0,
@@ -1061,7 +1067,10 @@ function Home() {
   function clearCarry() {
     carryRef.current = null;
     tabHoverRef.current = null;
+    catHoverRef.current = null;
+    dragFoldRef.current = null;
     stopDragScroll();
+    setDragFold(null);
   }
   function canEditTabId(tabId) {
     const sess = sessionRef.current;
@@ -1358,6 +1367,9 @@ function Home() {
   }
   function bindAppDrag(appId, origin) {
     unbindDrag();
+    const sourceCatId =
+      origin.closest("[data-cat-id]")?.dataset?.catId ||
+      dataRef.current.categories.find((c) => c.apps.some((a) => a.id === appId))?.id;
     const move = (ev) => {
       if (dragRef.current?.kind !== "app" || dragRef.current.id !== appId) return;
       dragPtrRef.current = {
@@ -1403,11 +1415,81 @@ function Home() {
               tabId: tabHit.tabId,
               at: Number.POSITIVE_INFINITY,
             };
+            if (dataRef.current.settings.cardDragCollapse !== false) {
+              dragFoldRef.current = {
+                sourceId: sourceCatId,
+                left: true,
+                openId: null,
+              };
+              setDragFold({
+                sourceId: sourceCatId,
+                left: true,
+                openId: null,
+              });
+              catHoverRef.current = null;
+            }
           }
         }
         return;
       }
       tabHoverRef.current = null;
+      if (
+        dataRef.current.settings.cardDragCollapse !== false &&
+        sourceCatId &&
+        (dataRef.current.categories || []).length > 1
+      ) {
+        if (!dragFoldRef.current)
+          dragFoldRef.current = {
+            sourceId: sourceCatId,
+            left: false,
+            openId: sourceCatId,
+          };
+        let overCatId = null;
+        for (const node of document.elementsFromPoint(ev.clientX, ev.clientY)) {
+          if (!(node instanceof HTMLElement)) continue;
+          if (node === ghostRef.current || node === markerRef.current) continue;
+          const s = node.closest("[data-cat-id]");
+          if (s?.dataset?.catId) {
+            overCatId = s.dataset.catId;
+            break;
+          }
+        }
+        const fold = dragFoldRef.current;
+        if (!fold.left) {
+          if (overCatId && overCatId !== sourceCatId) {
+            const next = {
+              sourceId: sourceCatId,
+              left: true,
+              openId: null,
+            };
+            dragFoldRef.current = next;
+            setDragFold(next);
+            catHoverRef.current = {
+              catId: overCatId,
+              at: Date.now(),
+            };
+          }
+        } else if (overCatId) {
+          const hover = catHoverRef.current;
+          if (!hover || hover.catId !== overCatId)
+            catHoverRef.current = {
+              catId: overCatId,
+              at: Date.now(),
+            };
+          else if (Date.now() - hover.at > 320 && fold.openId !== overCatId) {
+            const next = {
+              ...fold,
+              openId: overCatId,
+            };
+            dragFoldRef.current = next;
+            setDragFold(next);
+            catHoverRef.current = {
+              catId: overCatId,
+              at: Number.POSITIVE_INFINITY,
+            };
+          }
+        } else catHoverRef.current = null;
+      }
       const hit = hitAppInsert(ev.clientX, ev.clientY, appId);
       if (!hit) return;
       const cur = overRef.current;
@@ -2212,6 +2294,11 @@ function Home() {
   }
   const collapsedSet = useMemo(() => new Set(ui.collapsedCats ?? []), [ui.collapsedCats]);
   const searching = query.trim().length > 0 || tagFilter.length > 0 || downFilter;
+  function isCatCollapsed(catId) {
+    if (searching) return false;
+    if (drag?.kind === "app" && dragFold?.left) return catId !== dragFold.openId;
+    return collapsedSet.has(catId);
+  }
   const onFavs = page === "favs" && !searching;
   const canEditActive =
     session?.role === "admin" || session?.tabPerms?.[data.activeTabId] === "edit";
@@ -2634,6 +2721,9 @@ function Home() {
     killGhost();
     setDragUi(false);
     stopDragScroll();
+    catHoverRef.current = null;
+    dragFoldRef.current = null;
+    setDragFold(null);
     window.setTimeout(() => {
       didDragRef.current = false;
     }, 50);
@@ -2816,6 +2906,7 @@ function Home() {
             type="button"
             className="banner-close"
             aria-label={t("actions.close")}
+            title={t("actions.close")}
             onClick={() => setHideDevBanner(true)}
           >
             {" "}
@@ -2839,6 +2930,7 @@ function Home() {
             type="button"
             className="banner-close"
             aria-label={t("actions.close")}
+            title={t("actions.close")}
             onClick={() => setHideNoPassBanner(true)}
           >
             {" "}
@@ -2935,7 +3027,7 @@ function Home() {
                       data-tone={paint.tone}
                       style={paint.style}
                       className="tag-chip is-on"
-                      title={`Retirer ${name}`}
+                      title={t("nav.removeTag", { name })}
                       onClick={() => toggleTag(name)}
                     >
                       {name}
@@ -2995,7 +3087,13 @@ function Home() {
               onLogout={logoutEdit}
             />
             {editMode ? (
-              <Button variant="default" size="sm" onClick={() => requestEdit()}>
+              <Button
+                variant="default"
+                size="sm"
+                title={t("nav.done")}
+                aria-label={t("nav.done")}
+                onClick={() => requestEdit()}
+              >
                 {" "}
                 <Check className="size-4" />
                 <span className="hidden sm:inline">{t("nav.done")}</span>
@@ -3030,7 +3128,7 @@ function Home() {
               ) : null}
               {editMode && onFavs && session?.canEdit ? (
                 <span
-                  className="ml-0.5 flex gap-0.5"
+                  className="ml-1 flex items-center gap-[0.35rem]"
                   data-tab-action=""
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
@@ -3040,6 +3138,7 @@ function Home() {
                     role="button"
                     className="card-tool"
                     aria-label={t("aria.editSpace")}
+                    title={t("aria.editSpace")}
                     onClick={() =>
                       setModal({
                         kind: "favs",
@@ -3095,13 +3194,13 @@ function Home() {
                 <PortalIcon name={tab.icon} className="tab-ico" />
                 {tab.hideLabel ? null : tab.name}
                 {tab.restricted ? (
-                  <Lock className="tab-ico text-muted" aria-label={t("aria.restrictedTab")} />
+                  <Lock className="tab-ico text-muted" aria-label={t("aria.restrictedTab")} title={t("aria.restrictedTab")} />
                 ) : null}
                 {editMode &&
                   tab.id === data.activeTabId &&
                   (session?.role === "admin" || session?.tabPerms?.[tab.id] === "edit") && (
                     <span
-                      className="ml-1 flex gap-0.5"
+                      className="ml-1 flex items-center gap-[0.35rem]"
                       data-tab-action=""
                       onClick={(e) => e.stopPropagation()}
                       onPointerDown={(e) => e.stopPropagation()}
@@ -3123,6 +3222,7 @@ function Home() {
                         role="button"
                         className="card-tool"
                         aria-label={t("aria.editSpace")}
+                        title={t("aria.editSpace")}
                         onClick={() =>
                           setModal({
                             kind: "tab",
@@ -3138,6 +3238,7 @@ function Home() {
                           role="button"
                           className="card-tool is-danger"
                           aria-label={t("aria.deleteSpace")}
+                          title={t("aria.deleteSpace")}
                           onClick={() =>
                             setModal({
                               kind: "confirm-tab",
@@ -3247,6 +3348,7 @@ function Home() {
                           onRecheck={() => void recheckApp(app)}
                           onOpen={() => bumpClick(app)}
                           dimMenu={Boolean(data.settings.annexFade)}
+                          ctxMenu={data.settings.cardContextMenu !== false}
                           onEdit={() => void 0}
                           onDelete={() => void 0}
                         />
@@ -3341,12 +3443,13 @@ function Home() {
                         ) : null}
                       </div>
                       {editMode && canEditTab(tab.id) ? (
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-[0.35rem]">
                           {" "}
                           <button
                             type="button"
                             className="card-tool"
                             aria-label={t("aria.editCategory")}
+                            title={t("aria.editCategory")}
                             onClick={() =>
                               setModal({
                                 kind: "category",
@@ -3361,6 +3464,7 @@ function Home() {
                             type="button"
                             className="card-tool"
                             aria-label={t("access.moveSection")}
+                            title={t("access.moveSection")}
                             onClick={() =>
                               setModal({
                                 kind: "move-pick",
@@ -3390,7 +3494,8 @@ function Home() {
                           <button
                             type="button"
                             className="card-tool"
-                            aria-label={t("aria.addBlock")}
+                            aria-label={t("actions.addCard")}
+                            title={t("actions.addCard")}
                             onClick={() =>
                               setModal({
                                 kind: "app",
@@ -3405,6 +3510,7 @@ function Home() {
                             type="button"
                             className="card-tool is-danger"
                             aria-label={t("aria.deleteCategory")}
+                            title={t("aria.deleteCategory")}
                             onClick={() =>
                               setModal({
                                 kind: "confirm-cat",
@@ -3446,6 +3552,7 @@ function Home() {
                           onRecheck={() => void recheckApp(app)}
                           onOpen={() => bumpClick(app)}
                           dimMenu={Boolean(data.settings.annexFade)}
+                          ctxMenu={data.settings.cardContextMenu !== false}
                           onEdit={() =>
                             setModal({
                               kind: "app",
@@ -3479,7 +3586,7 @@ function Home() {
                     <span className="drop-slot-label">{t("nav.dropHere")}</span>
                   </div>
                 );
-              const collapsed = !searching && collapsedSet.has(cat.id);
+              const collapsed = isCatCollapsed(cat.id);
               return (
                 <section
                   key={cat.id}
@@ -3541,13 +3648,14 @@ function Home() {
                         </span>
                       ) : null}
                     </div>{" "}
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-[0.35rem]">
                       {" "}
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-sm"
                         aria-label={collapsed ? t("cat.expand") : t("cat.collapse")}
+                        title={collapsed ? t("cat.expand") : t("cat.collapse")}
                         aria-expanded={!collapsed}
                         onClick={(e) => {
                           e.preventDefault();
@@ -3568,6 +3676,7 @@ function Home() {
                             type="button"
                             className="card-tool"
                             aria-label={t("aria.editCategory")}
+                            title={t("aria.editCategory")}
                             onClick={() =>
                               setModal({
                                 kind: "category",
@@ -3582,6 +3691,7 @@ function Home() {
                             type="button"
                             className="card-tool"
                             aria-label={t("access.moveSection")}
+                            title={t("access.moveSection")}
                             onClick={() =>
                               setModal({
                                 kind: "move-pick",
@@ -3611,7 +3721,8 @@ function Home() {
                           <button
                             type="button"
                             className="card-tool"
-                            aria-label={t("aria.addBlock")}
+                            aria-label={t("actions.addCard")}
+                            title={t("actions.addCard")}
                             onClick={() =>
                               setModal({
                                 kind: "app",
@@ -3626,6 +3737,7 @@ function Home() {
                             type="button"
                             className="card-tool is-danger"
                             aria-label={t("aria.deleteCategory")}
+                            title={t("aria.deleteCategory")}
                             onClick={() =>
                               setModal({
                                 kind: "confirm-cat",
@@ -3678,6 +3790,7 @@ function Home() {
                           onRecheck={() => void recheckApp(app)}
                           onOpen={() => bumpClick(app)}
                           dimMenu={Boolean(data.settings.annexFade)}
+                          ctxMenu={data.settings.cardContextMenu !== false}
                           onPointerDown={(e) => {
                             if (!canDrag) return;
                             if (e.target.closest("button")) return;
@@ -4394,6 +4507,7 @@ function FavStar({ on, onToggle }) {
       type="button"
       className={`fav-star ${on ? "is-on" : ""}`}
       aria-label={on ? t("fav.remove") : t("fav.add")}
+      title={on ? t("fav.remove") : t("fav.add")}
       aria-pressed={on}
       onClick={(e) => {
         e.preventDefault();
@@ -4434,8 +4548,13 @@ function AppCard({
   onDuplicate,
   onDelete,
   dimMenu,
+  ctxMenu,
 }) {
   const extra = (app.kind || "app") === "app" ? (app.links ?? []) : [];
+  const primaryHref = safeAppHref(app.url);
+  const extraLinks = extra.filter((row) => safeAppHref(row.url));
+  const ctxOn = ctxMenu !== false;
+  const canCtx = extraLinks.length > 0 || (ctxOn && Boolean(primaryHref));
   const [menu, setMenu] = useState(null);
   const menuRef = useRef(null);
   useLayoutEffect(() => {
@@ -4575,7 +4694,8 @@ function AppCard({
             <button
               type="button"
               className="card-tool"
-              aria-label="Modifier"
+              aria-label={t("actions.edit")}
+              title={t("actions.edit")}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -4590,6 +4710,7 @@ function AppCard({
               type="button"
               className="card-tool is-danger"
               aria-label={t("actions.delete")}
+              title={t("actions.delete")}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -4672,7 +4793,7 @@ function AppCard({
       </div>
     );
   const shell = `portal-card group relative flex h-full min-h-0 flex-col rounded-xl bg-surface p-4 ${className ?? ""} ${canDrag ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""} ${corner ? "has-corner" : ""} ${headless ? "is-headless" : ""} ${menu ? "is-ctx-open" : ""}`;
-  const onCtx = extra.length
+  const onCtx = canCtx
     ? (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -4682,19 +4803,85 @@ function AppCard({
         });
       }
     : void 0;
-  const entries = extra;
+  function copyHref(raw, e) {
+    e?.preventDefault();
+    e?.stopPropagation();
+    const href = safeAppHref(raw);
+    if (!href) return;
+    const fallback = () => {
+      try {
+        const el = document.createElement("textarea");
+        el.value = href;
+        el.setAttribute("readonly", "");
+        el.style.cssText = "position:fixed;left:-9999px;top:0";
+        document.body.appendChild(el);
+        el.select();
+        const ok = document.execCommand("copy");
+        el.remove();
+        return ok;
+      } catch {
+        return false;
+      }
+    };
+    const done = (ok) => {
+      setMenu(null);
+      if (ok) toast.success(t("toast.copied"));
+      else toast.error(t("toast.generic"));
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(href).then(() => done(true)).catch(() => done(fallback()));
+    } else done(fallback());
+  }
+  function ctxRow(href, name, key) {
+    const safe = safeAppHref(href);
+    if (!safe) return null;
+    const label = String(name || "").trim() || t("annex.primary");
+    return (
+      <div key={key} className="card-ctx-row">
+        <a
+          href={safe}
+          target={app.openIn === "_self" ? "_self" : "_blank"}
+          rel={app.openIn === "_self" ? void 0 : "noopener noreferrer"}
+          role="menuitem"
+          title={safe}
+          onClick={() => {
+            setMenu(null);
+            onOpen?.();
+          }}
+        >
+          <Link className="size-4 shrink-0" aria-hidden />
+          <span className="card-ctx-copy-text min-w-0">
+            <span className="card-ctx-name truncate">{label}</span>
+            <span className="card-ctx-url truncate">{safe}</span>
+          </span>
+        </a>
+        <button
+          type="button"
+          className="card-ctx-copy"
+          aria-label={t("annex.copy")}
+          title={t("annex.copy")}
+          onClick={(ev) => copyHref(safe, ev)}
+        >
+          <Copy className="size-4" />
+        </button>
+      </div>
+    );
+  }
+  const showPrimary = Boolean(ctxOn && primaryHref);
+  const ctxCount = (showPrimary ? 1 : 0) + extraLinks.length;
+  const ctxName = String(app.title || "").trim();
+  const ctxHeading = ctxCount === 1 ? t("annex.one") : t("annex.linksTitle");
   const linkMenu =
-    menu && extra.length && typeof document !== "undefined"
+    menu && canCtx && typeof document !== "undefined"
       ? createPortal(
           <>
-            {" "}
             <div
               className={`card-ctx-back${dimMenu ? " is-dim" : ""}`}
               onPointerDown={(e) => {
                 e.preventDefault();
                 setMenu(null);
               }}
-            />{" "}
+            />
             <div
               ref={menuRef}
               className="card-ctx"
@@ -4706,31 +4893,15 @@ function AppCard({
               onPointerDown={(e) => e.stopPropagation()}
               onContextMenu={(e) => e.preventDefault()}
             >
-              {" "}
-              <p className="menu-title">
-                {extra.length > 1 ? t("annex.others") : t("annex.other")}
-              </p>{" "}
+              <p className="menu-kicker truncate" title={ctxHeading}>
+                {ctxHeading}
+              </p>
               <div className="menu-sep" />
-              {entries
-                .filter((row) => safeAppHref(row.url))
-                .map((row) => (
-                  <a
-                    key={`${row.title}:${row.url}`}
-                    href={safeAppHref(row.url)}
-                    target={app.openIn === "_self" ? "_self" : "_blank"}
-                    rel={app.openIn === "_self" ? void 0 : "noopener noreferrer"}
-                    role="menuitem"
-                    title={row.url}
-                    onClick={() => {
-                      setMenu(null);
-                      onOpen?.();
-                    }}
-                  >
-                    {" "}
-                    <Link className="size-4 shrink-0" aria-hidden />
-                    <span className="min-w-0 truncate">{row.title}</span>
-                  </a>
-                ))}
+              {showPrimary ? ctxRow(primaryHref, ctxName || t("annex.one"), "primary") : null}
+              {showPrimary && extraLinks.length ? <div className="menu-sep" /> : null}
+              {extraLinks.map((row, i) =>
+                ctxRow(row.url, row.title, `x-${i}-${row.url}`),
+              )}
             </div>
           </>,
           document.body,
@@ -5012,27 +5183,44 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
     });
   }, [token]);
   const needle = q.trim().toLowerCase();
-  const trashRows = (filter === "all" ? trash : trash.filter((row) => row.scope === filter)).filter((row) =>
-    historyMatches(needle, [
-      row.label,
-      row.path,
-      row.actor,
-      historyScopeLabel(row.scope, row.kind),
-      historyCountLabel(row.count),
-      formatHistoryWhen(row.at),
-    ]),
-  );
-  const auditRows = audit
-    .filter((row) => filter === "all" || String(row.type || "").startsWith(`${filter}.`))
-    .filter((row) =>
+  const col = useColSort();
+  const trashRows = col.apply(
+    (filter === "all" ? trash : trash.filter((row) => row.scope === filter)).filter((row) =>
       historyMatches(needle, [
-        t(`audit.${row.type}`),
         row.label,
         row.path,
         row.actor,
+        historyScopeLabel(row.scope, row.kind),
+        historyCountLabel(row.count),
         formatHistoryWhen(row.at),
       ]),
-    );
+    ),
+    (row, key) => {
+      if (key === "a") return row.label || "";
+      if (key === "b") return row.path || "";
+      if (key === "date") return Number(row.at) || 0;
+      return "";
+    },
+  );
+  const auditRows = col.apply(
+    audit
+      .filter((row) => filter === "all" || String(row.type || "").startsWith(`${filter}.`))
+      .filter((row) =>
+        historyMatches(needle, [
+          t(`audit.${row.type}`),
+          row.label,
+          row.path,
+          row.actor,
+          formatHistoryWhen(row.at),
+        ]),
+      ),
+    (row, key) => {
+      if (key === "a") return t(`audit.${row.type}`);
+      if (key === "b") return [row.label, row.path].filter(Boolean).join(" ");
+      if (key === "date") return Number(row.at) || 0;
+      return "";
+    },
+  );
   async function restore(row) {
     if (busy) return;
     setBusy(true);
@@ -5171,6 +5359,7 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
             size="icon-sm"
             onClick={onClose}
             aria-label={t("actions.close")}
+            title={t("actions.close")}
           >
             <X className="size-4" />
           </Button>
@@ -5242,15 +5431,17 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
                 <EmptyState compact icon={pane === "audit" ? ScrollText : Undo2} text={emptyText} />
               ) : (
                 <div className="am-list is-history" role="list">
-                  <div className="am-list-head" aria-hidden>
+                  <div className="am-list-head">
                     <div className="am-row-cells">
-                      <span>
+                      <SortLabel id="a" sort={col.sort} onToggle={col.toggle}>
                         {pane === "audit" ? t("audit.csvAction") : t("audit.csvItem")}
-                      </span>
-                      <span>
+                      </SortLabel>
+                      <SortLabel id="b" sort={col.sort} onToggle={col.toggle}>
                         {pane === "audit" ? t("audit.csvItem") : t("audit.csvPlace")}
-                      </span>
-                      <span className="am-row-end">{t("audit.csvDate")}</span>
+                      </SortLabel>
+                      <SortLabel id="date" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                        {t("audit.csvDate")}
+                      </SortLabel>
                     </div>
                   </div>
                   {pane === "audit"
@@ -5333,6 +5524,7 @@ function StatsPanel({ catalog, scoped, onClose }) {
           size="icon-sm"
           onClick={onClose}
           aria-label={t("actions.close")}
+            title={t("actions.close")}
         >
           {" "}
           <X className="size-4" />
@@ -5425,7 +5617,14 @@ function AdminPanel({
             <h3 className="dialog-title">{current?.label || t("settings.title")}</h3>
             {current?.lead ? <p className="settings-lead">{current.lead}</p> : null}
           </div>{" "}
-          <Button type="button" variant="ghost" size="icon-sm" onClick={onCancel}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onCancel}
+            aria-label={t("actions.close")}
+            title={t("actions.close")}
+          >
             {" "}
             <X className="size-4" />
           </Button>
@@ -5747,15 +5946,13 @@ function OidcForm({ initial, onSave, busy }) {
       <div className="settings-card">
         {" "}
         <p className="settings-kicker">{t("oidc.boxClient")}</p>
-        <Field label={t("oidc.issuer")}>
-          {" "}
+        <Field label={t("oidc.issuer")} hint={t("oidc.issuerHint")}>
           <Input
             value={oidcIssuer}
             onChange={(e) => setOidcIssuer(e.target.value)}
             placeholder="https://keycloak.exemple/realms/dockit"
             required={oidcEnabled}
-          />{" "}
-          <p className="settings-hint">{t("oidc.issuerHint")}</p>
+          />
         </Field>{" "}
         <Field label={t("oidc.clientId")}>
           {" "}
@@ -5765,8 +5962,7 @@ function OidcForm({ initial, onSave, busy }) {
             required={oidcEnabled}
           />
         </Field>{" "}
-        <Field label={t("oidc.clientSecret")}>
-          {" "}
+        <Field label={t("oidc.clientSecret")} hint={t("oidc.secretHint")}>
           <Input
             type="password"
             value={oidcClientSecret}
@@ -5774,8 +5970,7 @@ function OidcForm({ initial, onSave, busy }) {
             placeholder={
               initial.oidcHasSecret ? t("oidc.secretUnchanged") : t("oidc.secretOptional")
             }
-          />{" "}
-          <p className="settings-hint">{t("oidc.secretHint")}</p>
+          />
         </Field>
       </div>{" "}
       <div className="settings-card">
@@ -5854,6 +6049,8 @@ function settingsBase(initial) {
     pruneOrphanTags: Boolean(initial.pruneOrphanTags),
     tagsAlpha: initial.tagsAlpha !== false,
     cardResize: initial.cardResize !== false,
+    cardContextMenu: initial.cardContextMenu !== false,
+    cardDragCollapse: initial.cardDragCollapse !== false,
     infoStats: initial.infoStats !== false,
     infoGeek: initial.infoGeek !== false,
     probeTlsVerify: Boolean(initial.probeTlsVerify),
@@ -5902,7 +6099,14 @@ function SettingsForm({ initial, busy, embedded, onCancel, onSave }) {
         <div className="mb-4 flex items-center justify-between">
           {" "}
           <h3 className="dialog-title">{t("settings.portalParams")}</h3>
-          <Button type="button" variant="ghost" size="icon-sm" onClick={onCancel}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onCancel}
+            aria-label={t("actions.close")}
+            title={t("actions.close")}
+          >
             {" "}
             <X className="size-4" />
           </Button>
@@ -6256,6 +6460,8 @@ function PresentationForm({ initial, onSave }) {
   const [annexFade, setAnnexFade] = useState(Boolean(initial.annexFade));
   const [catCounts, setCatCounts] = useState(Boolean(initial.catCounts));
   const [cardResize, setCardResize] = useState(initial.cardResize !== false);
+  const [cardContextMenu, setCardContextMenu] = useState(initial.cardContextMenu !== false);
+  const [cardDragCollapse, setCardDragCollapse] = useState(initial.cardDragCollapse !== false);
   const [infoBar, setInfoBar] = useState(initial.infoBar !== false);
   return (
     <form
@@ -6273,6 +6479,8 @@ function PresentationForm({ initial, onSave }) {
           annexFade,
           catCounts,
           cardResize,
+          cardContextMenu,
+          cardDragCollapse,
           infoBar,
         });
       }}
@@ -6326,6 +6534,22 @@ function PresentationForm({ initial, onSave }) {
               onChange={(e) => setCardResize(e.target.checked)}
             />
             {t("pres.cardResize")}
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={cardContextMenu}
+              onChange={(e) => setCardContextMenu(e.target.checked)}
+            />
+            {t("pres.cardContextMenu")}
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={cardDragCollapse}
+              onChange={(e) => setCardDragCollapse(e.target.checked)}
+            />
+            {t("pres.cardDragCollapse")}
           </label>
         </div>
       </div>{" "}
@@ -6931,7 +7155,7 @@ function LockForm({
   onUnlock,
   onOidc,
 }) {
-  const [username, setUsername] = useState(noPassword ? "admin" : "");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const realms = Array.isArray(ldapRealms)
     ? ldapRealms
@@ -6973,10 +7197,11 @@ function LockForm({
       className="settings-stack"
       onSubmit={(e) => {
         e.preventDefault();
-        onUnlock(username.trim() || "admin", password, showDomain ? domain : "local");
+        const name = username.trim() || "admin";
+        const bypass = noPassword && (!username.trim() || name.toLowerCase() === "admin");
+        onUnlock(name, password, bypass ? "local" : showDomain ? domain : "local");
       }}
     >
-      {" "}
       <div className="mb-4 flex items-center justify-between">
         <h3 className="dialog-title">{t("account.login")}</h3>
         <Button
@@ -6985,69 +7210,71 @@ function LockForm({
           size="icon-sm"
           onClick={onCancel}
           aria-label={t("actions.close")}
+          title={t("actions.close")}
         >
           <X className="size-4" />
         </Button>
       </div>
       <Field label={t("lock.username")}>
-        <Input
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          autoComplete="username"
-          autoFocus
-          required
-        />
+        <div className="field-ico-wrap">
+          <Input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            autoFocus
+            required={!noPassword}
+          />
+          <User className="field-ico" aria-hidden />
+        </div>
       </Field>
       <Field label={t("lock.password")}>
-        <Input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          required={!noPassword}
-        />
+        <div className="field-ico-wrap">
+          <Input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required={!noPassword}
+          />
+          <Lock className="field-ico" aria-hidden />
+        </div>
       </Field>
       {showDomain ? (
         <Field label={t("lock.domain")}>
-          <Select value={domain} onChange={(e) => setDomain(e.target.value)}>
-            {domainOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </Select>
+          <div className="field-ico-wrap">
+            <Select value={domain} onChange={(e) => setDomain(e.target.value)}>
+              {domainOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+            <Server className="field-ico" aria-hidden />
+          </div>
         </Field>
       ) : null}
+      <div className="settings-actions">
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          {t("actions.cancel")}
+        </Button>
+        <Button type="submit" variant={noPassword ? "debug" : "default"} disabled={busy}>
+          {t("lock.submit")}
+        </Button>
+      </div>
       {oidcEnabled ? (
         <>
-          {" "}
           <p className="settings-hint">{t("lock.or")}</p>
-          <Button type="button" variant="secondary" disabled={busy} onClick={() => void onOidc?.()}>
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full"
+            disabled={busy}
+            onClick={() => void onOidc?.()}
+          >
             {oidcLabel || "SSO"}
           </Button>
         </>
-      ) : null}{" "}
-      <div className={noPassword ? "settings-actions lock-actions" : "settings-actions"}>
-        {noPassword ? (
-          <Button
-            type="button"
-            variant="debug"
-            disabled={busy}
-            onClick={() => onUnlock("admin", "", "local")}
-          >
-            {t("lock.enterAdmin")}
-          </Button>
-        ) : null}{" "}
-        <div className="lock-actions-main">
-          {" "}
-          <Button type="button" variant="secondary" onClick={onCancel}>
-            {t("actions.cancel")}
-          </Button>{" "}
-          <Button type="submit" disabled={busy}>
-            {t("account.login")}
-          </Button>
-        </div>
-      </div>
+      ) : null}
     </form>
   );
 }
@@ -7577,7 +7804,7 @@ function LdapDirFields({ d, patch }) {
         </label>
       </div>
       <div className="field-row">
-        <Field label={t("ldap.domain")}>
+        <Field label={t("ldap.domain")} hint={t("ldap.domainHint")}>
           <Input
             value={d.domain}
             onChange={(e) =>
@@ -7588,9 +7815,8 @@ function LdapDirFields({ d, patch }) {
             placeholder="CORP"
             required={Boolean(d.enabled)}
           />
-          <p className="settings-hint">{t("ldap.domainHint")}</p>
         </Field>
-        <Field label={t("ldap.host")}>
+        <Field label={t("ldap.host")} hint={t("ldap.hostHint")}>
           <Input
             value={d.host}
             onChange={(e) =>
@@ -7601,7 +7827,6 @@ function LdapDirFields({ d, patch }) {
             placeholder="dc.example.local"
             required={Boolean(d.enabled)}
           />
-          <p className="settings-hint">{t("ldap.hostHint")}</p>
         </Field>
       </div>
       <Field label={t("ldap.port")}>
@@ -7617,7 +7842,7 @@ function LdapDirFields({ d, patch }) {
           }
         />
       </Field>
-      <Field label={t("ldap.bindDn")}>
+      <Field label={t("ldap.bindDn")} hint={t("ldap.bindHint")}>
         <Input
           value={d.bindDn}
           onChange={(e) =>
@@ -7627,7 +7852,6 @@ function LdapDirFields({ d, patch }) {
           }
           placeholder="CN=dockit,OU=Services,DC=example,DC=local"
         />
-        <p className="settings-hint">{t("ldap.bindHint")}</p>
       </Field>
       <Field label={t("ldap.bindPassword")}>
         <Input
@@ -7653,7 +7877,7 @@ function LdapDirFields({ d, patch }) {
           required={Boolean(d.enabled) && Boolean(String(d.bindDn || "").trim())}
         />
       </Field>
-      <Field label={t("ldap.filter")}>
+      <Field label={t("ldap.filter")} hint={t("ldap.filterHint")}>
         <Input
           value={d.userFilter}
           onChange={(e) =>
@@ -7663,7 +7887,6 @@ function LdapDirFields({ d, patch }) {
           }
           placeholder="(&(objectClass=user)(sAMAccountName={username}))"
         />
-        <p className="settings-hint">{t("ldap.filterHint")}</p>
       </Field>
     </>
   );
@@ -7773,6 +7996,7 @@ function AccessFrame({
             size="icon-sm"
             onClick={onClose}
             aria-label={t("actions.close")}
+            title={t("actions.close")}
           >
             {" "}
             <X className="size-4" />
@@ -7963,7 +8187,14 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
               <div className="icon-pick-head">
                 {" "}
                 <h3 className="dialog-title">{t("item.icon")}</h3>
-                <Button type="button" variant="ghost" size="icon-sm" onClick={() => setOpen(false)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setOpen(false)}
+                  aria-label={t("actions.close")}
+                  title={t("actions.close")}
+                >
                   {" "}
                   <X className="size-4" />
                 </Button>
@@ -8245,6 +8476,7 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
             size="icon-sm"
             onClick={onCancel}
             aria-label={t("actions.close")}
+            title={t("actions.close")}
           >
             {" "}
             <X className="size-4" />
@@ -8322,6 +8554,7 @@ function FavsForm({ hideLabel: initialHide, busy, onCancel, onSave }) {
           size="icon-sm"
           onClick={onCancel}
           aria-label={t("actions.close")}
+            title={t("actions.close")}
         >
           <X className="size-4" />
         </Button>
@@ -8410,6 +8643,7 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
             size="icon-sm"
             onClick={onCancel}
             aria-label={t("actions.close")}
+            title={t("actions.close")}
           >
             {" "}
             <X className="size-4" />
@@ -8919,7 +9153,14 @@ function AppForm({
           </div>{" "}
           <div className="settings-head-actions">
             {kindSelect}
-            <Button type="button" variant="ghost" size="icon-sm" onClick={onCancel}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onCancel}
+              aria-label={t("actions.close")}
+              title={t("actions.close")}
+            >
               {" "}
               <X className="size-4" />
             </Button>
@@ -9055,7 +9296,7 @@ function AppForm({
                     onBlur={() => addTag(tagDraft)}
                     list="portal-tag-suggest"
                   />
-                  <p className="settings-hint">{`${tags.length}/3`}</p>
+                  <p className="theme-css-meta">{`${tags.length}/3`}</p>
                   <datalist id="portal-tag-suggest">
                     {knownTags.map((tg) => (
                       <option key={tg} value={tg} />
@@ -9305,11 +9546,16 @@ function TagManager({
   onSave,
   onApply,
 }) {
-  const [pane, setPane] = useState("main");
   const [prune, setPrune] = useState(Boolean(pruneOrphanTags));
   const [alpha, setAlpha] = useState(tagsAlpha !== false);
   const [drafts, setDrafts] = useState({});
   const [createDraft, setCreateDraft] = useState("");
+  const col = useColSort();
+  const sortedTags = col.apply(tags, (row, key) => {
+    if (key === "name") return row.name || "";
+    if (key === "count") return row.count || 0;
+    return "";
+  });
   const [localColors, setLocalColors] = useState(colors ?? {});
   useEffect(() => {
     setPrune(Boolean(pruneOrphanTags));
@@ -9389,124 +9635,109 @@ function TagManager({
         toast.success(t("toast.saved"));
       }}
     >
-      {pane === "list" ? (
-        <>
-          <button
-            type="button"
-            className="settings-link settings-back"
-            onClick={() => setPane("main")}
-          >
-            <ChevronLeft className="size-3.5" />
-            {t("tags.back")}
-          </button>
-          <div className="settings-card">
-            <p className="settings-kicker">
-              {tags.length ? tp("tags.count", tags.length) : t("item.tags")}
-            </p>
-            <Input
-              value={createDraft}
-              placeholder={t("tags.newPlaceholder")}
-              maxLength={32}
-              disabled={busy || tags.length >= 80}
-              onChange={(e) => setCreateDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  createTag();
-                }
-              }}
-            />
-            {tags.length === 0 ? (
-              <p className="settings-hint">{t("tags.empty")}</p>
-            ) : (
-              <ul className="settings-list">
-                {tags.map((row) => {
-                  const draft = drafts[row.name] ?? row.name;
-                  const hex = lookupTagColor(row.name, localColors) ?? defaultTagHex(row.name);
-                  return (
-                    <li key={row.name} className="settings-list-item tag-item">
-                      <TagColorPick
-                        hex={hex}
-                        name={row.name}
-                        disabled={busy}
-                        onChange={(next) => changeColor(row.name, next)}
-                      />
-                      <input
-                        className="tag-item-name"
-                        value={draft}
-                        aria-label={t("tags.nameOf", {
-                          name: row.name,
-                        })}
-                        onChange={(e) =>
-                          setDrafts((d) => ({
-                            ...d,
-                            [row.name]: e.target.value,
-                          }))
-                        }
-                        onBlur={() => renameTag(row.name, draft)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            e.currentTarget.blur();
-                          }
-                        }}
-                      />
-                      <span className="tag-row-count">{row.count}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="card-tool is-danger"
-                        disabled={busy}
-                        aria-label={t("tags.deleteAria", {
-                          name: row.name,
-                        })}
-                        onClick={() => removeTag(row.name)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="settings-card">
-            <p className="settings-kicker">{t("tags.memory")}</p>
-            <div className="settings-toggles">
-              <label>
-                <input type="checkbox" checked={prune} onChange={(e) => setPrune(e.target.checked)} />
-                {t("tags.prune")}
-              </label>
-              <p className="settings-hint">{t("tags.pruneHint")}</p>
-              <label>
-                <input type="checkbox" checked={alpha} onChange={(e) => setAlpha(e.target.checked)} />
-                {t("tags.alpha")}
-              </label>
-              <p className="settings-hint">{t("tags.alphaHint")}</p>
+      <div className="settings-card">
+        <p className="settings-kicker">{t("tags.memory")}</p>
+        <div className="settings-toggles">
+          <label>
+            <input type="checkbox" checked={prune} onChange={(e) => setPrune(e.target.checked)} />
+            {t("tags.prune")}
+          </label>
+          <p className="settings-hint">{t("tags.pruneHint")}</p>
+          <label>
+            <input type="checkbox" checked={alpha} onChange={(e) => setAlpha(e.target.checked)} />
+            {t("tags.alpha")}
+          </label>
+          <p className="settings-hint">{t("tags.alphaHint")}</p>
+        </div>
+      </div>
+      <div className="settings-card">
+        <p className="settings-kicker">
+          {tags.length ? tp("tags.count", tags.length) : t("item.tags")}
+        </p>
+        <Input
+          className={FIELD_SM}
+          value={createDraft}
+          placeholder={t("tags.newPlaceholder")}
+          maxLength={32}
+          disabled={busy || tags.length >= 80}
+          onChange={(e) => setCreateDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              createTag();
+            }
+          }}
+        />
+        {tags.length === 0 ? (
+          <p className="settings-hint">{t("tags.empty")}</p>
+        ) : (
+          <div className="am-list tag-list">
+            <div className="am-list-head tag-list-head">
+              <span className="am-chevron-spacer" />
+              <SortLabel id="name" sort={col.sort} onToggle={col.toggle}>
+                {t("item.name")}
+              </SortLabel>
+              <SortLabel id="count" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                {t("tags.countCol")}
+              </SortLabel>
+              <span className="am-chevron-spacer" />
             </div>
+            {sortedTags.map((row) => {
+              const draft = drafts[row.name] ?? row.name;
+              const hex = lookupTagColor(row.name, localColors) ?? defaultTagHex(row.name);
+              return (
+                <div key={row.name} className="am-row">
+                  <div className="am-row-head tag-item">
+                    <TagColorPick
+                      hex={hex}
+                      name={row.name}
+                      disabled={busy}
+                      onChange={(next) => changeColor(row.name, next)}
+                    />
+                    <input
+                      className="tag-item-name"
+                      value={draft}
+                      aria-label={t("tags.nameOf", {
+                        name: row.name,
+                      })}
+                      onChange={(e) =>
+                        setDrafts((d) => ({
+                          ...d,
+                          [row.name]: e.target.value,
+                        }))
+                      }
+                      onBlur={() => renameTag(row.name, draft)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+                    <span className="am-row-end">{row.count}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="card-tool is-danger"
+                      disabled={busy}
+                      aria-label={t("tags.deleteAria", {
+                        name: row.name,
+                      })}
+                      title={t("tags.deleteAria", {
+                        name: row.name,
+                      })}
+                      onClick={() => removeTag(row.name)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <div className="settings-card">
-            <p className="settings-kicker">{t("item.tags")}</p>
-            <p className="settings-hint">
-              {tags.length ? tp("tags.count", tags.length) : t("tags.none")}
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="am-create self-start"
-              onClick={() => setPane("list")}
-            >
-              <Tags className="size-3.5" />
-              {t("tags.manage")}
-            </Button>
-          </div>
-        </>
-      )}
+        )}
+      </div>
     </form>
   );
 }

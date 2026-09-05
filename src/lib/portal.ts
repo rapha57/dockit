@@ -5,7 +5,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { safeAppHref } from "./safe-href";
 import { MAX_CUSTOM_ICONS, toClientAsset } from "./assets-url";
 import { CSS_MAX, sanitizeThemeCss } from "./theme-css";
-import { isWeakPassword, passwordPolicyError } from "./security";
+import { isWeakPassword, passwordPolicyError, PASSWORD_MAX } from "./security";
 import { assertProductionSecrets, clientIp, isDevRuntime, trustProxy } from "./security-runtime";
 import { parseSessCookie } from "./session-cookie";
 import {
@@ -20,7 +20,7 @@ import {
 	emptyTrash
 } from "./history";
 import { t, withLocale, asTimeFormat, asTimeZone, DATE_FORMATS } from "./i18n";
-import { asDirectories, asLoginOrder, directoryReady, pickDirectory, syncLegacyLdap } from "./ldap-runtime";
+import { adGroupKey, asDirectories, asLoginOrder, directoryReady, pickDirectory, syncLegacyLdap } from "./ldap-runtime";
 import { defaultTagHex, remapTagHex } from "./tag-colors";
 import {
 	absorbResourceAcl,
@@ -142,6 +142,8 @@ export type PortalSettings = {
   pruneOrphanTags: boolean;
   tagsAlpha: boolean;
   cardResize: boolean;
+  cardContextMenu: boolean;
+  cardDragCollapse: boolean;
   infoStats: boolean;
   infoGeek: boolean;
   probeTlsVerify: boolean;
@@ -447,6 +449,8 @@ function defaultSettings() {
 		pruneOrphanTags: false,
 		tagsAlpha: true,
 		cardResize: true,
+		cardContextMenu: true,
+		cardDragCollapse: true,
 		infoStats: true,
 		infoGeek: true,
 		probeTlsVerify: false,
@@ -605,20 +609,22 @@ function asIdList(raw) {
 	}
 	return out;
 }
+const GROUP_CAP = 160;
 function asGroups(raw) {
 	if (!Array.isArray(raw)) return [];
-	return raw.slice(0, 80).map((g) => {
+	return raw.slice(0, GROUP_CAP).map((g) => {
+		const source = g?.source === "ad" ? "ad" : "local";
 		let roleIds = roleIdsOf(g).map((r) => String(r).slice(0, 80)).filter((r) => r !== "owner");
-		if (!roleIds.length) roleIds = ["lecteur"];
+		if (!roleIds.length && source !== "ad") roleIds = ["lecteur"];
 		return {
 			id: String(g?.id || crypto.randomUUID()),
 			name: String(g?.name || "").trim().slice(0, 60),
 			members: asIdList(g?.members),
-			role: roleIds[0],
+			role: roleIds[0] || "",
 			roleIds,
 			grants: asGrants(g?.grants),
-			source: g?.source === "ad" ? "ad" : "local",
-			externalId: String(g?.externalId || "").slice(0, 200)
+			source,
+			externalId: String(g?.externalId || "").slice(0, 400)
 		};
 	}).filter((g) => g.name);
 }
@@ -646,11 +652,15 @@ function asRoles(raw) {
 function ensureRoles(doc) {
 	const byId = new Map();
 	for (const r of asRoles(doc.roles)) byId.set(r.id, r);
-	for (const s of defaultRoles()) if (!byId.has(s.id)) byId.set(s.id, s);
-	const owner = byId.get("owner");
-	if (owner) {
-		owner.system = true;
-		owner.grants = [{ res: "portal", id: "*", allow: ["*"] }];
+	for (const s of defaultRoles()) {
+		const cur = byId.get(s.id);
+		if (!cur) byId.set(s.id, { ...s });
+		else {
+			cur.system = true;
+			cur.name = s.name;
+			cur.description = s.description;
+			cur.grants = structuredClone(s.grants);
+		}
 	}
 	doc.roles = [...byId.values()].slice(0, 40);
 	absorbResourceAcl(doc);
@@ -853,6 +863,7 @@ function publicGroup(g, doc) {
 		roleIds,
 		grants: asGrants(g.grants),
 		source: g.source === "ad" ? "ad" : "local",
+		externalId: String(g.externalId || ""),
 		members: asIdList(g.members)
 	};
 }
@@ -908,6 +919,41 @@ function syncGroupMembers(doc, groupId, memberIds) {
 		if (has && !u.groupIds.includes(groupId)) u.groupIds.push(groupId);
 		if (!has) u.groupIds = u.groupIds.filter((id) => id !== groupId);
 	}
+}
+function upsertAdGroups(doc, dir, listed) {
+	ensureGroups(doc);
+	for (const row of listed || []) {
+		if (!row?.key || !row?.name) continue;
+		const existing = doc.groups.find((g) => g.source === "ad" && g.externalId === row.key);
+		if (existing) {
+			existing.name = String(row.name).trim().slice(0, 60) || existing.name;
+			continue;
+		}
+		if (doc.groups.length >= GROUP_CAP) break;
+		doc.groups.push({
+			id: crypto.randomUUID(),
+			name: String(row.name).trim().slice(0, 60),
+			members: [],
+			role: "",
+			roleIds: [],
+			grants: [],
+			source: "ad",
+			externalId: String(row.key).slice(0, 400)
+		});
+	}
+}
+function applyAdMembership(doc, user, dirId, memberOf) {
+	if (!user || user.id === "admin" || memberOf == null) return;
+	ensureGroups(doc);
+	const prefix = `${dirId}:`;
+	const keys = new Set((Array.isArray(memberOf) ? memberOf : []).map((dn) => adGroupKey(dirId, dn)));
+	for (const g of doc.groups) {
+		if (g.source !== "ad" || !String(g.externalId || "").startsWith(prefix)) continue;
+		const members = asIdList(g.members).filter((id) => id !== user.id);
+		if (keys.has(g.externalId)) members.push(user.id);
+		g.members = members;
+	}
+	user.groupIds = doc.groups.filter((g) => asIdList(g.members).includes(user.id)).map((g) => g.id);
 }
 function syncUserGroups(doc, userId, groupIds) {
 	ensureGroups(doc);
@@ -1095,6 +1141,8 @@ function asStore(raw) {
 			pruneOrphanTags: Boolean(doc.settings.pruneOrphanTags),
 			tagsAlpha: doc.settings.tagsAlpha !== false,
 			cardResize: doc.settings.cardResize !== false,
+			cardContextMenu: doc.settings.cardContextMenu !== false,
+			cardDragCollapse: doc.settings.cardDragCollapse !== false,
 			infoStats: doc.settings.infoStats !== false,
 			infoGeek: doc.settings.infoGeek !== false,
 			probeTlsVerify: Boolean(doc.settings.probeTlsVerify),
@@ -1689,6 +1737,8 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	pruneOrphanTags: z.boolean().optional(),
 	tagsAlpha: z.boolean().optional(),
 	cardResize: z.boolean().optional(),
+	cardContextMenu: z.boolean().optional(),
+	cardDragCollapse: z.boolean().optional(),
 	infoStats: z.boolean().optional(),
 	infoGeek: z.boolean().optional(),
 	probeTlsVerify: z.boolean().optional(),
@@ -1722,6 +1772,8 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		pruneOrphanTags: typeof data.pruneOrphanTags === "boolean" ? data.pruneOrphanTags : Boolean(doc.settings.pruneOrphanTags),
 		tagsAlpha: typeof data.tagsAlpha === "boolean" ? data.tagsAlpha : doc.settings.tagsAlpha !== false,
 		cardResize: typeof data.cardResize === "boolean" ? data.cardResize : doc.settings.cardResize !== false,
+		cardContextMenu: typeof data.cardContextMenu === "boolean" ? data.cardContextMenu : doc.settings.cardContextMenu !== false,
+		cardDragCollapse: typeof data.cardDragCollapse === "boolean" ? data.cardDragCollapse : doc.settings.cardDragCollapse !== false,
 		infoStats: typeof data.infoStats === "boolean" ? data.infoStats : doc.settings.infoStats !== false,
 		infoGeek: typeof data.infoGeek === "boolean" ? data.infoGeek : doc.settings.infoGeek !== false,
 		probeTlsVerify: typeof data.probeTlsVerify === "boolean" ? data.probeTlsVerify : Boolean(doc.settings.probeTlsVerify),
@@ -1759,29 +1811,36 @@ export const updateThemeCss = createServerFn({ method: "POST" }).validator(z.obj
 	return emit(doc, user, data.tabId);
 }));
 export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object({
-	username: z.string().min(1).max(80),
-	password: z.string().max(120).optional().default(""),
+	username: z.string().max(80).optional().default(""),
+	password: z.string().max(PASSWORD_MAX).optional().default(""),
 	domain: z.string().min(1).max(80).optional()
 })).handler(async (ctx) => {
 	const data = ctx.data;
 	const { ldapAuthenticate, ldapLoginName } = await import("./ldap-runtime");
-	const username = ldapLoginName(data.username);
+	const noPass = isDevRuntime() && Boolean((await readDoc()).settings.devAdminNoPassword);
+	let username = ldapLoginName(data.username);
+	let domain = String(data.domain || "local");
+	if (noPass && (!username || username === "admin")) {
+		username = username || "admin";
+		domain = "local";
+	}
 	if (!username) throw new Error("errors.badLogin");
-	const domain = String(data.domain || "local");
 	const key = clientKey(`${domain}:${username}`, ctx.request);
 	if (loginBlocked(key)) throw new Error("errors.badLogin");
 	if (domain !== "local") {
 		const snap = await readDoc();
 		const dir = pickDirectory(snap.settings, domain);
 		if (!directoryReady(dir)) throw new Error("errors.ldapOff");
+		let auth;
 		try {
-			await ldapAuthenticate(dir, username, data.password || "");
+			auth = await ldapAuthenticate(dir, username, data.password || "");
 		} catch (err) {
 			loginFail(key);
 			throw err instanceof Error ? err : new Error("errors.ldapFail");
 		}
 		return mutate(async (doc) => {
 			ensureUsers(doc);
+			ensureGroups(doc);
 			let user = doc.users.find((u) => u.username === username);
 			if (!user) {
 				if (!dir.autoCreate) {
@@ -1807,6 +1866,7 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 				loginFail(key);
 				throw new Error("errors.disabled");
 			}
+			applyAdMembership(doc, user, dir.id, auth?.memberOf);
 			loginOk(key);
 			appendHistory(doc, user, {
 				type: "login",
@@ -1821,8 +1881,10 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 	}
 	return mutate(async (doc) => {
 		ensureUsers(doc);
-		const user = doc.users.find((u) => u.username === username);
-		const skipPass = isDevRuntime() && Boolean(doc.settings.devAdminNoPassword) && isOwnerUser(user);
+		const owner = doc.users.find((u) => isOwnerUser(u));
+		const asOwner = noPass && (!data.username?.trim() || username === "admin" || username === owner?.username);
+		const user = asOwner ? owner : doc.users.find((u) => u.username === username);
+		const skipPass = noPass && isOwnerUser(user);
 		if (!user || !skipPass && !await verifyPassword(data.password || "", user.passHash)) {
 			loginFail(key);
 			throw new Error("errors.badLogin");
@@ -1962,6 +2024,45 @@ export const updateLdapSettings = createServerFn({ method: "POST" }).validator(z
 	});
 	return emit(doc, user, data.tabId);
 }));
+export const searchLdapGroups = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	directoryId: z.string().min(1).max(80),
+	query: z.string().max(80)
+})).handler(async ({ data, request }) => {
+	const doc = await readDoc();
+	const actor = requireAccountManager(doc, tok(data, request));
+	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
+	const dir = asDirectories(doc.settings).find((d) => d.id === data.directoryId);
+	if (!dir || !directoryReady(dir)) throw new Error("errors.ldapOff");
+	if (!String(dir.bindDn || "").trim() || !String(dir.baseDn || "").trim()) throw new Error("errors.ldapBaseDn");
+	const { ldapSearchGroups } = await import("./ldap-runtime");
+	const groups = await ldapSearchGroups(dir, data.query);
+	return { groups };
+});
+export const linkLdapGroups = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	directoryId: z.string().min(1).max(80),
+	groups: z.array(z.object({
+		dn: z.string().min(1).max(400),
+		name: z.string().min(1).max(60)
+	})).min(1).max(20)
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const actor = requireAccountManager(doc, tok(data, request));
+	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
+	const dir = asDirectories(doc.settings).find((d) => d.id === data.directoryId);
+	if (!dir || !directoryReady(dir)) throw new Error("errors.ldapOff");
+	const listed = data.groups.map((g) => ({
+		dn: g.dn,
+		name: g.name,
+		key: adGroupKey(dir.id, g.dn)
+	}));
+	upsertAdGroups(doc, dir, listed);
+	appendHistory(doc, actor, {
+		type: "group.create",
+		label: listed.map((g) => g.name).join(", ")
+	});
+	return directoryPayload(doc, actor);
+}));
 export const updateLoginOrder = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	loginOrder: z.array(z.string().min(1).max(80)).min(1).max(16),
@@ -2079,7 +2180,7 @@ const grantField = z.object({
 	deny: z.array(z.string()).optional(),
 	scope: z.enum(["public"]).optional()
 });
-function cleanRoleIds(doc, ids, { allowOwner = false } = {}) {
+function cleanRoleIds(doc, ids, { allowOwner = false, allowEmpty = false } = {}) {
 	const allowed = new Set((doc.roles || []).map((r) => r.id));
 	const out = [];
 	for (const id of asIdList(ids)) {
@@ -2087,7 +2188,8 @@ function cleanRoleIds(doc, ids, { allowOwner = false } = {}) {
 		if (id === "owner" && !allowOwner) continue;
 		if (!out.includes(id)) out.push(id);
 	}
-	return out.length ? out : ["lecteur"];
+	if (out.length) return out;
+	return allowEmpty ? [] : ["lecteur"];
 }
 export const listUsers = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => mutate((doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
@@ -2097,7 +2199,7 @@ export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().optional(),
 	username: z.string().min(1).max(40),
-	password: z.string().max(120).optional(),
+	password: z.string().max(PASSWORD_MAX).optional(),
 	role: z.string().min(1).max(80).optional(),
 	roleIds: z.array(z.string()).optional(),
 	grants: z.array(grantField).optional(),
@@ -2182,25 +2284,28 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 	name: z.string().min(1).max(60),
 	role: z.string().min(1).max(80).optional(),
 	roleIds: z.array(z.string()).optional(),
-	members: z.array(z.string()).optional()
+	members: z.array(z.string()).optional(),
+	grants: z.array(grantField).optional()
 })).handler(async ({ data, request }) => mutate((doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
 	ensureGroups(doc);
 	ensureRoles(doc);
-	const roleIds = cleanRoleIds(doc, data.roleIds?.length ? data.roleIds : data.role ? [data.role] : ["lecteur"]);
-	const name = data.name.trim().slice(0, 60);
-	if (!name) throw new Error("errors.nameRequired");
 	let target = data.id ? doc.groups.find((g) => g.id === data.id) : void 0;
 	if (data.id && !target) throw new Error("errors.userNotFound");
+	const roleIds = cleanRoleIds(doc, data.roleIds?.length ? data.roleIds : data.role ? [data.role] : target?.source === "ad" ? [] : ["lecteur"], { allowEmpty: target?.source === "ad" });
+	const name = data.name.trim().slice(0, 60);
+	if (!name) throw new Error("errors.nameRequired");
 	if (target?.source === "ad") {
 		target.roleIds = roleIds;
-		target.role = roleIds[0];
+		target.role = roleIds[0] || "";
+		if (data.grants) target.grants = asGrants(data.grants);
 	} else if (target) {
 		if (doc.groups.some((g) => g.id !== target.id && g.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
 		target.name = name;
 		target.roleIds = roleIds;
 		target.role = roleIds[0];
+		if (data.grants) target.grants = asGrants(data.grants);
 	} else {
 		if (doc.groups.some((g) => g.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
 		target = {
@@ -2209,7 +2314,7 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 			members: [],
 			role: roleIds[0],
 			roleIds,
-			grants: [],
+			grants: asGrants(data.grants),
 			source: "local",
 			externalId: ""
 		};
@@ -2255,12 +2360,18 @@ export const saveRole = createServerFn({ method: "POST" }).validator(z.object({
 	if (!name) throw new Error("errors.nameRequired");
 	let target = data.id ? doc.roles.find((r) => r.id === data.id) : void 0;
 	if (data.id && !target) throw new Error("errors.userNotFound");
+	if (target && (target.system || isSystemRole(target.id))) {
+		if (target.id === "owner") return directoryPayload(doc, actor);
+		if (data.userIds || data.groupIds) setRoleHolders(doc, target.id, data.userIds || [], data.groupIds || []);
+		appendHistory(doc, actor, {
+			type: "role.update",
+			label: target.name
+		});
+		return directoryPayload(doc, actor);
+	}
 	const description = String(data.description || "").trim().slice(0, 200);
 	const grants = asGrants(data.grants);
-	if (target?.id === "owner") {
-		target.name = name;
-		target.description = description;
-	} else if (target) {
+	if (target) {
 		if (doc.roles.some((r) => r.id !== target.id && r.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
 		target.name = name;
 		target.description = description;

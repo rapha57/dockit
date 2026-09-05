@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { t } from "@/lib/i18n";
+import { t, te } from "@/lib/i18n";
 
 const LIMIT = 50;
 
@@ -44,19 +44,30 @@ export function EntityPicker({
   labelOf,
   readOnly,
   excludeIds,
+  searchRemote,
+  onRemoteAdd,
+  trigger,
+  addLabel,
 }) {
   const rootRef = useRef(null);
   const popRef = useRef(null);
   const [open, setOpen] = useState(false);
-  const [provider, setProvider] = useState("local");
+  const [provider, setProvider] = useState(() => {
+    const list = providers || [];
+    return list.find((p) => p.kind === "ad")?.id || list[0]?.id || "local";
+  });
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
   const [picked, setPicked] = useState([]);
   const [pos, setPos] = useState(null);
+  const [remoteRows, setRemoteRows] = useState([]);
+  const [remoteBusy, setRemoteBusy] = useState(false);
+  const [remoteErr, setRemoteErr] = useState("");
   const selected = selectedIds || [];
   const dirs = providers || [{ id: "local", label: t("access.sourceLocal"), kind: "local" }];
   const current = dirs.find((p) => p.id === provider) || dirs[0];
   const remote = current?.kind === "ad";
+  const canSearch = Boolean(remote && searchRemote);
   const skip = [...(excludeIds || []), ...selected].join("\0");
 
   useEffect(() => {
@@ -70,8 +81,44 @@ export function EntityPicker({
       setDq("");
       setPicked([]);
       setPos(null);
+      setRemoteRows([]);
+      setRemoteErr("");
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !canSearch) {
+      setRemoteRows([]);
+      setRemoteBusy(false);
+      return;
+    }
+    const needle = dq.trim();
+    if (needle.length < 2) {
+      setRemoteRows([]);
+      setRemoteBusy(false);
+      setRemoteErr("");
+      return;
+    }
+    let alive = true;
+    setRemoteBusy(true);
+    Promise.resolve(searchRemote(current.id, needle))
+      .then((rows) => {
+        if (!alive) return;
+        setRemoteRows(Array.isArray(rows) ? rows : []);
+        setRemoteErr("");
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setRemoteRows([]);
+        setRemoteErr(te(err));
+      })
+      .finally(() => {
+        if (alive) setRemoteBusy(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open, canSearch, dq, current?.id, searchRemote]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -96,7 +143,7 @@ export function EntityPicker({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, q, picked, provider]);
+  }, [open, q, picked, provider, remoteRows, remoteBusy]);
 
   useEffect(() => {
     if (!open) return;
@@ -119,8 +166,9 @@ export function EntityPicker({
   }, [open]);
 
   const results = useMemo(() => {
-    if (remote) return [];
     const blocked = new Set(skip ? skip.split("\0") : []);
+    if (canSearch) return remoteRows.filter((row) => row?.id && !blocked.has(row.id)).slice(0, LIMIT);
+    if (remote) return [];
     const needle = dq.trim().toLowerCase();
     return (items || [])
       .filter((row) => !blocked.has(row.id))
@@ -131,7 +179,7 @@ export function EntityPicker({
           .includes(needle);
       })
       .slice(0, LIMIT);
-  }, [items, dq, remote, skip, labelOf]);
+  }, [items, dq, remote, canSearch, remoteRows, skip, labelOf]);
 
   const selectedRows = (items || []).filter((row) => selected.includes(row.id));
 
@@ -141,6 +189,12 @@ export function EntityPicker({
 
   function addPicked() {
     if (!picked.length) return;
+    if (canSearch && onRemoteAdd) {
+      const rows = results.filter((row) => picked.includes(row.id));
+      void Promise.resolve(onRemoteAdd(current.id, rows));
+      setOpen(false);
+      return;
+    }
     onChange([...selected, ...picked.filter((id) => !selected.includes(id))]);
     setOpen(false);
   }
@@ -170,6 +224,7 @@ export function EntityPicker({
                 className="am-icon-btn"
                 onClick={() => setOpen(false)}
                 aria-label={t("actions.close")}
+                title={t("actions.close")}
               >
                 <X className="size-3.5" />
               </button>
@@ -200,8 +255,14 @@ export function EntityPicker({
                 autoFocus
               />
             </label>
-            {remote ? (
+            {canSearch && dq.trim().length < 2 ? (
+              <p className="am-note">{t("access.pickerDirType")}</p>
+            ) : remote && !canSearch ? (
               <p className="am-note">{t("access.pickerDirOff")}</p>
+            ) : remoteBusy ? (
+              <p className="am-note">{t("access.pickerDirBusy")}</p>
+            ) : remoteErr ? (
+              <p className="am-note is-warn">{remoteErr}</p>
             ) : !results.length ? (
               <p className="am-note">{dq.trim() ? t("empty.noResults") : t("access.pickerType")}</p>
             ) : (
@@ -214,7 +275,7 @@ export function EntityPicker({
                         checked={picked.includes(row.id)}
                         onChange={() => togglePick(row.id)}
                       />
-                      {labelOf(row)}
+                      {labelOf ? labelOf(row) : row.name}
                     </label>
                   </li>
                 ))}
@@ -227,7 +288,7 @@ export function EntityPicker({
               <Button
                 type="button"
                 size="sm"
-                disabled={remote || !picked.length}
+                disabled={(remote && !canSearch) || remoteBusy || !picked.length}
                 onClick={addPicked}
               >
                 {t("access.pickerAdd")}
@@ -238,38 +299,49 @@ export function EntityPicker({
         )
       : null;
 
+  const addBtn = readOnly ? null : trigger === "button" ? (
+    <Button type="button" size="sm" className="am-create shrink-0" onClick={() => setOpen((v) => !v)}>
+      <Plus className="size-3.5" /> {addLabel || kindLabel(kind, "add")}
+    </Button>
+  ) : (
+    <button
+      type="button"
+      className={`am-chip-add${open ? " is-on" : ""}`}
+      onClick={() => setOpen((v) => !v)}
+    >
+      <Plus className="size-3" /> {addLabel || kindLabel(kind, "add")}
+    </button>
+  );
+
   return (
     <div className={`am-picker${open ? " is-open" : ""}`} ref={rootRef}>
-      <div className="am-chips is-wrap">
-        {selectedRows.length ? (
-          selectedRows.map((row) => (
-            <span key={row.id} className="am-chip is-on">
-              {labelOf(row)}
-              {readOnly ? null : (
-                <button
-                  type="button"
-                  className="am-chip-x"
-                  aria-label={t("actions.delete")}
-                  onClick={() => remove(row.id)}
-                >
-                  <X className="size-3" />
-                </button>
-              )}
-            </span>
-          ))
-        ) : (
-          <span className="am-dim">{t("access.pickerNone")}</span>
-        )}
-        {readOnly ? null : (
-          <button
-            type="button"
-            className={`am-chip-add${open ? " is-on" : ""}`}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <Plus className="size-3" /> {kindLabel(kind, "add")}
-          </button>
-        )}
-      </div>
+      {trigger === "button" ? (
+        addBtn
+      ) : (
+        <div className="am-chips is-wrap">
+          {selectedRows.length ? (
+            selectedRows.map((row) => (
+              <span key={row.id} className="am-chip is-on">
+                {labelOf(row)}
+                {readOnly ? null : (
+                  <button
+                    type="button"
+                    className="am-chip-x"
+                    aria-label={t("actions.delete")}
+                  title={t("actions.delete")}
+                    onClick={() => remove(row.id)}
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </span>
+            ))
+          ) : (
+            <span className="am-dim">{t("access.pickerNone")}</span>
+          )}
+          {addBtn}
+        </div>
+      )}
       {pop}
     </div>
   );

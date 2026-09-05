@@ -127,12 +127,14 @@ export function ThemeToggle() {
 export function ThemedToaster() {
   const { theme } = useTheme();
   return (
-    <Toaster
-      theme={theme}
-      position="top-center"
-      toastOptions={{
-        className: "bg-elevated text-fg border border-border",
-      }}
-    />
+    <div className="portal-toaster">
+      <Toaster
+        theme={theme}
+        position="top-center"
+        toastOptions={{
+          className: "bg-elevated text-fg border border-border",
+        }}
+      />
+    </div>
   );
 }

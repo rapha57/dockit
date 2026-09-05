@@ -369,7 +369,6 @@ export function actionsOn(user, resource, doc) {
 export function effectiveAccess(user, doc) {
 	const portal = PORTAL_ACTIONS.filter((a) => can(user, a, { res: "portal" }, doc));
 	const tabs = [];
-	let publicOnly = 0;
 	for (const tab of doc.tabs || []) {
 		const tabActs = NODE_ACTIONS.filter((a) => can(user, a, { res: "tab", id: tab.id }, doc));
 		if (!tabActs.includes("view")) continue;
@@ -382,8 +381,7 @@ export function effectiveAccess(user, doc) {
 				const cardActs = NODE_ACTIONS.filter((a) => can(user, a, { res: "card", id: app.id }, doc));
 				if (!cardActs.includes("view")) continue;
 				const extra = cardActs.filter((a) => a !== "view" && a !== "open");
-				const inherited = extra.length === 0 && !appHasOwnGrant(user, doc, app.id);
-				if (inherited && extra.length === 0 && catActs.includes("view")) {
+				if (extra.length === 0 && !appHasOwnGrant(user, doc, app.id) && catActs.includes("view")) {
 					if (cardActs.length <= 2 && !tab.restricted && !cat.restricted) continue;
 				}
 				cards.push({
@@ -403,11 +401,6 @@ export function effectiveAccess(user, doc) {
 				cards
 			});
 		}
-		const onlyPublic = !tab.restricted && tabActs.every((a) => a === "view" || a === "open");
-		if (onlyPublic && cats.every((c) => !c.restricted && c.actions.every((a) => a === "view" || a === "open") && !c.cards.length)) {
-			publicOnly += 1;
-			continue;
-		}
 		tabs.push({
 			res: "tab",
 			id: tab.id,
@@ -417,7 +410,7 @@ export function effectiveAccess(user, doc) {
 			cats
 		});
 	}
-	return { portal, tabs, publicOnly };
+	return { portal, tabs };
 }
 
 function appHasOwnGrant(user, doc, appId) {

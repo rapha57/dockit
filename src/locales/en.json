@@ -57,7 +57,8 @@
     "space": "Space",
     "addSpace": "Space",
     "dropHere": "Drop here",
-    "addTagOrName": "Add a tag or a name…"
+    "addTagOrName": "Add a tag or a name…",
+    "removeTag": "Remove {name}"
   },
   "roles": {
     "admin": "admin",
@@ -406,7 +407,8 @@
     "faviconApplied": "Favicon applied",
     "cardsSorted": "Cards sorted A–Z",
     "cardsSortedZa": "Cards sorted Z–A",
-    "cardsReset": "Card sizes reset to 1×1"
+    "cardsReset": "Card sizes reset to 1×1",
+    "copied": "Copied to the clipboard"
   },
   "errors": {
     "generic": "Error",
@@ -442,6 +444,7 @@
     "ldapUnreachable": "Directory unreachable",
     "ldapFail": "Directory sign-in failed",
     "ldapUnknownUser": "Unknown account. An admin must grant access.",
+
     "adminNotFound": "Admin not found",
     "adminPasswordOnly": "The admin can only be changed via their password",
     "usernameTaken": "Username already taken",
@@ -552,6 +555,8 @@
     "last12": "Last 12 months",
     "total": "{n} opening in total",
     "total_other": "{n} openings in total",
+    "downCount": "{n} down probe",
+    "downCount_other": "{n} down probes",
     "hs": "Down",
     "removeHs": "Remove down-probe filter",
     "statsIcon": "Usage statistics icon",
@@ -613,7 +618,11 @@
     "other": "Other link",
     "others": "Other links",
     "hint": "Right-click for another link",
-    "hint_other": "Right-click for other links"
+    "hint_other": "Right-click for other links",
+    "copy": "Copy link",
+    "primary": "Main link",
+    "one": "Link",
+    "linksTitle": "Links"
   },
   "about": {
     "created": "Created",
@@ -686,7 +695,9 @@
     "navRichIconsHint": "Off: spaces and categories use pictograms only. Cards always keep the full picker (pictograms, uploads, product library, Iconify).",
     "annexFade": "Fade the background of extra-link menus",
     "showInfoBar": "Show the information bar",
-    "cardResize": "Resize cards by dragging their edges"
+    "cardResize": "Resize cards by dragging their edges",
+    "cardContextMenu": "Right-click menu on cards",
+    "cardDragCollapse": "Collapse other categories while moving a card"
   },
   "reach": {
     "probes": "Probes",
@@ -706,7 +717,7 @@
     "httpOnly": "HttpOnly cookie (not sessionStorage)",
     "httpOnlyHint": "The token is no longer readable from JavaScript. Takes effect at the next sign-in.",
     "noPassword": "Passwordless admin sign-in",
-    "noPasswordHintDev": "An “Enter as admin” button appears on the sign-in screen. Ignored outside npm run dev.",
+    "noPasswordHintDev": "The sign-in button is highlighted and opens an owner session (empty or admin, any password). Ignored outside npm run dev.",
     "noPasswordHintProd": "Available only in development mode (npm run dev)."
   },
   "debug": {
@@ -786,6 +797,7 @@
     "typeGroup": "Group",
     "sourceLocal": "Local",
     "sourceAd": "AD",
+    "sourceAdHint": "Directory group. Assign a Dockit role. Members come from AD at sign-in.",
     "sourceOidc": "OIDC",
     "createGroup": "Create a group",
     "newGroup": "New group",
@@ -797,7 +809,7 @@
     "roleAdmin": "Admin — full access",
     "deletedGroup": "Group deleted",
     "auth": "Identity Provider",
-    "authLead": "Identity sources for sign-in, as in vCenter SSO Configuration.",
+    "authLead": "Identity sources for sign-in. Local login remains available.",
     "idpName": "Name",
     "idpType": "Type",
     "idpDomain": "Domain",
@@ -852,7 +864,7 @@
     "basedNone": "None — start empty",
     "system": "System",
     "custom": "Custom",
-    "systemHint": "Built-in role, cannot be deleted.",
+    "systemHint": "Built-in role. Name and permissions cannot be changed.",
     "noDesc": "No description.",
     "noCustomRoles": "No custom roles yet.",
     "assignedPlain": "{users} · {groups}",
@@ -865,6 +877,9 @@
     "nPerms_other": "{n} permissions",
     "addUser": "Add user",
     "addGroup": "Add group",
+    "addFromDir": "Add from directory",
+    "groupsLinked": "{n} group linked",
+    "groupsLinked_other": "{n} groups linked",
     "addRole": "Add role",
     "pickerTitleUser": "Add users",
     "pickerTitleGroup": "Add groups",
@@ -951,8 +966,10 @@
     "pickerSearch": "Search…",
     "pickerType": "Type to filter.",
     "pickerDirOff": "Directory search is not connected yet. Configure the provider under Identity Provider.",
+    "pickerDirType": "Type at least 2 characters of the group CN.",
+    "pickerDirBusy": "Searching the directory…",
     "pickerAdd": "Add selected",
-    "pickerNone": "None.",
+    "pickerNone": "None",
     "inheritedPerms": "Inherited permissions",
     "inheritedHint": "From roles and groups. Read-only.",
     "idpDrag": "Reorder identity source",
@@ -995,6 +1012,15 @@
     "roleViewer": "Viewer",
     "publicPlus": "Public + {list}",
     "passwordMin": "{n} characters minimum.",
+    "passwordRemain": "{n} more character",
+    "passwordRemain_other": "{n} more characters",
+    "passwordLeft": "{n} left",
+    "passwordLeft_other": "{n} left",
+    "pwShort": "Too short",
+    "pwWeak": "Weak",
+    "pwFair": "Fair",
+    "pwGood": "Good",
+    "pwStrong": "Strong",
     "adminHint": "{name} — Full access. Only the password can be changed."
   },
   "icons": {
@@ -1026,6 +1052,7 @@
     "alphaHint": "Applies to the tag list, search filters and chips on cards.",
     "count": "{n} tag",
     "count_other": "{n} tags",
+    "countCol": "Cards",
     "none": "No tags",
     "empty": "No tags yet.",
     "manage": "Manage tags",
