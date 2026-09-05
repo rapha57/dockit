@@ -188,7 +188,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.1";
+var PORTAL_VERSION = "2026.09.06.2";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -2202,6 +2202,23 @@ function Home() {
       return next;
     });
   }
+  function duplicateCategory(cat, tabId) {
+    apply(async () => {
+      const next = await createCategory({
+        data: {
+          token,
+          tabId,
+          name: copyLabel(cat.name, t("item.category")),
+          icon: cat.icon || "Folder",
+          restricted: Boolean(cat.restricted),
+          viewers: cat.viewers || [],
+          editors: cat.editors || [],
+        },
+      });
+      toast.success(t("toast.categoryDuplicated"));
+      return next;
+    });
+  }
   function sortCategoryCards(cat) {
     if (!cat?.apps?.length) return;
     const nextDir = appsAlphaDir(cat.apps, data.settings.locale) === "az" ? "za" : "alpha";
@@ -3398,7 +3415,7 @@ function Home() {
                     }
                   >
                     {" "}
-                    <Pencil className="size-3" />
+                    <Pencil className="size-3.5" />
                   </span>
                 </span>
               ) : null}
@@ -3467,7 +3484,7 @@ function Home() {
                           onClick={() => duplicateSpace(tab)}
                         >
                           {" "}
-                          <Copy className="size-3" />
+                          <Copy className="size-3.5" />
                         </span>
                       ) : null}{" "}
                       <span
@@ -3483,7 +3500,7 @@ function Home() {
                         }
                       >
                         {" "}
-                        <Pencil className="size-3" />
+                        <Pencil className="size-3.5" />
                       </span>
                       {data.tabs.length > 1 && (
                         <span
@@ -3499,7 +3516,7 @@ function Home() {
                           }
                         >
                           {" "}
-                          <Trash2 className="size-3" />
+                          <Trash2 className="size-3.5" />
                         </span>
                       )}
                     </span>
@@ -3798,17 +3815,17 @@ function Home() {
                           <button
                             type="button"
                             className="card-tool"
-                            aria-label={t("aria.editCategory")}
-                            title={t("aria.editCategory")}
+                            aria-label={t("actions.addCard")}
+                            title={t("actions.addCard")}
                             onClick={() =>
                               setModal({
-                                kind: "category",
-                                category: cat,
+                                kind: "app",
+                                categoryId: cat.id,
                               })
                             }
                           >
                             {" "}
-                            <Pencil className="size-3.5" />
+                            <Plus className="size-3.5" />
                           </button>{" "}
                           <button
                             type="button"
@@ -3844,17 +3861,27 @@ function Home() {
                           <button
                             type="button"
                             className="card-tool"
-                            aria-label={t("actions.addCard")}
-                            title={t("actions.addCard")}
+                            aria-label={t("actions.duplicate")}
+                            title={t("actions.duplicate")}
+                            onClick={() => duplicateCategory(cat, tab.id)}
+                          >
+                            {" "}
+                            <Copy className="size-3.5" />
+                          </button>{" "}
+                          <button
+                            type="button"
+                            className="card-tool"
+                            aria-label={t("aria.editCategory")}
+                            title={t("aria.editCategory")}
                             onClick={() =>
                               setModal({
-                                kind: "app",
-                                categoryId: cat.id,
+                                kind: "category",
+                                category: cat,
                               })
                             }
                           >
                             {" "}
-                            <Plus className="size-3.5" />
+                            <Pencil className="size-3.5" />
                           </button>{" "}
                           <button
                             type="button"
@@ -4025,17 +4052,17 @@ function Home() {
                           <button
                             type="button"
                             className="card-tool"
-                            aria-label={t("aria.editCategory")}
-                            title={t("aria.editCategory")}
+                            aria-label={t("actions.addCard")}
+                            title={t("actions.addCard")}
                             onClick={() =>
                               setModal({
-                                kind: "category",
-                                category: cat,
+                                kind: "app",
+                                categoryId: cat.id,
                               })
                             }
                           >
                             {" "}
-                            <Pencil className="size-3.5" />
+                            <Plus className="size-3.5" />
                           </button>{" "}
                           <button
                             type="button"
@@ -4071,17 +4098,27 @@ function Home() {
                           <button
                             type="button"
                             className="card-tool"
-                            aria-label={t("actions.addCard")}
-                            title={t("actions.addCard")}
+                            aria-label={t("actions.duplicate")}
+                            title={t("actions.duplicate")}
+                            onClick={() => duplicateCategory(cat, data.activeTabId)}
+                          >
+                            {" "}
+                            <Copy className="size-3.5" />
+                          </button>{" "}
+                          <button
+                            type="button"
+                            className="card-tool"
+                            aria-label={t("aria.editCategory")}
+                            title={t("aria.editCategory")}
                             onClick={() =>
                               setModal({
-                                kind: "app",
-                                categoryId: cat.id,
+                                kind: "category",
+                                category: cat,
                               })
                             }
                           >
                             {" "}
-                            <Plus className="size-3.5" />
+                            <Pencil className="size-3.5" />
                           </button>{" "}
                           <button
                             type="button"
@@ -8782,7 +8819,7 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
   const current = sections.find((s) => s.id === pane) ?? sections[0];
   return (
     <form
-      className="settings-frame is-wide is-access"
+      className="settings-frame is-access is-item"
       onSubmit={(e) => {
         e.preventDefault();
         onSave(name.trim(), icon.trim() || "Layers", {
@@ -8851,22 +8888,25 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
             <div className="settings-stack">
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.general")}</p>
-                <Field label={t("item.name")}>
-                  <div className="name-icon-row">
+                <div className="field-row">
+                  {" "}
+                  <Field label={t("item.name")}>
+                    <Input
+                      className={FIELD_SM}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                    />
+                  </Field>{" "}
+                  <Field label={t("item.icon")}>
                     <IconPicker
                       value={icon}
                       onChange={setIcon}
                       {...picker}
                       pictosOnly={!picker.navRichIcons}
                     />
-                    <Input
-                      className={`${FIELD_SM} min-w-0 flex-1`}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                    />
-                  </div>
-                </Field>
+                  </Field>
+                </div>
                 <div className="settings-toggles">
                   <label>
                     <input
@@ -8950,7 +8990,7 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
   const current = sections.find((s) => s.id === pane) ?? sections[0];
   return (
     <form
-      className="settings-frame is-wide is-access"
+      className="settings-frame is-access is-item"
       onSubmit={(e) => {
         e.preventDefault();
         onSave(name.trim(), icon.trim() || "Folder", {
@@ -9018,22 +9058,25 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
             <div className="settings-stack">
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.general")}</p>
-                <Field label={t("item.name")}>
-                  <div className="name-icon-row">
+                <div className="field-row">
+                  {" "}
+                  <Field label={t("item.name")}>
+                    <Input
+                      className={FIELD_SM}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                    />
+                  </Field>{" "}
+                  <Field label={t("item.icon")}>
                     <IconPicker
                       value={icon}
                       onChange={setIcon}
                       {...picker}
                       pictosOnly={!picker.navRichIcons}
                     />
-                    <Input
-                      className={`${FIELD_SM} min-w-0 flex-1`}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                    />
-                  </div>
-                </Field>
+                  </Field>
+                </div>
               </div>
             </div>
           )}
@@ -9423,7 +9466,7 @@ function AppForm({
   ) : null;
   return (
     <form
-      className="settings-frame is-wide is-access"
+      className="settings-frame is-access is-item"
       onSubmit={(e) => {
         e.preventDefault();
         if (kind === "app" && !title.trim()) {
@@ -9519,22 +9562,32 @@ function AppForm({
           <div className={paneSafe === "general" ? "settings-stack" : "hidden"}>
             <div className="settings-card">
               <p className="settings-kicker">{t("item.general")}</p>
-              <Field label={kind === "app" ? t("item.name") : t("item.titleOptional")}>
-                <div className="name-icon-row">
-                  {kind === "app" ? (
+              {kind === "app" ? (
+                <div className="field-row">
+                  {" "}
+                  <Field label={t("item.name")}>
+                    <Input
+                      className={FIELD_SM}
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder={t("item.placeholderName")}
+                      required
+                    />
+                  </Field>{" "}
+                  <Field label={t("item.icon")}>
                     <IconPicker value={icon} onChange={setIcon} siteUrl={url} {...picker} />
-                  ) : null}
+                  </Field>
+                </div>
+              ) : (
+                <Field label={t("item.titleOptional")}>
                   <Input
-                    className={`${FIELD_SM} min-w-0 flex-1`}
+                    className={FIELD_SM}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder={
-                      kind === "app" ? t("item.placeholderName") : t("item.placeholderTitle")
-                    }
-                    required={kind === "app"}
+                    placeholder={t("item.placeholderTitle")}
                   />
-                </div>
-              </Field>
+                </Field>
+              )}
               <Field label={t("item.category")}>
                 <Select
                   className={FIELD_SM}

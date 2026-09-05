@@ -380,6 +380,7 @@
     "sessionExpired": "Session expired. Sign in again.",
     "cardDuplicated": "Card duplicated",
     "spaceDuplicated": "Space duplicated",
+    "categoryDuplicated": "Category duplicated",
     "prefsReset": "This device’s preferences were reset",
     "clicksReset": "Click counters reset",
     "tagsUpdated": "Tags updated",

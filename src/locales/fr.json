@@ -380,6 +380,7 @@
     "sessionExpired": "Session expirée. Se reconnecter.",
     "cardDuplicated": "Carte dupliquée",
     "spaceDuplicated": "Espace dupliqué",
+    "categoryDuplicated": "Section dupliquée",
     "prefsReset": "Préférences de cet appareil réinitialisées",
     "clicksReset": "Compteurs de clics remis à zéro",
     "tagsUpdated": "Étiquettes mises à jour",

@@ -1389,6 +1389,10 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
     width: min(64rem, calc(100vw - 2rem));
     height: min(88dvh, 720px);
   }
+  .settings-frame.is-item {
+    width: min(50rem, calc(100vw - 2rem));
+    height: min(88dvh, 680px);
+  }
 }
 .security-banner {
   display: flex;
@@ -1820,16 +1824,6 @@ html.dark .settings-hint.is-warn {
   height: 2.75rem;
   padding: 0;
   color: inherit;
-}
-.name-icon-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.name-icon-row .icon-trigger {
-  width: 2.25rem;
-  height: 2.25rem;
-  flex-shrink: 0;
 }
 .size-preview-wrap {
   display: flex;
