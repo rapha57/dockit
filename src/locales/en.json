@@ -58,7 +58,8 @@
     "addSpace": "Space",
     "dropHere": "Drop here",
     "addTagOrName": "Add a tag or a name…",
-    "removeTag": "Remove {name}"
+    "removeTag": "Remove {name}",
+    "moreSpaces": "More spaces"
   },
   "roles": {
     "admin": "admin",
@@ -692,7 +693,6 @@
     "onlineIcons": "Online icons (Iconify)",
     "onlineIconsHint": "Offline by default. Turn on only if the portal has Internet access — A click copies the icon locally.",
     "navRichIcons": "Local and online icons on spaces and categories",
-    "navRichIconsHint": "Off: spaces and categories use pictograms only. Cards always keep the full picker (pictograms, uploads, product library, Iconify).",
     "annexFade": "Fade the background of extra-link menus",
     "showInfoBar": "Show the information bar",
     "cardResize": "Resize cards by dragging their edges",

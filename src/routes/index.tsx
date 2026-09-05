@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
@@ -40,6 +40,7 @@ import {
   LogIn,
   LogOut,
   Menu,
+  MoreHorizontal,
   MousePointerClick,
   Palette,
   Pencil,
@@ -187,7 +188,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.05.2";
+var PORTAL_VERSION = "2026.09.05.3";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -335,6 +336,36 @@ function placeTabs(tabs, tabId, insertAt) {
     ...t,
     sortOrder: i + 1,
   }));
+}
+function pickVisibleTabIds(tabs, widths, activeId, avail, favW, plusW, moreW, gap) {
+  const ids = (tabs || []).map((t) => t.id);
+  const wOf = (id) => widths.get(id) || 72;
+  function total(vis, showMore) {
+    const n = 1 + vis.length + (showMore ? 1 : 0) + (plusW > 0 ? 1 : 0);
+    let w = favW + (showMore ? moreW : 0) + plusW;
+    for (const id of vis) w += wOf(id);
+    return w + Math.max(0, n - 1) * gap;
+  }
+  function pack(showMore) {
+    const vis = [];
+    for (const id of ids) {
+      if (total([...vis, id], showMore) <= avail || id === activeId) vis.push(id);
+    }
+    if (activeId && ids.includes(activeId) && !vis.includes(activeId)) vis.push(activeId);
+    while (total(vis, showMore) > avail) {
+      const drop = [...vis].reverse().find((id) => id !== activeId);
+      if (!drop) break;
+      vis.splice(vis.indexOf(drop), 1);
+    }
+    return vis;
+  }
+  let vis = pack(false);
+  let hid = ids.filter((id) => !vis.includes(id));
+  if (hid.length) {
+    vis = pack(true);
+    hid = ids.filter((id) => !vis.includes(id));
+  }
+  return hid;
 }
 function hoverInsertAt(ids, dragId, anchorId, after) {
   const rest = ids.filter((id) => id !== dragId);
@@ -986,6 +1017,9 @@ function Home() {
   const [drag, setDrag] = useState(null);
   const [over, setOver] = useState(null);
   const [dragFold, setDragFold] = useState(null);
+  const [tabOverflow, setTabOverflow] = useState([]);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [tabOverMore, setTabOverMore] = useState(false);
   const dragRef = useRef(drag);
   const overRef = useRef(over);
   const didDragRef = useRef(false);
@@ -1003,6 +1037,13 @@ function Home() {
     focusSearch: () => {},
   });
   const tabListRef = useRef(null);
+  const tabStripRef = useRef(null);
+  const tabMoreRef = useRef(null);
+  const morePanelRef = useRef(null);
+  const tabWidthRef = useRef(new Map());
+  const moreOpenRef = useRef(false);
+  const tabOverMoreRef = useRef(false);
+  const moreHoverRef = useRef(null);
   const tabInsertRef = useRef(0);
   const activeTabRef = useRef(data.activeTabId);
   const dragOriginRef = useRef(null);
@@ -1078,6 +1119,36 @@ function Home() {
     if (sess.role === "admin") return true;
     return sess.tabPerms?.[tabId] === "edit";
   }
+  function hitMoreSlot(clientX, clientY) {
+    const pad = 12;
+    const panel = morePanelRef.current;
+    const wrap = tabMoreRef.current;
+    if (panel) {
+      const r = panel.getBoundingClientRect();
+      const w = wrap?.getBoundingClientRect();
+      const left = Math.min(r.left, w?.left ?? r.left) - pad;
+      const right = Math.max(r.right, w?.right ?? r.right) + pad;
+      const top = Math.min(r.top, w?.top ?? r.top) - pad;
+      if (
+        clientX >= left &&
+        clientX <= right &&
+        clientY >= top &&
+        clientY <= r.bottom + pad
+      )
+        return true;
+    }
+    if (wrap) {
+      const r = wrap.getBoundingClientRect();
+      if (
+        clientX >= r.left - pad &&
+        clientX <= r.right + 28 &&
+        clientY >= r.top - pad &&
+        clientY <= r.bottom + (moreOpenRef.current ? 8 : 56)
+      )
+        return true;
+    }
+    return false;
+  }
   function hitTabCarry(clientX, clientY) {
     const stack = document.elementsFromPoint(clientX, clientY);
     for (const node of stack) {
@@ -1138,6 +1209,7 @@ function Home() {
     const node = from.cloneNode(true);
     node.removeAttribute("data-app-id");
     node.removeAttribute("data-cat-id");
+    node.removeAttribute("data-tab-id");
     node.classList.add("drag-ghost");
     node.style.position = "fixed";
     node.style.left = `${r.left}px`;
@@ -1194,7 +1266,7 @@ function Home() {
     if (didDragRef.current) swallowGhostClick();
     commitDrag();
   }
-  function bindTabDrag(tabId) {
+  function bindTabDrag(tabId, origin) {
     unbindDrag();
     const move = (ev) => {
       if (dragRef.current?.kind !== "tab" || dragRef.current.id !== tabId) return;
@@ -1202,9 +1274,43 @@ function Home() {
       if ((o ? Math.hypot(ev.clientX - o.x, ev.clientY - o.y) : 0) > 10 && !didDragRef.current) {
         didDragRef.current = true;
         setDragUi(true);
+        if (origin) {
+          spawnGhost(origin, ev);
+          if (ghostRef.current) ghostRef.current.style.zIndex = "95";
+        }
+        if (tabOverflow.length) setMoreOpen(true);
       }
       if (!didDragRef.current) return;
-      const insertAt = tabInsertAt(ev.clientX, tabId);
+      dragPtrRef.current = {
+        x: ev.clientX,
+        y: ev.clientY,
+      };
+      moveGhost(ev.clientX, ev.clientY);
+      const inMore = hitMoreSlot(ev.clientX, ev.clientY);
+      if (inMore) {
+        setMoreOpen(true);
+        tabOverMoreRef.current = true;
+        setTabOverMore(true);
+      } else {
+        const row = tabListRef.current?.getBoundingClientRect();
+        const more = tabMoreRef.current?.getBoundingClientRect();
+        const overBar =
+          row &&
+          ev.clientY >= row.top - 8 &&
+          ev.clientY <= row.bottom + 8 &&
+          ev.clientX >= row.left &&
+          ev.clientX < (more ? more.left - 8 : row.right);
+        if (overBar) {
+          tabOverMoreRef.current = false;
+          setTabOverMore(false);
+        }
+      }
+      const insertAt = tabInsertAt(
+        ev.clientX,
+        ev.clientY,
+        tabId,
+        tabOverMoreRef.current,
+      );
       tabInsertRef.current = insertAt;
       setOver((cur) =>
         cur?.kind === "tab" && cur.insertAt === insertAt
@@ -1276,6 +1382,13 @@ function Home() {
       nudgeScroll(ev.clientX, ev.clientY, tabListRef.current);
       moveGhost(ev.clientX, ev.clientY);
       const tabHit = hitTabCarry(ev.clientX, ev.clientY);
+      const moreHit = hitMoreSlot(ev.clientX, ev.clientY);
+      if (moreHit && !tabHit) {
+        const hover = moreHoverRef.current;
+        if (!hover) moreHoverRef.current = { at: Date.now() };
+        else if (Date.now() - hover.at > 320) setMoreOpen(true);
+        return;
+      }
       if (tabHit && !tabHit.blocked) {
         setOver({
           kind: "tab-carry",
@@ -1290,6 +1403,7 @@ function Home() {
             };
           else if (Date.now() - hover.at > 320) {
             goTab(tabHit.tabId);
+            setMoreOpen(false);
             setOver(overForCarryCat(tabHit.tabId));
             tabHoverRef.current = {
               tabId: tabHit.tabId,
@@ -1300,6 +1414,8 @@ function Home() {
         return;
       }
       tabHoverRef.current = null;
+      moreHoverRef.current = null;
+      if (moreOpenRef.current && !moreHit) setMoreOpen(false);
       const insertAt = hitCatInsert(ev.clientY, catId);
       setOver((cur) =>
         cur?.kind === "cat" && cur.insertAt === insertAt
@@ -1387,6 +1503,13 @@ function Home() {
       nudgeScroll(ev.clientX, ev.clientY, tabListRef.current);
       moveGhost(ev.clientX, ev.clientY);
       const tabHit = hitTabCarry(ev.clientX, ev.clientY);
+      const moreHit = hitMoreSlot(ev.clientX, ev.clientY);
+      if (moreHit && !tabHit) {
+        const hover = moreHoverRef.current;
+        if (!hover) moreHoverRef.current = { at: Date.now() };
+        else if (Date.now() - hover.at > 320) setMoreOpen(true);
+        return;
+      }
       if (tabHit && !tabHit.blocked) {
         setOver({
           kind: "tab-carry",
@@ -1410,6 +1533,7 @@ function Home() {
               return;
             }
             goTab(tabHit.tabId);
+            setMoreOpen(false);
             setOver(overForCarry(tabHit.tabId));
             tabHoverRef.current = {
               tabId: tabHit.tabId,
@@ -1433,6 +1557,8 @@ function Home() {
         return;
       }
       tabHoverRef.current = null;
+      moreHoverRef.current = null;
+      if (moreOpenRef.current && !moreHit) setMoreOpen(false);
       if (
         dataRef.current.settings.cardDragCollapse !== false &&
         sourceCatId &&
@@ -2500,7 +2626,14 @@ function Home() {
         : null;
   const displayTabs = useMemo(() => {
     let tabs = data.tabs;
-    if (canReorderTabs && drag && over && drag.kind === "tab" && over.kind === "tab")
+    if (
+      canReorderTabs &&
+      drag &&
+      over &&
+      drag.kind === "tab" &&
+      over.kind === "tab" &&
+      !tabOverMore
+    )
       tabs = placeTabs(data.tabs, drag.id, over.insertAt) ?? data.tabs;
     if (editMode || searching) return tabs;
     return tabs.filter((t) => tabHasCards(t.id));
@@ -2514,7 +2647,19 @@ function Home() {
     over,
     editMode,
     searching,
+    tabOverMore,
   ]);
+  const moreMenuTabs = displayTabs.filter(
+    (tab) => tabOverflow.includes(tab.id) && !(drag?.kind === "tab" && drag.id === tab.id),
+  );
+  const moreGapAt =
+    drag?.kind === "tab" && tabOverMore && over?.kind === "tab"
+      ? data.tabs
+          .map((t) => t.id)
+          .filter((id) => id !== drag.id)
+          .slice(0, over.insertAt)
+          .filter((id) => tabOverflow.includes(id)).length
+      : -1;
   useEffect(() => {
     if (editMode || searching || page !== "tab") return;
     if (tabHasCards(data.activeTabId)) return;
@@ -2522,6 +2667,77 @@ function Home() {
     if (next) goTab(next.id);
     else setPage("favs");
   }, [editMode, searching, page, data.activeTabId, data.catalog, data.tabs]);
+  moreOpenRef.current = moreOpen;
+  tabOverMoreRef.current = tabOverMore;
+  useLayoutEffect(() => {
+    const row = tabListRef.current;
+    const strip = tabStripRef.current;
+    if (!row || !strip) return;
+    const compute = () => {
+      if (dragRef.current?.kind === "tab") return;
+      const gap = Number.parseFloat(getComputedStyle(strip).gap) || 0;
+      const avail = strip.clientWidth;
+      if (!avail) return;
+      const fav = strip.querySelector("[data-tab-slot=fav]");
+      const favW = fav?.offsetWidth || 0;
+      for (const el of strip.querySelectorAll(".tab-item[data-tab-id]")) {
+        if (el.classList.contains("is-overflow")) continue;
+        const id = el.dataset.tabId;
+        if (id && el.offsetWidth) tabWidthRef.current.set(id, el.offsetWidth);
+      }
+      const activeId = page === "favs" ? null : data.activeTabId;
+      const hid = pickVisibleTabIds(
+        displayTabs,
+        tabWidthRef.current,
+        activeId,
+        avail,
+        favW,
+        0,
+        0,
+        gap,
+      );
+      setTabOverflow((cur) =>
+        cur.length === hid.length && cur.every((id, i) => id === hid[i]) ? cur : hid,
+      );
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(row);
+    ro.observe(strip);
+    return () => ro.disconnect();
+  }, [displayTabs, editMode, data.activeTabId, page, canReorderTabs, searching, drag?.kind]);
+  useEffect(() => {
+    if (!tabOverflow.length && moreOpen) setMoreOpen(false);
+  }, [tabOverflow, moreOpen]);
+  useLayoutEffect(() => {
+    if (!moreOpen) return;
+    const btn = tabMoreRef.current?.querySelector(".tab-more");
+    const panel = morePanelRef.current;
+    if (!btn || !panel) return;
+    const r = btn.getBoundingClientRect();
+    const w = panel.offsetWidth;
+    const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+    panel.style.top = `${r.bottom + 6}px`;
+    panel.style.left = `${Math.max(8, left)}px`;
+  }, [moreOpen, tabOverflow]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (e) => {
+      if (dragRef.current?.kind === "tab") return;
+      if (tabMoreRef.current?.contains(e.target) || morePanelRef.current?.contains(e.target))
+        return;
+      setMoreOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
   const displayCategories = useMemo(() => {
     const base = filtered;
     if (!canDrag || !drag || !over) return base;
@@ -2754,23 +2970,57 @@ function Home() {
       if (next) persistLayout(next);
     }
   }
-  function tabInsertAt(clientX, dragId) {
-    const root = tabListRef.current;
+  function tabInsertAt(clientX, clientY, dragId, forceMore) {
     const ids = dataRef.current.tabs.map((t) => t.id).filter((id) => id !== dragId);
+    const panel = morePanelRef.current;
+    const useMore = forceMore || Boolean(panel);
+    if (useMore && panel) {
+      const box = panel.getBoundingClientRect();
+      const inPanel =
+        forceMore ||
+        (clientX >= box.left &&
+          clientX <= box.right &&
+          clientY >= box.top &&
+          clientY <= box.bottom);
+      if (inPanel) {
+        const nodes = [...panel.querySelectorAll("[data-tab-id]")];
+        let last = -1;
+        for (const el of nodes) {
+          const id = el.dataset.tabId;
+          if (!id || id === dragId) continue;
+          const at = ids.indexOf(id);
+          if (at >= 0) last = at;
+          const r = el.getBoundingClientRect();
+          if (clientY < r.top + r.height / 2) return at < 0 ? ids.length : at;
+        }
+        if (nodes.length) return last < 0 ? ids.length : last + 1;
+      }
+    }
+    if (forceMore) {
+      const ov = tabOverflow.filter((id) => id !== dragId);
+      if (!ov.length) return ids.length;
+      const at = ids.indexOf(ov[0]);
+      return at < 0 ? ids.length : at;
+    }
+    const root = tabListRef.current;
     if (!root) return ids.length;
-    const nodes = [...root.querySelectorAll("[data-tab-id]")];
+    const nodes = [...root.querySelectorAll(".tab-item[data-tab-id]")].filter(
+      (el) => !el.classList.contains("is-overflow") && el.offsetWidth,
+    );
+    let last = -1;
     for (const el of nodes) {
       const id = el.dataset.tabId;
       if (!id || id === dragId) continue;
+      const at = ids.indexOf(id);
+      if (at >= 0) last = at;
       const r = el.getBoundingClientRect();
-      if (clientX < r.left + r.width / 2) {
-        const at = ids.indexOf(id);
-        return at < 0 ? ids.length : at;
-      }
+      if (clientX < r.left + r.width / 2) return at < 0 ? ids.length : at;
     }
-    return ids.length;
+    return last < 0 ? ids.length : last + 1;
   }
   function endTabPointer(tabId, moved) {
+    tabOverMoreRef.current = false;
+    setTabOverMore(false);
     if (!moved) {
       setDrag(null);
       setOver(null);
@@ -3103,9 +3353,10 @@ function Home() {
         </div>
         {displayTabs.length > 0 && (
           <div ref={tabListRef} className="tab-row">
-            {" "}
+            <div ref={tabStripRef} className="tab-strip">
             <button
               type="button"
+              data-tab-slot="fav"
               onClick={() => {
                 if (didDragRef.current) {
                   didDragRef.current = false;
@@ -3182,9 +3433,9 @@ function Home() {
                     kind: "tab",
                     insertAt: tabIndex,
                   });
-                  bindTabDrag(tab.id);
+                  bindTabDrag(tab.id, e.currentTarget);
                 }}
-                className={`tab-item ${canReorderTabs ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${drag?.kind === "tab" && drag.id === tab.id ? "is-src" : ""} ${carryDestTabId === tab.id ? "is-drop" : ""} ${tab.id === data.activeTabId && page !== "favs" ? "is-on" : searching && searchHits.some((h) => h.id === tab.id) ? "text-fg" : searching ? "text-subtle" : ""} ${tab.hideLabel ? "is-icon" : ""}`}
+                className={`tab-item ${canReorderTabs ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${drag?.kind === "tab" && drag.id === tab.id ? "is-src" : ""} ${carryDestTabId === tab.id ? "is-drop" : ""} ${tab.id === data.activeTabId && page !== "favs" ? "is-on" : searching && searchHits.some((h) => h.id === tab.id) ? "text-fg" : searching ? "text-subtle" : ""} ${tab.hideLabel ? "is-icon" : ""} ${tabOverflow.includes(tab.id) ? "is-overflow" : ""}`}
                 title={tab.name}
                 aria-label={tab.name}
               >
@@ -3192,7 +3443,7 @@ function Home() {
                   <GripVertical className="tab-ico text-subtle" aria-hidden />
                 ) : null}{" "}
                 <PortalIcon name={tab.icon} className="tab-ico" />
-                {tab.hideLabel ? null : tab.name}
+                {tab.hideLabel ? null : <span className="tab-item-name">{tab.name}</span>}
                 {tab.restricted ? (
                   <Lock className="tab-ico text-muted" aria-label={t("aria.restrictedTab")} title={t("aria.restrictedTab")} />
                 ) : null}
@@ -3254,9 +3505,106 @@ function Home() {
                   )}
               </button>
             ))}
+            </div>
+            <div className="tab-row-end">
+            <div ref={tabMoreRef} className="tab-more-wrap" data-tab-slot="more">
+              <button
+                type="button"
+                className={`tab-item tab-more ${tabOverflow.length ? "" : "is-off"}`}
+                aria-label={t("nav.moreSpaces")}
+                title={t("nav.moreSpaces")}
+                aria-haspopup="menu"
+                aria-expanded={moreOpen}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMoreOpen((v) => !v);
+                }}
+              >
+                <MoreHorizontal className="tab-ico" />
+                {tabOverflow.length > 1 ? (
+                  <span className="count-chip">{tabOverflow.length}</span>
+                ) : null}
+              </button>
+              {moreOpen && tabOverflow.length && typeof document !== "undefined"
+                ? createPortal(
+                    <div
+                      ref={morePanelRef}
+                      className="account-panel tab-more-panel"
+                      role="menu"
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <p className="menu-kicker">{t("nav.moreSpaces")}</p>
+                      {moreMenuTabs.map((tab, i) => (
+                        <Fragment key={tab.id}>
+                          {moreGapAt === i ? (
+                            <div className="drop-slot tab-more-gap">
+                              <span className="drop-slot-label">{t("nav.dropHere")}</span>
+                            </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            data-tab-id={tab.id}
+                            role="menuitem"
+                            className={`${canReorderTabs ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${carryDestTabId === tab.id ? "is-drop" : ""}`}
+                            onClick={() => {
+                              if (didDragRef.current) {
+                                didDragRef.current = false;
+                                return;
+                              }
+                              goTab(tab.id);
+                              setMoreOpen(false);
+                            }}
+                            onPointerDown={(e) => {
+                              if (!canReorderTabs) return;
+                              e.stopPropagation();
+                              lockSelection(e);
+                              didDragRef.current = false;
+                              dragOriginRef.current = {
+                                x: e.clientX,
+                                y: e.clientY,
+                              };
+                              writeEditMode(true);
+                              tabOverMoreRef.current = true;
+                              setTabOverMore(true);
+                              setDrag({
+                                kind: "tab",
+                                id: tab.id,
+                              });
+                              const idx = displayTabs.findIndex((t) => t.id === tab.id);
+                              tabInsertRef.current = idx < 0 ? displayTabs.length : idx;
+                              setOver({
+                                kind: "tab",
+                                insertAt: idx < 0 ? displayTabs.length : idx,
+                              });
+                              bindTabDrag(tab.id, e.currentTarget);
+                            }}
+                          >
+                            {canReorderTabs ? (
+                              <GripVertical className="tab-ico text-subtle" aria-hidden />
+                            ) : null}
+                            <PortalIcon name={tab.icon} className="tab-ico" />
+                            <span className="min-w-0 truncate">{tab.name}</span>
+                            {tab.restricted ? (
+                              <Lock className="tab-ico ml-auto text-muted" aria-hidden />
+                            ) : null}
+                          </button>
+                        </Fragment>
+                      ))}
+                      {moreGapAt === moreMenuTabs.length ? (
+                        <div className="drop-slot tab-more-gap">
+                          <span className="drop-slot-label">{t("nav.dropHere")}</span>
+                        </div>
+                      ) : null}
+                    </div>,
+                    document.body,
+                  )
+                : null}
+            </div>
             {editMode && (session?.role === "admin" || session?.canCreateTabs) && (
               <button
                 type="button"
+                data-tab-slot="plus"
                 onClick={() =>
                   setModal({
                     kind: "tab",
@@ -3269,6 +3617,7 @@ function Home() {
                 {t("nav.space")}
               </button>
             )}
+            </div>
           </div>
         )}
       </header>{" "}
@@ -6574,7 +6923,6 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.navRichIcons")}
           </label>
-          <p className="settings-hint">{t("pres.navRichIconsHint")}</p>
         </div>
       </div>{" "}
       <div className="settings-card">

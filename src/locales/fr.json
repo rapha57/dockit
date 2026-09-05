@@ -58,7 +58,8 @@
     "addSpace": "Espace",
     "dropHere": "Déposer ici",
     "addTagOrName": "Ajouter un tag ou un nom…",
-    "removeTag": "Retirer {name}"
+    "removeTag": "Retirer {name}",
+    "moreSpaces": "Autres espaces"
   },
   "roles": {
     "admin": "admin",
@@ -692,7 +693,6 @@
     "onlineIcons": "Icônes en ligne (Iconify)",
     "onlineIconsHint": "Hors-ligne par défaut. Activer seulement si le portail a un accès Internet — Le clic copie l’icône en local.",
     "navRichIcons": "Icônes locales et en ligne sur les espaces et les catégories",
-    "navRichIconsHint": "Désactivé : espaces et catégories n’utilisent que des pictogrammes. Les cartes gardent toujours le sélecteur complet (pictos, import, bibliothèque produit, Iconify).",
     "annexFade": "Estomper le fond des menus d’autres liens",
     "showInfoBar": "Afficher la barre d’information",
     "cardResize": "Redimensionner les cartes en tirant les bords",
