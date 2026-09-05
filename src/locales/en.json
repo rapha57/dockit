@@ -142,8 +142,8 @@
     "title": "Statistics",
     "lead": "Top 10 most opened applications",
     "leadVisible": "Top 10 among the cards you can see",
-    "clicksTip": "Click stats for the whole portal, for geeks",
-    "clicksTipVisible": "Top 10 among the cards you can see, for geeks",
+    "clicksTip": "Openings recorded across the whole portal.",
+    "clicksTipVisible": "Top 10 among the cards you can see.",
     "topApps": "Top applications",
     "showAll": "Show all cards",
     "showDown": "Show only probes that are down",
@@ -403,7 +403,10 @@
     "noReply": "No response",
     "saved": "Saved",
     "pdfFail": "PDF export failed",
-    "faviconApplied": "Favicon applied"
+    "faviconApplied": "Favicon applied",
+    "cardsSorted": "Cards sorted A–Z",
+    "cardsSortedZa": "Cards sorted Z–A",
+    "cardsReset": "Card sizes reset to 1×1"
   },
   "errors": {
     "generic": "Error",
@@ -489,6 +492,8 @@
     "card.restore": "Card restored",
     "category.create": "Category created",
     "category.update": "Category modified",
+    "category.sort": "Cards sorted",
+    "category.resetLayout": "Card sizes reset",
     "category.delete": "Category deleted",
     "category.restore": "Category restored",
     "tab.create": "Space created",
@@ -553,7 +558,7 @@
     "statsHint": "The icon opens the top 10 most clicked applications. The day is always shown in the bar. The week appears after more than one day of history, the month after a week, the year after a month.",
     "statsHintHidden": "The information bar is hidden in Presentation.",
     "geek": "Geek tooltip",
-    "geekHint": "Short note on hover on the click icon.",
+    "geekHint": "Shows a short note when you hover the click icon in the information bar.",
     "resetKicker": "Counters",
     "resetHint": "Clears every card click counter. The information bar and the top 10 start again from zero.",
     "resetAction": "Reset counters",
@@ -598,7 +603,11 @@
   },
   "cat": {
     "expand": "Expand category",
-    "collapse": "Collapse category"
+    "collapse": "Collapse category",
+    "sortAlpha": "Sort cards A to Z",
+    "sortZa": "Sort cards Z to A",
+    "resetLayout": "Reset card sizes",
+    "resetLayoutConfirm": "Reset every card in this category to 1×1? Order is unchanged."
   },
   "annex": {
     "other": "Other link",
@@ -617,7 +626,10 @@
     "stackApp": "App",
     "stackUi": "Interface",
     "stackData": "Data",
-    "createdOn": "26 August 2026"
+    "createdOn": "26 August 2026",
+    "license": "License",
+    "source": "Source",
+    "coffee": "Buy me a coffee"
   },
   "oidc": {
     "enable": "Enable OpenID Connect",
@@ -673,7 +685,8 @@
     "navRichIcons": "Local and online icons on spaces and categories",
     "navRichIconsHint": "Off: spaces and categories use pictograms only. Cards always keep the full picker (pictograms, uploads, product library, Iconify).",
     "annexFade": "Fade the background of extra-link menus",
-    "showInfoBar": "Show the information bar"
+    "showInfoBar": "Show the information bar",
+    "cardResize": "Resize cards by dragging their edges"
   },
   "reach": {
     "probes": "Probes",
@@ -688,7 +701,8 @@
     "dev": "Development",
     "tls": "Require a valid TLS certificate",
     "authOnly": "Restrict probes to signed-in accounts",
-    "tlsHint": "TLS: targets with a self-signed certificate show as down. Signed-in probes: visitors no longer see a reachability dot.",
+    "tlsHint": "Targets with a self-signed certificate show as down.",
+    "authOnlyHint": "Visitors no longer see a reachability dot on cards.",
     "httpOnly": "HttpOnly cookie (not sessionStorage)",
     "httpOnlyHint": "The token is no longer readable from JavaScript. Takes effect at the next sign-in.",
     "noPassword": "Passwordless admin sign-in",

@@ -142,8 +142,8 @@
     "title": "Statistiques",
     "lead": "Top 10 des applications les plus ouvertes",
     "leadVisible": "Top 10 parmi les cartes visibles",
-    "clicksTip": "Stats de clics sur tout le portail, pour geek",
-    "clicksTipVisible": "Top 10 parmi les cartes visibles, pour geek",
+    "clicksTip": "Ouvertures enregistrées sur tout le portail.",
+    "clicksTipVisible": "Top 10 parmi les cartes que tu peux voir.",
     "topApps": "Top des applications",
     "showAll": "Afficher toutes les cartes",
     "showDown": "Afficher uniquement les sondes hors service",
@@ -403,7 +403,10 @@
     "noReply": "Pas de réponse",
     "saved": "Enregistré",
     "pdfFail": "Export PDF impossible",
-    "faviconApplied": "Favicon appliqué"
+    "faviconApplied": "Favicon appliqué",
+    "cardsSorted": "Cartes triées de A à Z",
+    "cardsSortedZa": "Cartes triées de Z à A",
+    "cardsReset": "Tailles des cartes remises à 1×1"
   },
   "errors": {
     "generic": "Erreur",
@@ -489,6 +492,8 @@
     "card.restore": "Carte restaurée",
     "category.create": "Catégorie créée",
     "category.update": "Catégorie modifiée",
+    "category.sort": "Cartes triées",
+    "category.resetLayout": "Tailles des cartes réinitialisées",
     "category.delete": "Catégorie supprimée",
     "category.restore": "Catégorie restaurée",
     "tab.create": "Espace créé",
@@ -553,7 +558,7 @@
     "statsHint": "L’icône ouvre le top 10 des applications les plus cliquées. Le jour est toujours affiché dans la barre. La semaine apparaît dès qu’il y a plus d’un jour d’historique, le mois après une semaine, l’année après un mois.",
     "statsHintHidden": "La barre d’information est masquée dans Présentation.",
     "geek": "Bulle geek",
-    "geekHint": "Courte note au survol de l’icône de clics.",
+    "geekHint": "Affiche une courte note au survol de l’icône de clics, dans la barre d’information.",
     "resetKicker": "Compteurs",
     "resetHint": "Vide tous les compteurs de clics des cartes. La barre d’information et le top 10 repartent de zéro.",
     "resetAction": "Réinitialiser les compteurs",
@@ -598,7 +603,11 @@
   },
   "cat": {
     "expand": "Déplier la catégorie",
-    "collapse": "Replier la catégorie"
+    "collapse": "Replier la catégorie",
+    "sortAlpha": "Trier les cartes de A à Z",
+    "sortZa": "Trier les cartes de Z à A",
+    "resetLayout": "Réinitialiser les tailles",
+    "resetLayoutConfirm": "Remettre toutes les cartes de cette catégorie en 1×1 ? L’ordre ne change pas."
   },
   "annex": {
     "other": "Autre lien",
@@ -617,7 +626,10 @@
     "stackApp": "App",
     "stackUi": "Interface",
     "stackData": "Données",
-    "createdOn": "26 août 2026"
+    "createdOn": "26 août 2026",
+    "license": "Licence",
+    "source": "Source",
+    "coffee": "Offre-moi un café"
   },
   "oidc": {
     "enable": "Activer OpenID Connect",
@@ -673,7 +685,8 @@
     "navRichIcons": "Icônes locales et en ligne sur les espaces et les catégories",
     "navRichIconsHint": "Désactivé : espaces et catégories n’utilisent que des pictogrammes. Les cartes gardent toujours le sélecteur complet (pictos, import, bibliothèque produit, Iconify).",
     "annexFade": "Estomper le fond des menus d’autres liens",
-    "showInfoBar": "Afficher la barre d’information"
+    "showInfoBar": "Afficher la barre d’information",
+    "cardResize": "Redimensionner les cartes en tirant les bords"
   },
   "reach": {
     "probes": "Sondes",
@@ -688,7 +701,8 @@
     "dev": "Développement",
     "tls": "Exiger un certificat TLS valide",
     "authOnly": "Réserver les sondes aux comptes connectés",
-    "tlsHint": "TLS : les cibles en certificat auto-signé passent HS. Sondes connectées : plus de pastille de joignabilité pour les visiteurs.",
+    "tlsHint": "Les cibles en certificat auto-signé passent HS.",
+    "authOnlyHint": "Les visiteurs ne voient plus de pastille de joignabilité sur les cartes.",
     "httpOnly": "Cookie HttpOnly (hors sessionStorage)",
     "httpOnlyHint": "Le jeton n’est plus lisible en JavaScript. Prend effet à la prochaine connexion.",
     "noPassword": "Connexion admin sans mot de passe",

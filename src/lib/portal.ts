@@ -141,6 +141,7 @@ export type PortalSettings = {
   catCounts: boolean;
   pruneOrphanTags: boolean;
   tagsAlpha: boolean;
+  cardResize: boolean;
   infoStats: boolean;
   infoGeek: boolean;
   probeTlsVerify: boolean;
@@ -340,6 +341,33 @@ function asSpan(v) {
 	const n = Number(v);
 	return n === 2 || n === 3 ? n : 1;
 }
+function cardSortKey(app) {
+	const title = String(app?.title || "").trim();
+	if (title) return title;
+	if (asKind(app?.kind) === "note") return String(app?.description || "").replace(/\s+/g, " ").trim().slice(0, 80);
+	return "";
+}
+export function sortAppsAlpha(apps, locale, dir) {
+	const tag = locale === "fr" ? "fr" : "en";
+	const signed = dir === "za" ? -1 : 1;
+	return [...(apps || [])].sort((a, b) => {
+		const ka = cardSortKey(a);
+		const kb = cardSortKey(b);
+		if (!ka && kb) return 1;
+		if (ka && !kb) return -1;
+		return signed * ka.localeCompare(kb, tag, {
+			sensitivity: "base",
+			numeric: true
+		});
+	});
+}
+export function appsAlphaDir(apps, locale) {
+	if (!apps || apps.length < 2) return null;
+	const ids = apps.map((a) => a.id).join("\n");
+	if (sortAppsAlpha(apps, locale, "az").map((a) => a.id).join("\n") === ids) return "az";
+	if (sortAppsAlpha(apps, locale, "za").map((a) => a.id).join("\n") === ids) return "za";
+	return null;
+}
 function asTags(v) {
 	if (!Array.isArray(v)) return [];
 	const out = [];
@@ -418,6 +446,7 @@ function defaultSettings() {
 		catCounts: false,
 		pruneOrphanTags: false,
 		tagsAlpha: true,
+		cardResize: true,
 		infoStats: true,
 		infoGeek: true,
 		probeTlsVerify: false,
@@ -1065,6 +1094,7 @@ function asStore(raw) {
 			catCounts: Boolean(doc.settings.catCounts),
 			pruneOrphanTags: Boolean(doc.settings.pruneOrphanTags),
 			tagsAlpha: doc.settings.tagsAlpha !== false,
+			cardResize: doc.settings.cardResize !== false,
 			infoStats: doc.settings.infoStats !== false,
 			infoGeek: doc.settings.infoGeek !== false,
 			probeTlsVerify: Boolean(doc.settings.probeTlsVerify),
@@ -1658,6 +1688,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	catCounts: z.boolean().optional(),
 	pruneOrphanTags: z.boolean().optional(),
 	tagsAlpha: z.boolean().optional(),
+	cardResize: z.boolean().optional(),
 	infoStats: z.boolean().optional(),
 	infoGeek: z.boolean().optional(),
 	probeTlsVerify: z.boolean().optional(),
@@ -1690,6 +1721,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		catCounts: typeof data.catCounts === "boolean" ? data.catCounts : Boolean(doc.settings.catCounts),
 		pruneOrphanTags: typeof data.pruneOrphanTags === "boolean" ? data.pruneOrphanTags : Boolean(doc.settings.pruneOrphanTags),
 		tagsAlpha: typeof data.tagsAlpha === "boolean" ? data.tagsAlpha : doc.settings.tagsAlpha !== false,
+		cardResize: typeof data.cardResize === "boolean" ? data.cardResize : doc.settings.cardResize !== false,
 		infoStats: typeof data.infoStats === "boolean" ? data.infoStats : doc.settings.infoStats !== false,
 		infoGeek: typeof data.infoGeek === "boolean" ? data.infoGeek : doc.settings.infoGeek !== false,
 		probeTlsVerify: typeof data.probeTlsVerify === "boolean" ? data.probeTlsVerify : Boolean(doc.settings.probeTlsVerify),
@@ -2688,6 +2720,43 @@ export const reorderApps = createServerFn({ method: "POST" }).validator(z.object
 	}
 	for (const leftover of bag.values()) tab.categories.find((c) => c.id === leftover.categoryId)?.apps.push(leftover);
 	return emit(doc, user, data.tabId);
+}));
+export const arrangeCategory = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	categoryId: z.string().min(1),
+	sort: z.enum(["alpha", "za"]).optional(),
+	resetSpans: z.boolean().optional()
+})).handler(async ({ data, request }) => mutate((doc) => {
+	const { tab, cat } = categoryOf(doc, data.categoryId);
+	const user = requireEdit(doc, tok(data, request), tab.id);
+	let changed = false;
+	if (data.sort === "alpha" || data.sort === "za") {
+		const next = sortAppsAlpha(cat.apps, doc.settings.locale, data.sort === "za" ? "za" : "az");
+		const same = next.length === cat.apps.length && next.every((a, i) => a.id === cat.apps[i]?.id);
+		cat.apps = next;
+		cat.apps.forEach((a, i) => {
+			a.sortOrder = i + 1;
+		});
+		if (!same) changed = true;
+	}
+	if (data.resetSpans) {
+		for (const app of cat.apps) {
+			if (app.colSpan !== 1 || app.rowSpan !== 1) {
+				app.colSpan = 1;
+				app.rowSpan = 1;
+				changed = true;
+			}
+		}
+	}
+	if (changed) appendHistory(doc, user, {
+		type: data.sort === "alpha" ? "category.sort" : "category.resetLayout",
+		label: cat.name,
+		snapshot: {
+			tab: snapshotTab(tab),
+			category: snapshotCat(cat)
+		}
+	});
+	return emit(doc, user, tab.id);
 }));
 export const moveApp = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,

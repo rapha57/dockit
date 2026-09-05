@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import {
   Activity,
   AlertTriangle,
+  ArrowDownAZ,
+  ArrowUpZA,
   ArrowRightLeft,
   AppWindow,
   BadgeInfo,
@@ -80,6 +82,7 @@ import { ExpandRow, useExpandSession } from "@/components/expand-row";
 import {
   PortalIcon,
   DockitMark,
+  BmcMark,
   ICON_OPTIONS,
   PRODUCT_ICONS,
   iconifySrc,
@@ -127,6 +130,8 @@ import {
   updateLdapSettings,
   updateLoginOrder,
   updateApp,
+  arrangeCategory,
+  appsAlphaDir,
   updateCategory,
   updateSettings,
   updateTab,
@@ -179,7 +184,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.04.5";
+var PORTAL_VERSION = "2026.09.05.1";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -306,6 +311,17 @@ function placeCategory(categories, catId, insertAt) {
     sortOrder: i + 1,
   }));
 }
+function placeCarriedCategory(categories, cat, insertAt) {
+  if (!cat) return null;
+  const stripped = categories.filter((c) => c.id !== cat.id);
+  const idx = Math.max(0, Math.min(insertAt, stripped.length));
+  const next = [...stripped];
+  next.splice(idx, 0, cat);
+  return next.map((c, i) => ({
+    ...c,
+    sortOrder: i + 1,
+  }));
+}
 function placeTabs(tabs, tabId, insertAt) {
   const from = tabs.findIndex((t) => t.id === tabId);
   if (from < 0) return null;
@@ -329,6 +345,140 @@ function pointerAfter(e, el) {
 }
 function itemSpanClass(app) {
   return `${app.colSpan === 3 ? "item-span-3" : app.colSpan === 2 ? "item-span-2" : ""} ${app.rowSpan === 3 ? "item-h-3" : app.rowSpan === 2 ? "item-h-2" : "item-h-1"}`.trim();
+}
+var RESIZE_EDGE = 8;
+function finePointer() {
+  return typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches;
+}
+function gridColCount() {
+  if (typeof window === "undefined") return 1;
+  if (window.matchMedia("(min-width: 64rem)").matches) return 3;
+  if (window.matchMedia("(min-width: 40rem)").matches) return 2;
+  return 1;
+}
+function spanSize(n) {
+  return n === 2 || n === 3 ? n : 1;
+}
+function nearestSpan(sizes, value, max) {
+  let best = 1;
+  let dist = Infinity;
+  for (let n = 1; n <= max; n++) {
+    const d = Math.abs(sizes[n - 1] - value);
+    if (d < dist) {
+      dist = d;
+      best = n;
+    }
+  }
+  return best;
+}
+function liveResizeBox(start, edge, dx, dy, widths, heights, maxCols) {
+  const minW = widths[0];
+  const maxW = widths[Math.max(0, Math.min(maxCols, 3) - 1)];
+  const minH = heights[0];
+  const maxH = heights[2];
+  const right = start.left + start.width;
+  const bottom = start.top + start.height;
+  let width = start.width;
+  let height = start.height;
+  let left = start.left;
+  let top = start.top;
+  if (edge.x === 1) width = Math.min(maxW, Math.max(minW, start.width + dx));
+  else if (edge.x === -1) {
+    width = Math.min(maxW, Math.max(minW, start.width - dx));
+    left = right - width;
+  }
+  if (edge.y === 1) height = Math.min(maxH, Math.max(minH, start.height + dy));
+  else if (edge.y === -1) {
+    height = Math.min(maxH, Math.max(minH, start.height - dy));
+    top = bottom - height;
+  }
+  return {
+    left,
+    top,
+    width,
+    height,
+  };
+}
+function applyLiveBox(el, box) {
+  el.style.left = `${Math.round(box.left)}px`;
+  el.style.top = `${Math.round(box.top)}px`;
+  el.style.width = `${Math.round(box.width)}px`;
+  el.style.height = `${Math.round(box.height)}px`;
+}
+function itemTrackHeights(grid) {
+  const gap = grid ? parseFloat(getComputedStyle(grid).rowGap) || 16 : 16;
+  return [1, 2, 3].map((n) => n * 48 + (n * 6 - 1) * gap);
+}
+function itemColWidths(grid, cols) {
+  const w = grid.getBoundingClientRect().width;
+  const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
+  const colW = cols <= 1 ? w : (w - gap * (cols - 1)) / cols;
+  return [1, 2, 3].map((n) => {
+    const s = Math.min(n, cols);
+    return s * colW + Math.max(0, s - 1) * gap;
+  });
+}
+function resizeCursor(edge) {
+  if (!edge) return "";
+  if (edge.x && edge.y) return edge.x === edge.y ? "nwse-resize" : "nesw-resize";
+  return edge.x ? "ew-resize" : "ns-resize";
+}
+function resizeEdgeAt(rect, x, y, maxCols) {
+  const left = x - rect.left;
+  const top = y - rect.top;
+  const onW = maxCols > 1 && left <= RESIZE_EDGE;
+  const onE = maxCols > 1 && left >= rect.width - RESIZE_EDGE;
+  const onN = top <= RESIZE_EDGE;
+  const onS = top >= rect.height - RESIZE_EDGE;
+  if (!onW && !onE && !onN && !onS) return null;
+  return {
+    x: onE ? 1 : onW ? -1 : 0,
+    y: onS ? 1 : onN ? -1 : 0,
+  };
+}
+function cardResizeEdge(card, clientX, clientY) {
+  if (!card) return null;
+  const tools = card.querySelector(".card-corner");
+  if (tools) {
+    const r = tools.getBoundingClientRect();
+    if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom)
+      return null;
+  }
+  const grip = card.querySelector(".card-grip");
+  if (grip) {
+    const r = grip.getBoundingClientRect();
+    const pad = 8;
+    if (
+      clientX >= r.left - pad &&
+      clientX <= r.right + pad &&
+      clientY >= r.top - pad &&
+      clientY <= r.bottom + pad
+    )
+      return null;
+  }
+  return resizeEdgeAt(card.getBoundingClientRect(), clientX, clientY, gridColCount());
+}
+function hoverResizeCursor(card, clientX, clientY) {
+  const edge = cardResizeEdge(card, clientX, clientY);
+  const cur = resizeCursor(edge);
+  if ((card.dataset.resize || "") === cur) return;
+  if (cur) {
+    card.dataset.resize = cur;
+    card.style.cursor = cur;
+  } else {
+    delete card.dataset.resize;
+    card.style.cursor = "";
+  }
+}
+function clearResizeCursor(card) {
+  if (!card) return;
+  delete card.dataset.resize;
+  card.style.cursor = "";
+}
+function setResizeUi(on, cursor) {
+  if (typeof document === "undefined") return;
+  document.documentElement.classList.toggle("is-card-resizing", on);
+  document.documentElement.style.cursor = on ? cursor || "nwse-resize" : "";
 }
 function allowsFavorite(app, settings) {
   const kind = app.kind || "app";
@@ -866,6 +1016,7 @@ function Home() {
     y: 0,
   });
   const unbindDragRef = useRef(null);
+  const resizeLiveRef = useRef(null);
   dragRef.current = drag;
   overRef.current = over;
   dataRef.current = data;
@@ -879,6 +1030,19 @@ function Home() {
   function unbindDrag() {
     unbindDragRef.current?.();
     unbindDragRef.current = null;
+  }
+  function endLiveResize() {
+    const live = resizeLiveRef.current;
+    if (!live) return;
+    resizeLiveRef.current = null;
+    live.placeholder?.remove();
+    const el = live.origin;
+    if (!el) return;
+    el.classList.remove("is-live-resize");
+    el.style.left = "";
+    el.style.top = "";
+    el.style.width = "";
+    el.style.height = "";
   }
   function stopDragScroll() {
     if (dragScrollRafRef.current) cancelAnimationFrame(dragScrollRafRef.current);
@@ -941,6 +1105,16 @@ function Home() {
       kind: "app",
       catId: cat.id,
       insertAt: cat.apps.filter((a) => a.id !== appId).length,
+    };
+  }
+  function overForCarryCat(tabId) {
+    const cur = dataRef.current;
+    const cats =
+      (cur.catalog ?? []).find((t) => t.id === tabId)?.categories ||
+      (tabId === cur.activeTabId ? cur.categories : []);
+    return {
+      kind: "cat",
+      insertAt: cats.filter((c) => c.id !== dragRef.current?.id).length,
     };
   }
   function killGhost() {
@@ -1049,7 +1223,7 @@ function Home() {
       window.removeEventListener("pointercancel", up);
     };
   }
-  function openMoveCat(category, fromTabId, destTabId) {
+  function openMoveCat(category, fromTabId, destTabId, insertAt) {
     setBusy(true);
     previewMoveCategory({
       data: {
@@ -1061,7 +1235,10 @@ function Home() {
       .then((impact) =>
         setModal({
           kind: "move-cat",
-          impact,
+          impact: {
+            ...impact,
+            insertAt: typeof insertAt === "number" ? insertAt : impact.insertAt,
+          },
         }),
       )
       .catch((err) => {
@@ -1090,14 +1267,30 @@ function Home() {
       nudgeScroll(ev.clientX, ev.clientY, tabListRef.current);
       moveGhost(ev.clientX, ev.clientY);
       const tabHit = hitTabCarry(ev.clientX, ev.clientY);
-      if (tabHit && tabHit.tabId !== dataRef.current.activeTabId) {
+      if (tabHit && !tabHit.blocked) {
         setOver({
           kind: "tab-carry",
           tabId: tabHit.tabId,
-          blocked: tabHit.blocked,
         });
+        if (tabHit.tabId !== dataRef.current.activeTabId) {
+          const hover = tabHoverRef.current;
+          if (!hover || hover.tabId !== tabHit.tabId)
+            tabHoverRef.current = {
+              tabId: tabHit.tabId,
+              at: Date.now(),
+            };
+          else if (Date.now() - hover.at > 320) {
+            goTab(tabHit.tabId);
+            setOver(overForCarryCat(tabHit.tabId));
+            tabHoverRef.current = {
+              tabId: tabHit.tabId,
+              at: Number.POSITIVE_INFINITY,
+            };
+          }
+        }
         return;
       }
+      tabHoverRef.current = null;
       const insertAt = hitCatInsert(ev.clientY, catId);
       setOver((cur) =>
         cur?.kind === "cat" && cur.insertAt === insertAt
@@ -1115,25 +1308,39 @@ function Home() {
         setDrag(null);
         setOver(null);
         setDragUi(false);
+        clearCarry();
         return;
       }
       swallowGhostClick();
+      const from = carryRef.current?.fromTabId;
+      const cat =
+        carryRef.current?.cat || dataRef.current.categories.find((c) => c.id === catId);
       const tabHit = hitTabCarry(ev.clientX, ev.clientY);
       if (tabHit?.blocked) {
         setDrag(null);
         setOver(null);
         setDragUi(false);
+        if (from && from !== dataRef.current.activeTabId) goTab(from);
+        clearCarry();
         toast.error(t("toast.noEditTab"));
         return;
       }
-      if (tabHit && tabHit.tabId !== dataRef.current.activeTabId) {
-        const cat = dataRef.current.categories.find((c) => c.id === catId);
+      const destTabId =
+        tabHit?.tabId && tabHit.tabId !== from
+          ? tabHit.tabId
+          : from && dataRef.current.activeTabId !== from
+            ? dataRef.current.activeTabId
+            : null;
+      const insertAt = overRef.current?.kind === "cat" ? overRef.current.insertAt : undefined;
+      if (destTabId && cat) {
         setDrag(null);
         setOver(null);
         setDragUi(false);
-        if (cat) openMoveCat(cat, dataRef.current.activeTabId, tabHit.tabId);
+        clearCarry();
+        openMoveCat(cat, from, destTabId, insertAt);
         return;
       }
+      clearCarry();
       commitDrag();
     };
     window.addEventListener("pointermove", move);
@@ -1221,6 +1428,158 @@ function Home() {
       window.removeEventListener("pointercancel", up);
     };
   }
+  function bindAppResize(app, origin, edge, ev) {
+    unbindDrag();
+    endLiveResize();
+    const grid = origin.closest("[data-app-grid]");
+    const maxCols = gridColCount();
+    const startPtr = {
+      x: ev.clientX,
+      y: ev.clientY,
+    };
+    const startRect = origin.getBoundingClientRect();
+    const start = {
+      left: startRect.left,
+      top: startRect.top,
+      width: startRect.width,
+      height: startRect.height,
+    };
+    const startCol = spanSize(app.colSpan);
+    const startRow = spanSize(app.rowSpan);
+    const widths = grid
+      ? itemColWidths(grid, maxCols)
+      : [start.width, start.width, start.width];
+    const heights = itemTrackHeights(grid);
+    let box = {
+      ...start,
+    };
+    let liveCol = startCol;
+    let liveRow = startRow;
+    const slot = document.createElement("div");
+    slot.className = `resize-slot drop-slot ${itemSpanClass(app)}`;
+    slot.setAttribute("data-resize-slot", "");
+    const slotLab = document.createElement("span");
+    slotLab.className = "drop-slot-label";
+    slotLab.textContent = t("nav.dropHere");
+    slot.appendChild(slotLab);
+    origin.after(slot);
+    origin.classList.add("is-live-resize");
+    applyLiveBox(origin, start);
+    resizeLiveRef.current = {
+      origin,
+      placeholder: slot,
+    };
+    const cursor = resizeCursor(edge);
+    writeEditMode(true);
+    setResizeUi(true, cursor);
+    try {
+      origin.setPointerCapture?.(ev.pointerId);
+    } catch {}
+    const paintSlot = (col, row) => {
+      slot.className = `resize-slot drop-slot ${itemSpanClass({
+        colSpan: col,
+        rowSpan: row,
+      })}`;
+    };
+    const move = (e) => {
+      e.preventDefault();
+      box = liveResizeBox(
+        start,
+        edge,
+        e.clientX - startPtr.x,
+        e.clientY - startPtr.y,
+        widths,
+        heights,
+        maxCols,
+      );
+      applyLiveBox(origin, box);
+      const col = edge.x ? nearestSpan(widths, box.width, maxCols) : startCol;
+      const row = edge.y ? nearestSpan(heights, box.height, 3) : startRow;
+      if (col === liveCol && row === liveRow) return;
+      liveCol = col;
+      liveRow = row;
+      paintSlot(col, row);
+    };
+    const up = () => {
+      unbindDrag();
+      const col = edge.x ? nearestSpan(widths, box.width, maxCols) : startCol;
+      const row = edge.y ? nearestSpan(heights, box.height, 3) : startRow;
+      endLiveResize();
+      setResizeUi(false);
+      if (col === startCol && row === startRow) return;
+      persistAppSpan(app, col, row);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, {
+      once: true,
+    });
+    window.addEventListener("pointercancel", up, {
+      once: true,
+    });
+    unbindDragRef.current = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      try {
+        origin.releasePointerCapture?.(ev.pointerId);
+      } catch {}
+    };
+  }
+  function persistAppSpan(app, colSpan, rowSpan) {
+    const current = dataRef.current;
+    const categoryId =
+      app.categoryId || current.categories.find((c) => c.apps.some((a) => a.id === app.id))?.id;
+    if (!categoryId) return;
+    if (spanSize(app.colSpan) === colSpan && spanSize(app.rowSpan) === rowSpan) return;
+    const snapshot = current.categories;
+    const nextCats = current.categories.map((c) => ({
+      ...c,
+      apps: c.apps.map((a) =>
+        a.id === app.id
+          ? {
+              ...a,
+              colSpan,
+              rowSpan,
+            }
+          : a,
+      ),
+    }));
+    setData({
+      ...current,
+      categories: nextCats,
+    });
+    updateApp({
+      data: {
+        token: tokenRef.current,
+        id: app.id,
+        categoryId,
+        kind: app.kind || "app",
+        title: app.title || "",
+        description: app.description || "",
+        url: app.url || "",
+        icon: app.icon || "Link",
+        openIn: app.openIn || "_blank",
+        tags: app.tags || [],
+        colSpan,
+        rowSpan,
+        check: app.check || "off",
+        checkHost: app.checkHost || "",
+        links: app.links || [],
+      },
+    })
+      .then((next) => {
+        setData(next);
+        stayEditing();
+      })
+      .catch((err) => {
+        if (!sessionGone(err)) toast.error(te(err));
+        setData({
+          ...current,
+          categories: snapshot,
+        });
+        stayEditing();
+      });
+  }
   useEffect(() => {
     const t = readToken();
     setToken(t);
@@ -1291,11 +1650,24 @@ function Home() {
       setOver(null);
       setDragUi(false);
       document.documentElement.classList.remove("is-dragging");
+      const live = resizeLiveRef.current;
+      resizeLiveRef.current = null;
+      live?.placeholder?.remove();
+      if (live?.origin) {
+        live.origin.classList.remove("is-live-resize");
+        live.origin.style.left = "";
+        live.origin.style.top = "";
+        live.origin.style.width = "";
+        live.origin.style.height = "";
+      }
+      setResizeUi(false);
     };
     const onKey = (e) => {
       if (
         e.key === "Escape" &&
-        (dragRef.current || document.documentElement.classList.contains("is-dragging"))
+        (dragRef.current ||
+          document.documentElement.classList.contains("is-dragging") ||
+          document.documentElement.classList.contains("is-card-resizing"))
       )
         forceIdle();
     };
@@ -1314,7 +1686,8 @@ function Home() {
   }, []);
   useEffect(() => {
     const block = (e) => {
-      if (dragRef.current) e.preventDefault();
+      if (dragRef.current || document.documentElement.classList.contains("is-card-resizing"))
+        e.preventDefault();
     };
     document.addEventListener("selectstart", block);
     return () => document.removeEventListener("selectstart", block);
@@ -1621,6 +1994,62 @@ function Home() {
       return next;
     });
   }
+  function sortCategoryCards(cat) {
+    if (!cat?.apps?.length) return;
+    const nextDir = appsAlphaDir(cat.apps, data.settings.locale) === "az" ? "za" : "alpha";
+    apply(async () => {
+      const next = await arrangeCategory({
+        data: {
+          token,
+          categoryId: cat.id,
+          sort: nextDir,
+        },
+      });
+      toast.success(t(nextDir === "za" ? "toast.cardsSortedZa" : "toast.cardsSorted"));
+      return next;
+    }, {
+      close: false,
+    });
+  }
+  function catSortButton(cat) {
+    const za = appsAlphaDir(cat.apps, data.settings.locale) === "az";
+    return (
+      <button
+        type="button"
+        className="card-tool"
+        aria-label={za ? t("cat.sortZa") : t("cat.sortAlpha")}
+        title={za ? t("cat.sortZa") : t("cat.sortAlpha")}
+        onClick={() => sortCategoryCards(cat)}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {za ? <ArrowUpZA className="size-3.5" /> : <ArrowDownAZ className="size-3.5" />}
+      </button>
+    );
+  }
+  async function resetCategoryCards(cat) {
+    if (!cat?.apps?.length) return;
+    if (
+      !(await askConfirm({
+        title: t("cat.resetLayout"),
+        body: t("cat.resetLayoutConfirm"),
+        okLabel: t("cat.resetLayout"),
+      }))
+    )
+      return;
+    apply(async () => {
+      const next = await arrangeCategory({
+        data: {
+          token,
+          categoryId: cat.id,
+          resetSpans: true,
+        },
+      });
+      toast.success(t("toast.cardsReset"));
+      return next;
+    }, {
+      close: false,
+    });
+  }
   function duplicateSpace(tab) {
     apply(async () => {
       const next = await duplicateTab({
@@ -1791,6 +2220,7 @@ function Home() {
     editMode && !searching && (session?.role === "admin" || session?.canCreateTabs),
   );
   const canDrag = editMode && !searching && page !== "favs" && canEditActive;
+  const canResize = canDrag && data.settings.cardResize !== false;
   function toggleTag(name) {
     setTagFilter((cur) => {
       const key = name.toLowerCase();
@@ -1974,14 +2404,13 @@ function Home() {
     if (searching) return searchHits.flatMap((t) => t.categories);
     return data.categories;
   }, [searching, searchHits, data.categories]);
+  const carryFromTabId = carryRef.current?.fromTabId;
   const carryDestTabId =
-    drag?.kind === "app"
-      ? over?.kind === "tab-carry"
-        ? over.tabId
-        : carryRef.current && carryRef.current.fromTabId !== data.activeTabId
-          ? data.activeTabId
-          : null
-      : null;
+    over?.kind === "tab-carry"
+      ? over.tabId
+      : carryFromTabId && carryFromTabId !== data.activeTabId
+        ? data.activeTabId
+        : null;
   const displayTabs = useMemo(() => {
     let tabs = data.tabs;
     if (canReorderTabs && drag && over && drag.kind === "tab" && over.kind === "tab")
@@ -2009,8 +2438,15 @@ function Home() {
   const displayCategories = useMemo(() => {
     const base = filtered;
     if (!canDrag || !drag || !over) return base;
-    if (drag.kind === "cat" && over.kind === "cat")
-      return placeCategory(base, drag.id, over.insertAt) ?? base;
+    if (drag.kind === "cat") {
+      const carry = carryRef.current;
+      const inView = base.some((c) => c.id === drag.id);
+      if (carry?.cat && !inView) {
+        const insertAt = over.kind === "cat" ? over.insertAt : base.length;
+        return placeCarriedCategory(base, carry.cat, insertAt) ?? base;
+      }
+      if (over.kind === "cat") return placeCategory(base, drag.id, over.insertAt) ?? base;
+    }
     if (drag.kind === "app") {
       const carry = carryRef.current;
       const inView = base.some((c) => c.apps.some((a) => a.id === drag.id));
@@ -2936,6 +3372,21 @@ function Home() {
                             {" "}
                             <ArrowRightLeft className="size-3.5" />
                           </button>{" "}
+                          {cat.apps.length ? (
+                            <>
+                              {catSortButton(cat)}{" "}
+                              <button
+                                type="button"
+                                className="card-tool"
+                                aria-label={t("cat.resetLayout")}
+                                title={t("cat.resetLayout")}
+                                onClick={() => void resetCategoryCards(cat)}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              >
+                                <LayoutGrid className="size-3.5" />
+                              </button>{" "}
+                            </>
+                          ) : null}
                           <button
                             type="button"
                             className="card-tool"
@@ -3054,6 +3505,12 @@ function Home() {
                           y: e.clientY,
                         };
                         writeEditMode(true);
+                        carryRef.current = {
+                          cat: {
+                            ...cat,
+                          },
+                          fromTabId: dataRef.current.activeTabId,
+                        };
                         bindCatDrag(
                           cat.id,
                           e.currentTarget.closest(".cat-head") ||
@@ -3136,6 +3593,21 @@ function Home() {
                             {" "}
                             <ArrowRightLeft className="size-3.5" />
                           </button>{" "}
+                          {cat.apps.length ? (
+                            <>
+                              {catSortButton(cat)}{" "}
+                              <button
+                                type="button"
+                                className="card-tool"
+                                aria-label={t("cat.resetLayout")}
+                                title={t("cat.resetLayout")}
+                                onClick={() => void resetCategoryCards(cat)}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              >
+                                <LayoutGrid className="size-3.5" />
+                              </button>{" "}
+                            </>
+                          ) : null}
                           <button
                             type="button"
                             className="card-tool"
@@ -3182,6 +3654,7 @@ function Home() {
                           app={app}
                           editMode={editMode && canEditActive}
                           canDrag={canDrag}
+                          canResize={canResize}
                           dragging={drag?.kind === "app" && drag.id === app.id}
                           className={itemSpanClass(app)}
                           onTag={toggleTag}
@@ -3208,6 +3681,15 @@ function Home() {
                           onPointerDown={(e) => {
                             if (!canDrag) return;
                             if (e.target.closest("button")) return;
+                            if (e.button != null && e.button !== 0) return;
+                            if (canResize && e.pointerType !== "touch" && finePointer()) {
+                              const edge = cardResizeEdge(e.currentTarget, e.clientX, e.clientY);
+                              if (edge) {
+                                lockSelection(e);
+                                bindAppResize(app, e.currentTarget, edge, e);
+                                return;
+                              }
+                            }
                             lockSelection(e);
                             didDragRef.current = false;
                             dragOriginRef.current = {
@@ -3300,8 +3782,7 @@ function Home() {
             modal.kind === "history" ||
             modal.kind === "users" ||
             modal.kind === "tab" ||
-            modal.kind === "category" ||
-            modal.kind === "favs"
+            modal.kind === "category"
           }
           onClose={() => {
             setBusy(false);
@@ -3788,13 +4269,16 @@ function Home() {
                   kind: "none",
                 })
               }
-              onOk={() =>
+              onConfirm={() =>
                 apply(() =>
                   moveCategory({
                     data: {
                       token,
                       categoryId: modal.impact.categoryId,
                       destTabId: modal.impact.toId,
+                      ...(typeof modal.impact.insertAt === "number"
+                        ? { insertAt: modal.impact.insertAt }
+                        : {}),
                     },
                   }),
                 )
@@ -3927,6 +4411,7 @@ function AppCard({
   app,
   editMode,
   canDrag,
+  canResize,
   dragging,
   className,
   activeTags,
@@ -4282,7 +4767,12 @@ function AppCard({
       data-app-id={app.id}
       data-app-card=""
       onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
+      onPointerMove={(e) => {
+        if (canResize && e.buttons === 0 && e.pointerType !== "touch" && finePointer())
+          hoverResizeCursor(e.currentTarget, e.clientX, e.clientY);
+        onPointerMove?.(e);
+      }}
+      onPointerLeave={(e) => clearResizeCursor(e.currentTarget)}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
       onContextMenu={onCtx}
@@ -5093,34 +5583,47 @@ function AboutForm({ busy, canReset, onReset }) {
       <div className="about-hero">
         <DockitMark className="dockit-mark about-mark" />
         <p className="about-name">Dockit</p>
+        {release?.kind === "ok" || release?.kind === "update" ? (
+          <a
+            href="https://buymeacoffee.com/rapha57"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="about-coffee"
+          >
+            <BmcMark className="about-bmc" />
+            {t("about.coffee")}
+          </a>
+        ) : null}
       </div>
-      <dl className="about-dl">
-        <dt>{t("about.created")}</dt>
-        <dd>{t("about.createdOn")}</dd>
-        <dt>{t("about.build")}</dt>
-        <dd className="about-build">
-          {PORTAL_VERSION}
-          {release?.kind === "ok" ? (
-            <span className="about-build-badge">{t("about.upToDate")}</span>
-          ) : release?.kind === "update" ? (
-            <a
-              className="about-build-badge is-update"
-              href={release.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={t("about.openVersion", {
-                v: release.latest,
-              })}
-            >
-              {t("about.update", {
-                v: release.latest,
-              })}
-            </a>
-          ) : release?.kind === "offline" ? (
-            <span className="about-build-badge is-offline">{t("about.offline")}</span>
-          ) : null}
-        </dd>
-      </dl>
+      <div className="settings-card">
+        <dl className="about-dl">
+          <dt>{t("about.created")}</dt>
+          <dd>{t("about.createdOn")}</dd>
+          <dt>{t("about.build")}</dt>
+          <dd className="about-build">
+            {PORTAL_VERSION}
+            {release?.kind === "ok" ? (
+              <span className="about-build-badge">{t("about.upToDate")}</span>
+            ) : release?.kind === "update" ? (
+              <a
+                className="about-build-badge is-update"
+                href={release.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={t("about.openVersion", {
+                  v: release.latest,
+                })}
+              >
+                {t("about.update", {
+                  v: release.latest,
+                })}
+              </a>
+            ) : release?.kind === "offline" ? (
+              <span className="about-build-badge is-offline">{t("about.offline")}</span>
+            ) : null}
+          </dd>
+        </dl>
+      </div>
       <div className="settings-card">
         <p className="settings-kicker">{t("about.tech")}</p>
         <dl className="about-dl">
@@ -5130,6 +5633,26 @@ function AboutForm({ busy, canReset, onReset }) {
           <dd>Tailwind CSS · Lucide</dd>
           <dt>{t("about.stackData")}</dt>
           <dd>Zod</dd>
+          <dt>{t("about.license")}</dt>
+          <dd>
+            <a
+              href="https://opensource.org/licenses/MIT"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              MIT
+            </a>
+          </dd>
+          <dt>{t("about.source")}</dt>
+          <dd>
+            <a
+              href="https://github.com/rapha57/dockit"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              github.com/rapha57/dockit
+            </a>
+          </dd>
         </dl>
       </div>
       {canReset ? (
@@ -5330,6 +5853,7 @@ function settingsBase(initial) {
     catCounts: Boolean(initial.catCounts),
     pruneOrphanTags: Boolean(initial.pruneOrphanTags),
     tagsAlpha: initial.tagsAlpha !== false,
+    cardResize: initial.cardResize !== false,
     infoStats: initial.infoStats !== false,
     infoGeek: initial.infoGeek !== false,
     probeTlsVerify: Boolean(initial.probeTlsVerify),
@@ -5731,6 +6255,7 @@ function PresentationForm({ initial, onSave }) {
   const [navRichIcons, setNavRichIcons] = useState(Boolean(initial.navRichIcons));
   const [annexFade, setAnnexFade] = useState(Boolean(initial.annexFade));
   const [catCounts, setCatCounts] = useState(Boolean(initial.catCounts));
+  const [cardResize, setCardResize] = useState(initial.cardResize !== false);
   const [infoBar, setInfoBar] = useState(initial.infoBar !== false);
   return (
     <form
@@ -5747,6 +6272,7 @@ function PresentationForm({ initial, onSave }) {
           navRichIcons,
           annexFade,
           catCounts,
+          cardResize,
           infoBar,
         });
       }}
@@ -5793,24 +6319,30 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.favNotes")}
           </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={cardResize}
+              onChange={(e) => setCardResize(e.target.checked)}
+            />
+            {t("pres.cardResize")}
+          </label>
         </div>
       </div>{" "}
       <div className="settings-card">
         {" "}
         <p className="settings-kicker">{t("pres.icons")}</p>
         <div className="settings-toggles">
-          {" "}
           <label>
-            {" "}
             <input
               type="checkbox"
               checked={onlineIcons}
               onChange={(e) => setOnlineIcons(e.target.checked)}
             />
             {t("pres.onlineIcons")}
-          </label>{" "}
+          </label>
+          <p className="settings-hint">{t("pres.onlineIconsHint")}</p>
           <label>
-            {" "}
             <input
               type="checkbox"
               checked={navRichIcons}
@@ -5818,9 +6350,8 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.navRichIcons")}
           </label>
-        </div>{" "}
-        <p className="settings-hint">{t("pres.onlineIconsHint")}</p>
-        <p className="settings-hint">{t("pres.navRichIconsHint")}</p>
+          <p className="settings-hint">{t("pres.navRichIconsHint")}</p>
+        </div>
       </div>{" "}
       <div className="settings-card">
         {" "}
@@ -5879,18 +6410,16 @@ function ReachabilityForm({ initial, onSave }) {
         {" "}
         <p className="settings-kicker">{t("reach.probes")}</p>
         <div className="settings-toggles">
-          {" "}
           <label>
-            {" "}
             <input
               type="checkbox"
               checked={healthChecks}
               onChange={(e) => setHealthChecks(e.target.checked)}
             />
             {t("reach.httpIcmp")}
-          </label>{" "}
+          </label>
+          <p className="settings-hint">{t("reach.perCard")}</p>
           <label className={infoBar && healthChecks ? "" : "is-disabled"}>
-            {" "}
             <input
               type="checkbox"
               checked={probeBlink}
@@ -5899,12 +6428,8 @@ function ReachabilityForm({ initial, onSave }) {
             />
             {t("reach.blink")}
           </label>
+          {!infoBar ? <p className="settings-hint">{t("reach.infoHidden")}</p> : null}
         </div>
-        {!infoBar ? (
-          <p className="settings-hint">{t("reach.infoHidden")}</p>
-        ) : (
-          <p className="settings-hint">{t("reach.perCard")}</p>
-        )}
       </div>
     </form>
   );
@@ -5934,18 +6459,16 @@ function SecurityForm({ initial, isDev, onSave }) {
         {" "}
         <p className="settings-kicker">{t("reach.probes")}</p>
         <div className="settings-toggles">
-          {" "}
           <label>
-            {" "}
             <input
               type="checkbox"
               checked={probeTlsVerify}
               onChange={(e) => setProbeTlsVerify(e.target.checked)}
             />
             {t("sec.tls")}
-          </label>{" "}
+          </label>
+          <p className="settings-hint">{t("sec.tlsHint")}</p>
           <label>
-            {" "}
             <input
               type="checkbox"
               checked={probeAuthOnly}
@@ -5953,16 +6476,14 @@ function SecurityForm({ initial, isDev, onSave }) {
             />
             {t("sec.authOnly")}
           </label>
-        </div>{" "}
-        <p className="settings-hint">{t("sec.tlsHint")}</p>
+          <p className="settings-hint">{t("sec.authOnlyHint")}</p>
+        </div>
       </div>{" "}
       <div className="settings-card">
         {" "}
         <p className="settings-kicker">{t("sec.session")}</p>
         <div className="settings-toggles">
-          {" "}
           <label>
-            {" "}
             <input
               type="checkbox"
               checked={sessionHttpOnly}
@@ -5970,16 +6491,14 @@ function SecurityForm({ initial, isDev, onSave }) {
             />
             {t("sec.httpOnly")}
           </label>
-        </div>{" "}
-        <p className="settings-hint">{t("sec.httpOnlyHint")}</p>
+          <p className="settings-hint">{t("sec.httpOnlyHint")}</p>
+        </div>
       </div>{" "}
       <div className="settings-card">
         {" "}
         <p className="settings-kicker">{t("sec.dev")}</p>
         <div className="settings-toggles">
-          {" "}
           <label className={isDev ? "" : "is-disabled"}>
-            {" "}
             <input
               type="checkbox"
               checked={isDev && devAdminNoPassword}
@@ -5988,10 +6507,10 @@ function SecurityForm({ initial, isDev, onSave }) {
             />
             {t("sec.noPassword")}
           </label>
-        </div>{" "}
-        <p className="settings-hint">
-          {isDev ? t("sec.noPasswordHintDev") : t("sec.noPasswordHintProd")}
-        </p>
+          <p className="settings-hint">
+            {isDev ? t("sec.noPasswordHintDev") : t("sec.noPasswordHintProd")}
+          </p>
+        </div>
       </div>
     </form>
   );
@@ -6139,9 +6658,7 @@ function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
         {" "}
         <p className="settings-kicker">{t("stats.title")}</p>
         <div className="settings-toggles">
-          {" "}
           <label className={infoBar ? "" : "is-disabled"}>
-            {" "}
             <input
               type="checkbox"
               checked={infoStats}
@@ -6150,6 +6667,7 @@ function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
             />
             {t("info.statsIcon")}
           </label>
+          <p className="settings-hint">{infoBar ? t("info.statsHint") : t("info.statsHintHidden")}</p>
           <label className={infoBar ? "" : "is-disabled"}>
             <input
               type="checkbox"
@@ -6159,8 +6677,8 @@ function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
             />
             {t("info.geek")}
           </label>
-        </div>{" "}
-        <p className="settings-hint">{infoBar ? t("info.statsHint") : t("info.statsHintHidden")}</p>
+          {infoBar ? <p className="settings-hint">{t("info.geekHint")}</p> : null}
+        </div>
       </div>
       <div className="settings-card">
         <p className="settings-kicker">{t("info.resetKicker")}</p>
@@ -6168,8 +6686,8 @@ function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
         <Button
           type="button"
           size="sm"
-          variant="outline"
-          className="am-create settings-note-action"
+          variant="danger"
+          className="am-create self-start"
           disabled={busy || !onResetClicks}
           onClick={async () => {
             if (!onResetClicks) return;
@@ -6373,7 +6891,7 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
         {" "}
         <p className="settings-kicker">{t("theme.css")}</p>
         <textarea
-          className="field-input theme-extra-css w-full resize-y rounded-lg border border-border bg-elevated/80 p-2.5 font-mono text-xs leading-relaxed text-fg outline-none placeholder:text-subtle"
+          className="field-input theme-extra-css w-full resize-y rounded-lg border border-border bg-transparent p-2.5 font-mono leading-relaxed text-fg outline-none placeholder:text-subtle"
           value={extra}
           spellCheck={false}
           maxLength={CSS_MAX}
@@ -6382,7 +6900,7 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
         />{" "}
         <div className="theme-css-meta">
           {" "}
-          <span className="text-xs tabular-nums text-subtle">
+          <span>
             {extra.length.toLocaleString(localeTag())} / {CSS_MAX.toLocaleString(localeTag())}
           </span>{" "}
           <button
@@ -7636,11 +8154,11 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
     </>
   );
 }
+const FIELD_SM = "h-9 rounded-md bg-transparent";
 function AclFields({ restricted, setRestricted, seeHint }) {
   return (
     <div className="settings-card">
       <p className="settings-kicker">{t("space.visibility")}</p>
-      <p className="settings-hint">{seeHint}</p>
       <div className="settings-toggles">
         <label>
           <input
@@ -7650,8 +8168,8 @@ function AclFields({ restricted, setRestricted, seeHint }) {
           />
           {t("space.restrict")}
         </label>
+        <p className="settings-hint">{restricted ? t("access.restrictedHint") : seeHint}</p>
       </div>
-      {restricted ? <p className="settings-hint">{t("access.restrictedHint")}</p> : null}
     </div>
   );
 }
@@ -7750,31 +8268,34 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
             </div>
           ) : (
             <div className="settings-stack">
-              {" "}
-              <Field label={t("item.name")}>
-                {" "}
-                <Input value={name} onChange={(e) => setName(e.target.value)} required />
-              </Field>{" "}
-              <Field label={t("item.icon")}>
-                {" "}
-                <IconPicker
-                  value={icon}
-                  onChange={setIcon}
-                  {...picker}
-                  pictosOnly={!picker.navRichIcons}
-                />
-              </Field>{" "}
-              <div className="settings-toggles">
-                {" "}
-                <label>
-                  {" "}
-                  <input
-                    type="checkbox"
-                    checked={hideLabel}
-                    onChange={(e) => setHideLabel(e.target.checked)}
+              <div className="settings-card">
+                <p className="settings-kicker">{t("item.general")}</p>
+                <Field label={t("item.name")}>
+                  <Input
+                    className={FIELD_SM}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
                   />
-                  {t("space.hideLabel")}
-                </label>
+                </Field>
+                <Field label={t("item.icon")}>
+                  <IconPicker
+                    value={icon}
+                    onChange={setIcon}
+                    {...picker}
+                    pictosOnly={!picker.navRichIcons}
+                  />
+                </Field>
+                <div className="settings-toggles">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={hideLabel}
+                      onChange={(e) => setHideLabel(e.target.checked)}
+                    />
+                    {t("space.hideLabel")}
+                  </label>
+                </div>
               </div>
             </div>
           )}
@@ -7788,44 +8309,34 @@ function FavsForm({ hideLabel: initialHide, busy, onCancel, onSave }) {
   const [hideLabel, setHideLabel] = useState(Boolean(initialHide));
   return (
     <form
-      className="settings-frame is-wide is-access"
       onSubmit={(e) => {
         e.preventDefault();
         onSave(hideLabel);
       }}
     >
-      <div className="settings-body">
-        <div className="settings-head">
-          <div className="settings-head-copy">
-            <h3 className="dialog-title">{t("aria.editSpace")}</h3>
-            <p className="settings-lead">{t("space.generalLead")}</p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={onCancel}
-            aria-label={t("actions.close")}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-        <div className="settings-pane">
-          <div className="settings-stack">
-            <div className="settings-toggles">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={hideLabel}
-                  onChange={(e) => setHideLabel(e.target.checked)}
-                />
-                {t("space.hideLabel")}
-              </label>
-            </div>
-          </div>
-        </div>
-        <FormActions busy={busy} hideCancel onCancel={onCancel} />
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <h3 className="dialog-title">{t("nav.favorites")}</h3>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onCancel}
+          aria-label={t("actions.close")}
+        >
+          <X className="size-4" />
+        </Button>
       </div>
+      <div className="settings-toggles">
+        <label>
+          <input
+            type="checkbox"
+            checked={hideLabel}
+            onChange={(e) => setHideLabel(e.target.checked)}
+          />
+          {t("space.hideLabel")}
+        </label>
+      </div>
+      <FormActions busy={busy} hideCancel onCancel={onCancel} />
     </form>
   );
 }
@@ -7922,20 +8433,25 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
             </div>
           ) : (
             <div className="settings-stack">
-              {" "}
-              <Field label={t("item.name")}>
-                {" "}
-                <Input value={name} onChange={(e) => setName(e.target.value)} required />
-              </Field>{" "}
-              <Field label={t("item.icon")}>
-                {" "}
-                <IconPicker
-                  value={icon}
-                  onChange={setIcon}
-                  {...picker}
-                  pictosOnly={!picker.navRichIcons}
-                />
-              </Field>
+              <div className="settings-card">
+                <p className="settings-kicker">{t("item.general")}</p>
+                <Field label={t("item.name")}>
+                  <Input
+                    className={FIELD_SM}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </Field>
+                <Field label={t("item.icon")}>
+                  <IconPicker
+                    value={icon}
+                    onChange={setIcon}
+                    {...picker}
+                    pictosOnly={!picker.navRichIcons}
+                  />
+                </Field>
+              </div>
             </div>
           )}
         </div>{" "}
@@ -7960,7 +8476,7 @@ function ExtraLinksField({ links, setLinks }) {
   const didDrag = useRef(false);
   const [dragKey, setDragKey] = useState(null);
   const [openId, setOpenId] = useState(null);
-  const INPUT_SM = "h-9 rounded-md bg-transparent";
+  const INPUT_SM = FIELD_SM;
   function patch(key, next) {
     setLinks((cur) => cur.map((r) => (r.key === key ? { ...r, ...next } : r)));
   }
@@ -8410,30 +8926,46 @@ function AppForm({
           </div>
         </div>{" "}
         <div className="settings-pane">
-          {" "}
-          <div className={paneSafe === "general" ? "settings-stack app-form" : "hidden"}>
-            {" "}
-            <Field label={kind === "app" ? t("item.name") : t("item.titleOptional")}>
-              {" "}
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={
-                  kind === "app" ? t("item.placeholderName") : t("item.placeholderTitle")
-                }
-                required={kind === "app"}
-              />
-            </Field>
-            {kind === "app" ? (
-              <div className="icon-kind-row">
-                {" "}
-                <Field label={t("item.icon")}>
-                  {" "}
-                  <IconPicker value={icon} onChange={setIcon} siteUrl={url} {...picker} />
-                </Field>{" "}
+          <div className={paneSafe === "general" ? "settings-stack" : "hidden"}>
+            <div className="settings-card">
+              <p className="settings-kicker">{t("item.general")}</p>
+              <Field label={kind === "app" ? t("item.name") : t("item.titleOptional")}>
+                <Input
+                  className={FIELD_SM}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={
+                    kind === "app" ? t("item.placeholderName") : t("item.placeholderTitle")
+                  }
+                  required={kind === "app"}
+                />
+              </Field>
+              {kind === "app" ? (
+                <div className="icon-kind-row">
+                  <Field label={t("item.icon")}>
+                    <IconPicker value={icon} onChange={setIcon} siteUrl={url} {...picker} />
+                  </Field>
+                  <Field label={t("item.category")}>
+                    <Select
+                      className={FIELD_SM}
+                      value={catId}
+                      onChange={(e) => setCatId(e.target.value)}
+                    >
+                      {catOptions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+              ) : (
                 <Field label={t("item.category")}>
-                  {" "}
-                  <Select value={catId} onChange={(e) => setCatId(e.target.value)}>
+                  <Select
+                    className={FIELD_SM}
+                    value={catId}
+                    onChange={(e) => setCatId(e.target.value)}
+                  >
                     {catOptions.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -8441,205 +8973,214 @@ function AppForm({
                     ))}
                   </Select>
                 </Field>
+              )}
+            </div>
+            <div className="settings-card">
+              <p className="settings-kicker">
+                {kind === "note"
+                  ? t("item.content")
+                  : kind === "embed"
+                    ? kindMeta.urlLabel
+                    : t("item.description")}
+              </p>
+              {kind === "note" ? (
+                <Field>
+                  <NoteEditor value={description} onChange={setDescription} />
+                </Field>
+              ) : kind === "embed" ? (
+                <Field>
+                  <Input
+                    className={FIELD_SM}
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="https://"
+                    required
+                  />
+                  {urlDupHint}
+                </Field>
+              ) : (
+                <Field>
+                  <Textarea
+                    className="min-h-24 rounded-md bg-transparent"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                </Field>
+              )}
+            </div>
+            {kind === "app" ? (
+              <div className="settings-card">
+                <p className="settings-kicker">{t("item.tags")}</p>
+                <Field>
+                  {tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {tags.map((tag) => {
+                        const paint = tagPaint(tag, {
+                          ...tagColors,
+                          ...draftColors,
+                        });
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            data-tone={paint.tone}
+                            style={paint.style}
+                            className="tag-chip"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              removeTag(tag);
+                            }}
+                          >
+                            {tag}
+                            <X className="ml-0.5 size-2.5" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <Input
+                    className={FIELD_SM}
+                    value={tagDraft}
+                    placeholder={tags.length >= 3 ? t("item.maxTags") : t("item.addTag")}
+                    disabled={tags.length >= 3}
+                    onChange={(e) => setTagDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === ",") {
+                        e.preventDefault();
+                        addTag(tagDraft.replace(/,/g, ""));
+                      }
+                    }}
+                    onBlur={() => addTag(tagDraft)}
+                    list="portal-tag-suggest"
+                  />
+                  <p className="settings-hint">{`${tags.length}/3`}</p>
+                  <datalist id="portal-tag-suggest">
+                    {knownTags.map((tg) => (
+                      <option key={tg} value={tg} />
+                    ))}
+                  </datalist>
+                </Field>
               </div>
             ) : null}
-            {kind === "note" ? (
-              <Field label={t("item.content")}>
-                {" "}
-                <NoteEditor value={description} onChange={setDescription} />
-              </Field>
-            ) : kind === "embed" ? (
+          </div>
+          <div className={paneSafe === "taille" ? "settings-stack" : "hidden"}>
+            <div className="settings-card">
+              <p className="settings-kicker">{t("item.size")}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t("item.width")}>
+                  <Select
+                    className={FIELD_SM}
+                    value={colSpan}
+                    onChange={(e) => setColSpan(Number(e.target.value))}
+                  >
+                    <option value={1}>{t("item.col1")}</option>
+                    <option value={2}>{t("item.col2")}</option>
+                    <option value={3}>{t("item.colFull")}</option>
+                  </Select>
+                </Field>
+                <Field label={t("item.height")}>
+                  <Select
+                    className={FIELD_SM}
+                    value={rowSpan}
+                    onChange={(e) => setRowSpan(Number(e.target.value))}
+                  >
+                    <option value={1}>{t("item.row1")}</option>
+                    <option value={2}>{t("item.row2")}</option>
+                    <option value={3}>{t("item.row3")}</option>
+                  </Select>
+                </Field>
+              </div>
+              <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
+            </div>
+          </div>
+          <div className={paneSafe === "lien" ? "settings-stack" : "hidden"}>
+            <div className="settings-card">
+              <p className="settings-kicker">{t("item.link")}</p>
               <Field label={kindMeta.urlLabel}>
-                {" "}
                 <Input
+                  className={FIELD_SM}
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://"
-                  required
+                  required={kind === "app"}
                 />
                 {urlDupHint}
               </Field>
-            ) : (
-              <Field label={t("item.description")}>
-                {" "}
-                <Textarea
-                  className="min-h-11"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </Field>
-            )}
-            {kind !== "app" ? (
-              <Field label={t("item.category")}>
-                {" "}
-                <Select value={catId} onChange={(e) => setCatId(e.target.value)}>
-                  {catOptions.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
+              <Field label={t("item.openLink")}>
+                <Select
+                  className={FIELD_SM}
+                  value={openIn}
+                  onChange={(e) => setOpenIn(e.target.value)}
+                >
+                  <option value="_blank">{t("item.newTab")}</option>
+                  <option value="_self">{t("item.sameWindow")}</option>
                 </Select>
               </Field>
-            ) : null}
-            {kind === "app" ? (
-              <Field label={t("item.tags")}>
-                {tags.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {tags.map((tag) => {
-                      const paint = tagPaint(tag, {
-                        ...tagColors,
-                        ...draftColors,
-                      });
-                      return (
-                        <button
-                          key={tag}
-                          type="button"
-                          data-tone={paint.tone}
-                          style={paint.style}
-                          className="tag-chip"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            removeTag(tag);
-                          }}
-                        >
-                          {tag}
-                          <X className="ml-0.5 size-2.5" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}{" "}
-                <Input
-                  value={tagDraft}
-                  placeholder={tags.length >= 3 ? t("item.maxTags") : t("item.addTag")}
-                  disabled={tags.length >= 3}
-                  onChange={(e) => setTagDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === ",") {
-                      e.preventDefault();
-                      addTag(tagDraft.replace(/,/g, ""));
-                    }
-                  }}
-                  onBlur={() => addTag(tagDraft)}
-                  list="portal-tag-suggest"
-                />{" "}
-                <p className="settings-hint">{`${tags.length}/3`}</p>
-                <datalist id="portal-tag-suggest">
-                  {knownTags.map((t) => (
-                    <option key={t} value={t} />
-                  ))}
-                </datalist>
-              </Field>
-            ) : null}
-          </div>{" "}
-          <div className={paneSafe === "taille" ? "settings-stack app-form" : "hidden"}>
-            {" "}
-            <div className="grid grid-cols-2 gap-3">
-              {" "}
-              <Field label={t("item.width")}>
-                {" "}
-                <Select value={colSpan} onChange={(e) => setColSpan(Number(e.target.value))}>
-                  {" "}
-                  <option value={1}>{t("item.col1")}</option>
-                  <option value={2}>{t("item.col2")}</option>
-                  <option value={3}>{t("item.colFull")}</option>
+            </div>
+            <div className="settings-card">
+              <ExtraLinksField links={links} setLinks={setLinks} />
+            </div>
+            <div className="settings-card">
+              <p className="settings-kicker">{t("probe.control")}</p>
+              {probes === false ? (
+                <p className="settings-hint">{t("item.probeDisabled")}</p>
+              ) : null}
+              <Field>
+                <Select
+                  className={FIELD_SM}
+                  value={check}
+                  disabled={probes === false}
+                  onChange={(e) => setCheck(e.target.value)}
+                >
+                  <option value="off">{t("item.probeNone")}</option>
+                  <option value="http">{t("item.probeHttp")}</option>
+                  <option value="icmp">{t("item.probeIcmp")}</option>
                 </Select>
-              </Field>{" "}
-              <Field label={t("item.height")}>
-                {" "}
-                <Select value={rowSpan} onChange={(e) => setRowSpan(Number(e.target.value))}>
-                  {" "}
-                  <option value={1}>{t("item.row1")}</option>
-                  <option value={2}>{t("item.row2")}</option>
-                  <option value={3}>{t("item.row3")}</option>
-                </Select>
+                {check !== "off" && probes !== false ? (
+                  <button
+                    type="button"
+                    className="settings-link self-start"
+                    disabled={probeBusy || !picker.token}
+                    onClick={async () => {
+                      setProbeBusy(true);
+                      try {
+                        const row = await probePreview({
+                          data: {
+                            token: picker.token,
+                            mode: check === "icmp" ? "icmp" : "http",
+                            url: url.trim(),
+                            host: checkHost.trim(),
+                          },
+                        });
+                        if (!row) throw new Error("errors.noReply");
+                        if (row.ok) toast.success(td(row.detail));
+                        else toast.error(td(row.detail));
+                      } catch (err) {
+                        if (sessionGone(err)) return;
+                        toast.error(te(err));
+                      } finally {
+                        setProbeBusy(false);
+                      }
+                    }}
+                  >
+                    {probeBusy ? t("probe.testing") : t("probe.testNow")}
+                  </button>
+                ) : null}
               </Field>
-            </div>{" "}
-            <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
-          </div>{" "}
-          <div className={paneSafe === "lien" ? "settings-stack app-form" : "hidden"}>
-            {" "}
-            <Field label={kindMeta.urlLabel}>
-              {" "}
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://"
-                required={kind === "app"}
-              />
-              {urlDupHint}
-            </Field>{" "}
-            <Field label={t("item.openLink")}>
-              {" "}
-              <Select value={openIn} onChange={(e) => setOpenIn(e.target.value)}>
-                {" "}
-                <option value="_blank">{t("item.newTab")}</option>
-                <option value="_self">{t("item.sameWindow")}</option>
-              </Select>
-            </Field>{" "}
-            <ExtraLinksField links={links} setLinks={setLinks} />
-            {probes === false ? (
-              <div className="settings-note">
-                {" "}
-                <p>{t("item.probeDisabled")}</p>
-              </div>
-            ) : (
-              <>
-                {" "}
-                <Field label={t("probe.control")}>
-                  {" "}
-                  <Select value={check} onChange={(e) => setCheck(e.target.value)}>
-                    {" "}
-                    <option value="off">{t("item.probeNone")}</option>
-                    <option value="http">{t("item.probeHttp")}</option>
-                    <option value="icmp">{t("item.probeIcmp")}</option>
-                  </Select>
-                  {check !== "off" ? (
-                    <button
-                      type="button"
-                      className="settings-link self-start"
-                      disabled={probeBusy || !picker.token}
-                      onClick={async () => {
-                        setProbeBusy(true);
-                        try {
-                          const row = await probePreview({
-                            data: {
-                              token: picker.token,
-                              mode: check === "icmp" ? "icmp" : "http",
-                              url: url.trim(),
-                              host: checkHost.trim(),
-                            },
-                          });
-                          if (!row) throw new Error("errors.noReply");
-                          if (row.ok) toast.success(td(row.detail));
-                          else toast.error(td(row.detail));
-                        } catch (err) {
-                          if (sessionGone(err)) return;
-                          toast.error(te(err));
-                        } finally {
-                          setProbeBusy(false);
-                        }
-                      }}
-                    >
-                      {probeBusy ? t("probe.testing") : t("probe.testNow")}
-                    </button>
-                  ) : null}
+              {check === "icmp" && probes !== false ? (
+                <Field label={t("probe.icmpHost")}>
+                  <Input
+                    className={FIELD_SM}
+                    value={checkHost}
+                    onChange={(e) => setCheckHost(e.target.value)}
+                    placeholder="10.12.4.20 or host.example"
+                    required
+                  />
                 </Field>
-                {check === "icmp" && (
-                  <Field label={t("probe.icmpHost")}>
-                    {" "}
-                    <Input
-                      value={checkHost}
-                      onChange={(e) => setCheckHost(e.target.value)}
-                      placeholder="10.12.4.20 or vcenter.intra"
-                      required
-                    />
-                  </Field>
-                )}
-              </>
-            )}
+              ) : null}
+            </div>
           </div>
         </div>{" "}
         <FormActions busy={busy} disabled={!canSave} hideCancel onCancel={onCancel} />
@@ -8940,13 +9481,13 @@ function TagManager({
                 <input type="checkbox" checked={prune} onChange={(e) => setPrune(e.target.checked)} />
                 {t("tags.prune")}
               </label>
+              <p className="settings-hint">{t("tags.pruneHint")}</p>
               <label>
                 <input type="checkbox" checked={alpha} onChange={(e) => setAlpha(e.target.checked)} />
                 {t("tags.alpha")}
               </label>
+              <p className="settings-hint">{t("tags.alphaHint")}</p>
             </div>
-            <p className="settings-hint">{t("tags.pruneHint")}</p>
-            <p className="settings-hint">{t("tags.alphaHint")}</p>
           </div>
           <div className="settings-card">
             <p className="settings-kicker">{t("item.tags")}</p>

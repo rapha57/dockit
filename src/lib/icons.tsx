@@ -1,3 +1,4 @@
+import { useEffect, useId, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   FileText,
@@ -290,16 +291,113 @@ export async function urlToDataUrl(src: string): Promise<string> {
   });
 }
 
+var DOCKIT_FACES = [
+  {
+    d: "M24 3.2 43.2 14.3 24 25.4 4.8 14.3 24 3.2z",
+    rim: "M4.8 14.3 24 3.2 43.2 14.3",
+    fill: 1,
+  },
+  {
+    d: "M4.8 14.3 24 25.4v19.4L4.8 33.7V14.3z",
+    rim: "M4.8 14.3 4.8 33.7 24 44.8",
+    fill: 0.7,
+  },
+  {
+    d: "M43.2 14.3 24 25.4v19.4l19.2-11.1V14.3z",
+    rim: "M43.2 14.3 43.2 33.7 24 44.8",
+    fill: 0.88,
+  },
+];
 export function DockitMark({ className }: { className?: string }) {
+  const [hot, setHot] = useState(null);
+  const [built, setBuilt] = useState(false);
+  const uid = useId().replace(/:/g, "");
+  const live = String(className || "").includes("about-mark");
+  useEffect(() => {
+    if (!live) {
+      setBuilt(true);
+      return;
+    }
+    const wait = window.setTimeout(() => setBuilt(true), 1600);
+    return () => window.clearTimeout(wait);
+  }, [live]);
+  function faceAt(svg, clientX, clientY) {
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const p = svg.createSVGPoint();
+    p.x = clientX;
+    p.y = clientY;
+    const loc = p.matrixTransform(ctm.inverse());
+    const fills = [...svg.querySelectorAll(".dockit-fill")];
+    for (let i = fills.length - 1; i >= 0; i--) {
+      try {
+        if (fills[i].isPointInFill(loc)) return i;
+      } catch {}
+    }
+    return null;
+  }
   return (
-    <svg viewBox="0 0 48 48" className={className} aria-hidden>
-      <path fill="currentColor" d="M24 3.2 43.2 14.3 24 25.4 4.8 14.3 24 3.2z" />
-      <path fill="currentColor" opacity=".7" d="M4.8 14.3 24 25.4v19.4L4.8 33.7V14.3z" />
-      <path fill="currentColor" opacity=".88" d="M43.2 14.3 24 25.4v19.4l19.2-11.1V14.3z" />
+    <svg
+      viewBox="0 0 48 48"
+      className={`${className ?? ""}${live && built ? " is-ready" : ""}`}
+      aria-hidden
+      onPointerMove={
+        live
+          ? (e) => {
+              const next = faceAt(e.currentTarget, e.clientX, e.clientY);
+              setHot((cur) => (cur === next ? cur : next));
+            }
+          : undefined
+      }
+      onPointerLeave={live ? () => setHot(null) : undefined}
+    >
+      <defs>
+        {DOCKIT_FACES.map((face, i) => (
+          <clipPath key={i} id={`${uid}-f${i}`}>
+            <path d={face.d} />
+          </clipPath>
+        ))}
+      </defs>
+      {DOCKIT_FACES.map((face, i) => (
+        <g key={i} className="dockit-face">
+          <path
+            className="dockit-fill"
+            fill="currentColor"
+            d={face.d}
+            style={{
+              opacity: live && (!built || hot === i) ? 0 : face.fill,
+            }}
+          />
+          <g clipPath={`url(#${uid}-f${i})`}>
+            <path className="dockit-stroke" pathLength="1" d={face.d} />
+            <path
+              className="dockit-rim"
+              d={face.rim}
+              style={{
+                opacity: live && built && hot === i ? 1 : 0,
+              }}
+            />
+          </g>
+        </g>
+      ))}
+      {live ? (
+        <rect width="48" height="48" fill="transparent" pointerEvents="all" />
+      ) : null}
     </svg>
   );
 }
 
+export function BmcMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <rect width="24" height="24" rx="6" fill="#FFDD00" />
+      <path
+        fill="#0D0C22"
+        d="M9.05 5.15c.16.82.4 1.4.68 1.78h.98c-.34-.48-.54-1.12-.62-1.95l-1.04.17zm3.12.12c.12.86.38 1.46.74 1.86h.98c-.4-.5-.62-1.16-.7-2l-1.02.14zM7.35 8.55h7.9v.9h.9a2.2 2.2 0 1 1 0 4.4h-.9v1.15a2.95 2.95 0 0 1-2.95 2.95h-2.9a2.95 2.95 0 0 1-2.95-2.95V8.55zm7.9 1.85v2.55h.9a1.3 1.3 0 0 0 0-2.55h-.9z"
+      />
+    </svg>
+  );
+}
 export function PortalIcon({
   name,
   className,
