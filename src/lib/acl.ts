@@ -1,4 +1,81 @@
-const RES = ["portal", "tab", "cat", "card"];
+export type ResKind = "portal" | "tab" | "cat" | "card";
+
+export type Grant = {
+	res: ResKind;
+	id: string;
+	allow: string[];
+	deny: string[];
+	scope?: "public";
+};
+
+export type GrantInput = {
+	res: ResKind;
+	id: string;
+	allow?: string[];
+	deny?: string[];
+	scope?: "public";
+};
+
+export type Card = { id: string; title?: string; kind?: string; categoryId?: string; [key: string]: any };
+export type Category = {
+	id: string;
+	name?: string;
+	restricted?: boolean;
+	sortOrder?: number;
+	apps?: Card[];
+	categories?: Category[];
+	editors?: string[];
+	viewers?: string[];
+	[key: string]: any;
+};
+export type Tab = {
+	id: string;
+	name?: string;
+	restricted?: boolean;
+	categories?: Category[];
+	editors?: string[];
+	viewers?: string[];
+	[key: string]: any;
+};
+
+export type Role = {
+	id: string;
+	name?: string;
+	description?: string;
+	system?: boolean;
+	grants: GrantInput[];
+	[key: string]: any;
+};
+
+export type User = {
+	id: string;
+	username?: string;
+	roleIds?: string[];
+	role?: string;
+	groupIds?: string[];
+	grants?: GrantInput[];
+	[key: string]: any;
+};
+
+export type Group = {
+	id: string;
+	name?: string;
+	roleIds?: string[];
+	role?: string;
+	members?: string[];
+	grants?: GrantInput[];
+	[key: string]: any;
+};
+
+export type AclDoc = {
+	tabs?: Tab[];
+	users?: User[];
+	groups?: Group[];
+	roles?: Role[];
+	[key: string]: any;
+};
+
+const RES: ResKind[] = ["portal", "tab", "cat", "card"];
 export const PORTAL_ACTIONS = [
 	"users.manage",
 	"groups.manage",
@@ -10,7 +87,7 @@ export const PORTAL_ACTIONS = [
 	"spaces.create"
 ];
 export const NODE_ACTIONS = ["view", "open", "edit", "create", "delete", "move"];
-export const TREE_ACTIONS = {
+export const TREE_ACTIONS: Record<string, string[]> = {
 	tab: ["view", "open", "edit", "create", "delete", "move"],
 	cat: ["view", "open", "edit", "create", "delete", "move"],
 	card: ["view", "open", "edit", "delete", "move"]
@@ -18,7 +95,7 @@ export const TREE_ACTIONS = {
 export const SYSTEM_ROLE_IDS = ["owner", "admin", "editeur", "lecteur"];
 const ALL_ACTIONS = [...PORTAL_ACTIONS, ...NODE_ACTIONS, "*"];
 
-const SPEC = {
+const SPEC: Record<string, number> = {
 	card: 400,
 	"card:*": 300,
 	cat: 200,
@@ -28,10 +105,10 @@ const SPEC = {
 	portal: 10
 };
 
-export function asIdList(raw) {
+export function asIdList(raw: unknown): string[] {
 	if (!Array.isArray(raw)) return [];
-	const out = [];
-	const seen = new Set();
+	const out: string[] = [];
+	const seen = new Set<string>();
 	for (const value of raw) {
 		const id = String(value || "").trim();
 		if (!id || seen.has(id)) continue;
@@ -41,10 +118,10 @@ export function asIdList(raw) {
 	return out;
 }
 
-function asActions(raw) {
+function asActions(raw: unknown): string[] {
 	if (!Array.isArray(raw)) return [];
-	const out = [];
-	const seen = new Set();
+	const out: string[] = [];
+	const seen = new Set<string>();
 	for (const value of raw) {
 		const a = String(value || "").trim();
 		if (!ALL_ACTIONS.includes(a) || seen.has(a)) continue;
@@ -54,24 +131,24 @@ function asActions(raw) {
 	return out;
 }
 
-export function asGrants(raw) {
+export function asGrants(raw: unknown): Grant[] {
 	if (!Array.isArray(raw)) return [];
-	const out = [];
+	const out: Grant[] = [];
 	for (const row of raw.slice(0, 200)) {
-		const res = RES.includes(row?.res) ? row.res : "";
+		const res = RES.includes(row?.res) ? (row.res as ResKind) : undefined;
 		if (!res) continue;
 		const id = String(row?.id || "*").slice(0, 80) || "*";
 		const allow = asActions(row?.allow);
 		const deny = asActions(row?.deny);
 		if (!allow.length && !deny.length) continue;
-		const grant = { res, id, allow, deny };
+		const grant: Grant = { res, id, allow, deny };
 		if (row?.scope === "public") grant.scope = "public";
 		out.push(grant);
 	}
 	return out;
 }
 
-export function mergeGrant(list, grant) {
+export function mergeGrant(list: Grant[], grant: GrantInput): Grant[] {
 	const allow = asActions(grant.allow);
 	const deny = asActions(grant.deny);
 	if (!allow.length && !deny.length) return list;
@@ -92,7 +169,7 @@ export function mergeGrant(list, grant) {
 	return list;
 }
 
-export function defaultRoles() {
+export function defaultRoles(): Role[] {
 	return [
 		{
 			id: "owner",
@@ -131,11 +208,11 @@ export function defaultRoles() {
 	];
 }
 
-export function grantsFromLegacyRole(r) {
+export function grantsFromLegacyRole(r: any): Grant[] {
 	if (Array.isArray(r?.grants) && r.grants.length) return asGrants(r.grants);
-	const grants = [];
+	const grants: Grant[] = [];
 	const p = r?.perms && typeof r.perms === "object" ? r.perms : {};
-	const portalAllow = [];
+	const portalAllow: string[] = [];
 	if (p.audit) portalAllow.push("audit");
 	if (p.restore) portalAllow.push("restore");
 	if (p.purge) portalAllow.push("purge");
@@ -157,32 +234,35 @@ export function grantsFromLegacyRole(r) {
 	return grants;
 }
 
-export function isSystemRole(id) {
-	return SYSTEM_ROLE_IDS.includes(id);
+export function isSystemRole(id: unknown): boolean {
+	return SYSTEM_ROLE_IDS.includes(id as string);
 }
 
-export function isOwnerUser(user) {
+export function isOwnerUser(user: User | null | undefined): boolean {
 	if (!user) return false;
 	if (user.id === "admin") return true;
 	const ids = roleIdsOf(user);
 	return ids.includes("owner");
 }
 
-export function roleIdsOf(row) {
+export function roleIdsOf(row: any): string[] {
 	const ids = asIdList(row?.roleIds);
 	if (ids.length) return ids;
 	const legacy = String(row?.role || "").trim();
 	return legacy ? [legacy] : [];
 }
 
-export function groupsOf(user, doc) {
+export function groupsOf(user: User | null | undefined, doc: AclDoc): Group[] {
 	if (!user) return [];
 	const ids = new Set(asIdList(user.groupIds));
 	for (const g of doc.groups || []) if ((g.members || []).includes(user.id)) ids.add(g.id);
 	return (doc.groups || []).filter((g) => ids.has(g.id));
 }
 
-export function locate(doc, res, id) {
+export type ChainNode = { res: ResKind; id: string; name?: string; restricted: boolean };
+export type LocateResult = { tab?: Tab; cat?: Category; app?: Card; chain: ChainNode[] };
+
+export function locate(doc: AclDoc, res: ResKind, id: string | null | undefined): LocateResult {
 	if (res === "portal" || !id || id === "*") {
 		return {
 			chain: [{ res: "portal", id: "*", restricted: false }]
@@ -233,29 +313,31 @@ export function locate(doc, res, id) {
 	};
 }
 
-function chainRestricted(chain) {
+function chainRestricted(chain: ChainNode[]): boolean {
 	return chain.some((n) => n.restricted);
 }
 
-function scoreGrant(grant, node) {
+function scoreGrant(grant: Grant, node: ChainNode): number {
 	if (grant.res !== node.res) return 0;
 	if (grant.id === node.id) return SPEC[grant.res] || 0;
 	if (grant.id === "*") return SPEC[`${grant.res}:*`] || 0;
 	return 0;
 }
 
-function actionHits(list, action) {
+function actionHits(list: string[], action: string): boolean {
 	return list.includes("*") || list.includes(action);
 }
 
-function collectPacked(user, doc) {
-	const out = [];
+type Pack = { grant: Grant; kind: "direct" | "system" | "role" | "group"; role?: Role | null; group?: Group };
+
+function collectPacked(user: User | null | undefined, doc: AclDoc): Pack[] {
+	const out: Pack[] = [];
 	if (!user) return out;
 	for (const grant of asGrants(user.grants)) {
 		out.push({ grant, kind: "direct" });
 	}
 	const roles = doc.roles || [];
-	const roleOf = (id) => roles.find((r) => r.id === id);
+	const roleOf = (id: string) => roles.find((r) => r.id === id);
 	for (const rid of roleIdsOf(user)) {
 		const role = roleOf(rid);
 		if (!role) continue;
@@ -283,37 +365,45 @@ function collectPacked(user, doc) {
 	return out;
 }
 
-function matchesGrant(grant, action, chain) {
+type Effect = "allow" | "deny";
+type MatchHit = { spec: number; effect: Effect; node: ChainNode };
+
+function matchesGrant(grant: Grant, action: string, chain: ChainNode[]): MatchHit | null {
 	if (grant.scope === "public" && chainRestricted(chain)) return null;
-	let best = null;
+	let best: MatchHit | null = null;
 	for (const node of chain) {
 		const spec = scoreGrant(grant, node);
 		if (!spec) continue;
 		const deny = actionHits(grant.deny || [], action);
 		const allow = actionHits(grant.allow || [], action);
 		if (!deny && !allow) continue;
-		const row = { spec, effect: deny ? "deny" : "allow", node };
-		if (!best || row.spec > best.spec || row.spec === best.spec && row.effect === "deny") best = row;
+		const row: MatchHit = { spec, effect: deny ? "deny" : "allow", node };
+		if (!best || row.spec > best.spec || (row.spec === best.spec && row.effect === "deny")) best = row;
 	}
 	return best;
 }
 
-export function decide(user, action, resource, doc) {
+export type Resource = { res?: ResKind; id?: string | null };
+export type Source = Pack & { effect: Effect; spec: number; node: ChainNode };
+export type Winner = { kind: string; role?: { id: string; name?: string } | Role | null; effect: Effect; spec: number; group?: Group; node?: ChainNode };
+export type Decision = { allowed: boolean; action: string; resource: ChainNode; winner: Winner | null; sources: Source[] };
+
+export function decide(user: User | null | undefined, action: string, resource: Resource | null | undefined, doc: AclDoc): Decision {
 	const res = resource?.res || "portal";
 	const id = resource?.id || "*";
 	const found = locate(doc, res, id);
 	const chain = found.chain || [];
-	const target = chain[0] || { res, id, restricted: false };
-	const sources = [];
+	const target: ChainNode = chain[0] || { res, id, restricted: false };
+	const sources: Source[] = [];
 
 	if (isOwnerUser(user)) {
-		const winner = { kind: "system", role: { id: "owner", name: "Owner" }, effect: "allow", spec: 1000 };
+		const winner: Winner = { kind: "system", role: { id: "owner", name: "Owner" }, effect: "allow", spec: 1000 };
 		return {
 			allowed: true,
 			action,
 			resource: target,
 			winner,
-			sources: [winner]
+			sources: [winner as unknown as Source]
 		};
 	}
 
@@ -342,31 +432,36 @@ export function decide(user, action, resource, doc) {
 
 	const implicit = (action === "view" || action === "open") && !chainRestricted(chain);
 	if (implicit) {
-		const winner = { kind: "public", effect: "allow", spec: 1 };
-		return { allowed: true, action, resource: target, winner, sources: [winner] };
+		const winner: Winner = { kind: "public", effect: "allow", spec: 1 };
+		return { allowed: true, action, resource: target, winner, sources: [winner as unknown as Source] };
 	}
 	return { allowed: false, action, resource: target, winner: null, sources };
 }
 
-export function can(user, action, resource, doc) {
+export function can(user: User | null | undefined, action: string, resource: Resource | null | undefined, doc: AclDoc): boolean {
 	return decide(user, action, resource, doc).allowed;
 }
 
-export function explain(user, action, resource, doc) {
+export function explain(user: User | null | undefined, action: string, resource: Resource | null | undefined, doc: AclDoc): Decision {
 	return decide(user, action, resource, doc);
 }
 
-export function effectiveAccess(user, doc) {
+export type AccessCard = { res: "card"; id: string; name: string; kind?: string; actions: string[] };
+export type AccessCategory = { res: "cat"; id: string; name?: string; restricted: boolean; actions: string[]; cards: AccessCard[] };
+export type AccessTab = { res: "tab"; id: string; name?: string; restricted: boolean; actions: string[]; cats: AccessCategory[] };
+export type EffectiveAccess = { portal: string[]; tabs: AccessTab[] };
+
+export function effectiveAccess(user: User | null | undefined, doc: AclDoc): EffectiveAccess {
 	const portal = PORTAL_ACTIONS.filter((a) => can(user, a, { res: "portal" }, doc));
-	const tabs = [];
+	const tabs: AccessTab[] = [];
 	for (const tab of doc.tabs || []) {
 		const tabActs = NODE_ACTIONS.filter((a) => can(user, a, { res: "tab", id: tab.id }, doc));
 		if (!tabActs.includes("view")) continue;
-		const cats = [];
+		const cats: AccessCategory[] = [];
 		for (const cat of tab.categories || []) {
 			const catActs = NODE_ACTIONS.filter((a) => can(user, a, { res: "cat", id: cat.id }, doc));
 			if (!catActs.includes("view")) continue;
-			const cards = [];
+			const cards: AccessCard[] = [];
 			for (const app of cat.apps || []) {
 				const cardActs = NODE_ACTIONS.filter((a) => can(user, a, { res: "card", id: app.id }, doc));
 				if (!cardActs.includes("view")) continue;
@@ -403,11 +498,11 @@ export function effectiveAccess(user, doc) {
 	return { portal, tabs };
 }
 
-function appHasOwnGrant(user, doc, appId) {
+function appHasOwnGrant(user: User | null | undefined, doc: AclDoc, appId: string): boolean {
 	return collectPacked(user, doc).some((p) => p.grant.res === "card" && p.grant.id === appId);
 }
 
-export function syntheticUserFromGroup(group) {
+export function syntheticUserFromGroup(group: Group): User {
 	return {
 		id: group.id,
 		username: group.name,
@@ -417,7 +512,7 @@ export function syntheticUserFromGroup(group) {
 	};
 }
 
-export function absorbResourceAcl(doc) {
+export function absorbResourceAcl(doc: AclDoc): boolean {
 	let moved = false;
 	for (const tab of doc.tabs || []) {
 		const editors = asIdList(tab.editors);
@@ -446,7 +541,7 @@ export function absorbResourceAcl(doc) {
 	return moved;
 }
 
-function addGrantToPrincipal(doc, principalId, grant) {
+function addGrantToPrincipal(doc: AclDoc, principalId: string, grant: GrantInput) {
 	const user = (doc.users || []).find((u) => u.id === principalId);
 	if (user) {
 		user.grants = mergeGrant(asGrants(user.grants), grant);
@@ -456,17 +551,19 @@ function addGrantToPrincipal(doc, principalId, grant) {
 	if (group) group.grants = mergeGrant(asGrants(group.grants), grant);
 }
 
-export function roleSummary(role, doc) {
+export type RoleSummary = { grantCount: number; userCount: number; groupCount: number };
+
+export function roleSummary(role: Role | null | undefined, doc: AclDoc): RoleSummary {
 	const grants = asGrants(role?.grants);
 	let n = 0;
 	for (const g of grants) n += (g.allow?.length || 0) + (g.deny?.length || 0);
 	if (grants.some((g) => actionHits(g.allow || [], "*"))) n = 99;
-	const users = (doc.users || []).filter((u) => roleIdsOf(u).includes(role.id)).length;
-	const groups = (doc.groups || []).filter((g) => roleIdsOf(g).includes(role.id)).length;
+	const users = (doc.users || []).filter((u) => roleIdsOf(u).includes(role?.id || "")).length;
+	const groups = (doc.groups || []).filter((g) => roleIdsOf(g).includes(role?.id || "")).length;
 	return { grantCount: n, userCount: users, groupCount: groups };
 }
 
-export function setRoleHolders(doc, roleId, userIds, groupIds) {
+export function setRoleHolders(doc: AclDoc, roleId: string, userIds: unknown, groupIds: unknown) {
 	const users = new Set(asIdList(userIds));
 	const groups = new Set(asIdList(groupIds));
 	for (const u of doc.users || []) {
@@ -492,11 +589,11 @@ export function setRoleHolders(doc, roleId, userIds, groupIds) {
 	}
 }
 
-export function stripRole(doc, roleId) {
+export function stripRole(doc: AclDoc, roleId: string) {
 	setRoleHolders(doc, roleId, [], []);
 }
 
-export function findCategory(doc, catId) {
+export function findCategory(doc: AclDoc, catId: string): { tab: Tab; cat: Category } | null {
 	for (const tab of doc.tabs || []) {
 		const cat = (tab.categories || []).find((c) => c.id === catId);
 		if (cat) return { tab, cat };
@@ -504,7 +601,12 @@ export function findCategory(doc, catId) {
 	return null;
 }
 
-export function moveCategoryInDoc(doc, catId, destTabId, insertAt) {
+export function moveCategoryInDoc(
+	doc: AclDoc,
+	catId: string,
+	destTabId: string,
+	insertAt?: unknown,
+): { fromTab: Tab; dest: Tab; cat: Category } | null {
 	const found = findCategory(doc, catId);
 	const dest = (doc.tabs || []).find((t) => t.id === destTabId);
 	if (!found || !dest) return null;
@@ -515,8 +617,9 @@ export function moveCategoryInDoc(doc, catId, destTabId, insertAt) {
 	fromTab.categories.forEach((c, i) => {
 		c.sortOrder = i + 1;
 	});
-	const at = insertAt == null ? dest.categories.length : Math.max(0, Math.min(Number(insertAt) || 0, dest.categories.length));
-	dest.categories = dest.categories.filter((c) => c.id !== catId);
+	const destCategories = dest.categories || [];
+	const at = insertAt == null ? destCategories.length : Math.max(0, Math.min(Number(insertAt) || 0, destCategories.length));
+	dest.categories = destCategories.filter((c) => c.id !== catId);
 	dest.categories.splice(at, 0, cat);
 	dest.categories.forEach((c, i) => {
 		c.sortOrder = i + 1;
@@ -524,7 +627,7 @@ export function moveCategoryInDoc(doc, catId, destTabId, insertAt) {
 	return { fromTab, dest, cat };
 }
 
-function roleHolderCounts(doc, roleId) {
+function roleHolderCounts(doc: AclDoc, roleId: string): { users: number; groups: number; people: number } {
 	const users = (doc.users || []).filter((u) => roleIdsOf(u).includes(roleId) && u.id !== "admin").length;
 	const groups = (doc.groups || []).filter((g) => roleIdsOf(g).includes(roleId));
 	let viaGroups = 0;
@@ -532,11 +635,26 @@ function roleHolderCounts(doc, roleId) {
 	return { users, groups: groups.length, people: users + viaGroups };
 }
 
-export function categoryMoveImpact(doc, catId, destTabId) {
+type ImpactRow = { id: string; name?: string; users: number; groups: number; people: number; lost: string[]; gained: string[] };
+export type CategoryMoveImpact = {
+	categoryId: string;
+	categoryName?: string;
+	fromId: string;
+	fromName?: string;
+	toId: string;
+	toName?: string;
+	lost: ImpactRow[];
+	gained: ImpactRow[];
+	roleCount: number;
+	userCount: number;
+	changed: boolean;
+};
+
+export function categoryMoveImpact(doc: AclDoc, catId: string, destTabId: string): CategoryMoveImpact | null {
 	const found = findCategory(doc, catId);
 	const dest = (doc.tabs || []).find((t) => t.id === destTabId);
 	if (!found || !dest) return null;
-	const after = {
+	const after: AclDoc = {
 		users: doc.users || [],
 		groups: doc.groups || [],
 		roles: doc.roles || [],
@@ -547,16 +665,16 @@ export function categoryMoveImpact(doc, catId, destTabId) {
 	};
 	moveCategoryInDoc(after, catId, destTabId);
 	const watch = ["view", "open", "edit", "create", "delete", "move"];
-	const lost = [];
-	const gained = [];
+	const lost: ImpactRow[] = [];
+	const gained: ImpactRow[] = [];
 	for (const role of doc.roles || []) {
 		if (role.id === "owner") continue;
-		const probe = { id: "_p", roleIds: [role.id], grants: [] };
+		const probe: User = { id: "_p", roleIds: [role.id], grants: [] };
 		const beforeActs = watch.filter((a) => can(probe, a, { res: "cat", id: catId }, doc));
 		const afterActs = watch.filter((a) => can(probe, a, { res: "cat", id: catId }, after));
 		if (beforeActs.join() === afterActs.join()) continue;
 		const counts = roleHolderCounts(doc, role.id);
-		const row = {
+		const row: ImpactRow = {
 			id: role.id,
 			name: role.name,
 			users: counts.users,
@@ -568,7 +686,7 @@ export function categoryMoveImpact(doc, catId, destTabId) {
 		if (row.lost.length) lost.push(row);
 		if (row.gained.length) gained.push(row);
 	}
-	const people = new Set();
+	const people = new Set<string>();
 	for (const row of [...lost, ...gained]) {
 		for (const u of doc.users || []) if (roleIdsOf(u).includes(row.id) && u.id !== "admin") people.add(u.id);
 		for (const g of doc.groups || []) if (roleIdsOf(g).includes(row.id)) for (const id of g.members || []) people.add(id);
