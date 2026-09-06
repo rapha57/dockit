@@ -309,7 +309,7 @@ const DOCKIT_FACES = [
   },
 ];
 export function DockitMark({ className }: { className?: string }) {
-  const [hot, setHot] = useState(null);
+  const [hot, setHot] = useState<number | null>(null);
   const [built, setBuilt] = useState(false);
   const uid = useId().replace(/:/g, "");
   const live = String(className || "").includes("about-mark");
@@ -321,14 +321,14 @@ export function DockitMark({ className }: { className?: string }) {
     const wait = window.setTimeout(() => setBuilt(true), 1600);
     return () => window.clearTimeout(wait);
   }, [live]);
-  function faceAt(svg, clientX, clientY) {
+  function faceAt(svg: SVGSVGElement, clientX: number, clientY: number): number | null {
     const ctm = svg.getScreenCTM();
     if (!ctm) return null;
     const p = svg.createSVGPoint();
     p.x = clientX;
     p.y = clientY;
     const loc = p.matrixTransform(ctm.inverse());
-    const fills = [...svg.querySelectorAll(".dockit-fill")];
+    const fills = [...svg.querySelectorAll<SVGGeometryElement>(".dockit-fill")];
     for (let i = fills.length - 1; i >= 0; i--) {
       try {
         if (fills[i].isPointInFill(loc)) return i;
