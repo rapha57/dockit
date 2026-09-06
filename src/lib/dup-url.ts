@@ -15,10 +15,19 @@ export function canonicalAppUrl(raw: string | undefined | null): string {
 	}
 }
 
-export function findUrlDuplicates(catalog, url, exceptId) {
+type DupApp = { id?: string; kind?: string; url?: string; title?: string };
+type DupCategory = { name?: string; apps?: DupApp[] };
+type DupTab = { name?: string; categories?: DupCategory[] };
+type DupHit = { id?: string; title: string; tab?: string; category?: string };
+
+export function findUrlDuplicates(
+	catalog: DupTab[] | null | undefined,
+	url: string | undefined | null,
+	exceptId?: string | null,
+): DupHit[] {
 	const key = canonicalAppUrl(url);
 	if (!key) return [];
-	const hits = [];
+	const hits: DupHit[] = [];
 	for (const tab of catalog ?? []) {
 		for (const cat of tab.categories ?? []) {
 			for (const app of cat.apps ?? []) {
