@@ -1564,6 +1564,8 @@ html.dark .debug-row.is-warn .debug-level {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 2rem), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 2rem), transparent 100%);
 }
 .settings-pane.is-fill {
   display: flex;
