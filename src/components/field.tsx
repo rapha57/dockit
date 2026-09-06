@@ -1,7 +1,16 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 
-export function Field({ label, hint, error, className, children }) {
+type FieldProps = {
+  label?: ReactNode;
+  hint?: ReactNode;
+  error?: ReactNode;
+  className?: string;
+  children?: ReactNode;
+};
+
+export function Field({ label, hint, error, className, children }: FieldProps) {
   return (
     <div className={cn("settings-field", className)} data-slot="field">
       {label ? <Label>{label}</Label> : null}
