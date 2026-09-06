@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,13 @@ import { t, te } from "@/lib/i18n";
 
 const LIMIT = 50;
 
-export function ChipList({ names, max = 2, empty = "—" }) {
+type ChipListProps = {
+  names?: (string | null | undefined)[];
+  max?: number;
+  empty?: ReactNode;
+};
+
+export function ChipList({ names, max = 2, empty = "—" }: ChipListProps) {
   const list = (names || []).filter(Boolean);
   if (!list.length) return <span className="am-dim">{empty}</span>;
   const shown = list.slice(0, max);
@@ -24,7 +30,7 @@ export function ChipList({ names, max = 2, empty = "—" }) {
   );
 }
 
-function kindLabel(kind, mode) {
+function kindLabel(kind: string, mode: string): string {
   if (mode === "add") {
     if (kind === "group") return t("access.addGroup");
     if (kind === "role") return t("access.addRole");
@@ -35,7 +41,26 @@ function kindLabel(kind, mode) {
   return t("access.pickerTitleUser");
 }
 
-export function EntityPicker({
+export type PickerRow = { id: string; [key: string]: any };
+export type PickerProvider = { id: string; label: ReactNode; kind: string };
+type PopPos = { top: number; left: number; width: number };
+
+type EntityPickerProps<T extends PickerRow> = {
+  kind: "role" | "group" | "user";
+  items?: T[];
+  selectedIds?: string[];
+  onChange: (ids: string[]) => void;
+  providers?: PickerProvider[];
+  labelOf: (row: T) => ReactNode;
+  readOnly?: boolean;
+  excludeIds?: string[];
+  searchRemote?: (providerId: string, query: string) => Promise<T[]> | T[];
+  onRemoteAdd?: (providerId: string, rows: T[]) => void | Promise<void>;
+  trigger?: "button" | string;
+  addLabel?: ReactNode;
+};
+
+export function EntityPicker<T extends PickerRow = PickerRow>({
   kind,
   items,
   selectedIds,
@@ -48,9 +73,9 @@ export function EntityPicker({
   onRemoteAdd,
   trigger,
   addLabel,
-}) {
-  const rootRef = useRef(null);
-  const popRef = useRef(null);
+}: EntityPickerProps<T>) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [provider, setProvider] = useState(() => {
     const list = providers || [];
@@ -58,9 +83,9 @@ export function EntityPicker({
   });
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
-  const [picked, setPicked] = useState([]);
-  const [pos, setPos] = useState(null);
-  const [remoteRows, setRemoteRows] = useState([]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [pos, setPos] = useState<PopPos | null>(null);
+  const [remoteRows, setRemoteRows] = useState<T[]>([]);
   const [remoteBusy, setRemoteBusy] = useState(false);
   const [remoteErr, setRemoteErr] = useState("");
   const selected = selectedIds || [];
@@ -101,7 +126,7 @@ export function EntityPicker({
     }
     let alive = true;
     setRemoteBusy(true);
-    Promise.resolve(searchRemote(current.id, needle))
+    Promise.resolve(searchRemote?.(current.id, needle))
       .then((rows) => {
         if (!alive) return;
         setRemoteRows(Array.isArray(rows) ? rows : []);
@@ -147,11 +172,12 @@ export function EntityPicker({
 
   useEffect(() => {
     if (!open) return;
-    function onDoc(e) {
-      if (rootRef.current?.contains(e.target) || popRef.current?.contains(e.target)) return;
+    function onDoc(e: MouseEvent) {
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target) || popRef.current?.contains(target)) return;
       setOpen(false);
     }
-    function onKey(e) {
+    function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.stopPropagation();
         setOpen(false);
@@ -183,7 +209,7 @@ export function EntityPicker({
 
   const selectedRows = (items || []).filter((row) => selected.includes(row.id));
 
-  function togglePick(id) {
+  function togglePick(id: string) {
     setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   }
 
@@ -199,7 +225,7 @@ export function EntityPicker({
     setOpen(false);
   }
 
-  function remove(id) {
+  function remove(id: string) {
     onChange(selected.filter((x) => x !== id));
   }
 
