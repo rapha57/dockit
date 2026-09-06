@@ -197,7 +197,9 @@ function lockSelection(e) {
   e?.preventDefault();
   try {
     window.getSelection()?.removeAllRanges();
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
 function setDragUi(on) {
   if (typeof document === "undefined") return;
@@ -748,27 +750,35 @@ async function clearSessCookie() {
       method: "DELETE",
       credentials: "include",
     });
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
 function writeSessionInfo(session) {
   try {
     if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
     else sessionStorage.removeItem(SESSION_KEY);
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
 function writeEditMode(on) {
   editArmed = on;
   try {
     if (on) sessionStorage.setItem(EDIT_MODE_KEY, "1");
     else sessionStorage.removeItem(EDIT_MODE_KEY);
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
 function sessionGone(err) {
   const msg = err instanceof Error ? err.message : String(err || "");
   if (msg !== "errors.sessionExpired" && !/session expir/i.test(msg)) return false;
   try {
     window.dispatchEvent(new Event("portal-session-gone"));
-  } catch {}
+  } catch {
+    // ignore
+  }
   return true;
 }
 function prettyLogin(name) {
@@ -1683,7 +1693,9 @@ function Home() {
     setResizeUi(true, cursor);
     try {
       origin.setPointerCapture?.(ev.pointerId);
-    } catch {}
+    } catch {
+      // ignore
+    }
     const paintSlot = (col, row) => {
       slot.className = `resize-slot drop-slot ${itemSpanClass({
         colSpan: col,
@@ -1731,7 +1743,9 @@ function Home() {
       window.removeEventListener("pointercancel", up);
       try {
         origin.releasePointerCapture?.(ev.pointerId);
-      } catch {}
+      } catch {
+        // ignore
+      }
     };
   }
   function persistAppSpan(app, colSpan, rowSpan) {
@@ -1826,7 +1840,9 @@ function Home() {
                 });
               else if (jump === "edit" && next.session.canEdit) setEditMode(true);
             }
-          } catch {}
+          } catch {
+            // ignore
+          }
         } else {
           setToken("");
           setSession(null);
@@ -1834,13 +1850,17 @@ function Home() {
           exitEdit();
           try {
             sessionStorage.removeItem(TOKEN_KEY);
-          } catch {}
+          } catch {
+            // ignore
+          }
         }
       })
       .catch(() => void 0);
     try {
       if (t && (editArmed || sessionStorage.getItem(EDIT_MODE_KEY) === "1")) setEditMode(true);
-    } catch {}
+    } catch {
+      // ignore
+    }
     const forceIdle = () => {
       unbindDragRef.current?.();
       unbindDragRef.current = null;
@@ -1993,7 +2013,9 @@ function Home() {
     void clearSessCookie();
     try {
       sessionStorage.removeItem(TOKEN_KEY);
-    } catch {}
+    } catch {
+      // ignore
+    }
     writeSessionInfo(null);
     setToken("");
     setSession(null);
@@ -2144,7 +2166,9 @@ function Home() {
         try {
           const pos = start + extra.length;
           el.setSelectionRange(pos, pos);
-        } catch {}
+        } catch {
+          // ignore
+        }
       });
     }
   }
@@ -2434,7 +2458,9 @@ function Home() {
       document.documentElement.classList.remove("dark");
       document.documentElement.classList.add("light");
       window.dispatchEvent(new Event("portal-theme"));
-    } catch {}
+    } catch {
+      // ignore
+    }
     toast.success(t("toast.prefsReset"));
   }
   const collapsedSet = useMemo(() => new Set(ui.collapsedCats ?? []), [ui.collapsedCats]);
@@ -2605,7 +2631,9 @@ function Home() {
               for (const row of rows) next[row.id] = row;
               return next;
             });
-          } catch {}
+          } catch {
+            // ignore
+          }
         }
       } finally {
         healthBusy.current = false;
@@ -4332,7 +4360,9 @@ function Home() {
                 try {
                   try {
                     sessionStorage.setItem(OIDC_NEXT_KEY, modal.next || "session");
-                  } catch {}
+                  } catch {
+                    // ignore
+                  }
                   const res = await startOidc({
                     data: {},
                   });
@@ -4362,11 +4392,15 @@ function Home() {
                     await pinSessCookie(res.token);
                     try {
                       sessionStorage.removeItem(TOKEN_KEY);
-                    } catch {}
+                    } catch {
+                      // ignore
+                    }
                   } else {
                     try {
                       sessionStorage.setItem(TOKEN_KEY, res.token);
-                    } catch {}
+                    } catch {
+                      // ignore
+                    }
                   }
                   setToken(res.token);
                   setSession(res.session);
@@ -7864,7 +7898,9 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
     setDragKey(null);
     try {
       el?.releasePointerCapture(pointerId);
-    } catch {}
+    } catch {
+      // ignore
+    }
   }
   function onGripDown(e, key) {
     if (order.length < 2 || e.button !== 0) return;
@@ -9038,7 +9074,9 @@ function ExtraLinksField({ links, setLinks }) {
     setDragKey(null);
     try {
       el?.releasePointerCapture(pointerId);
-    } catch {}
+    } catch {
+      // ignore
+    }
   }
   function onGripDown(e, key) {
     if (links.length < 2 || e.button !== 0) return;

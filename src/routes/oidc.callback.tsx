@@ -52,7 +52,9 @@ function OidcCallback() {
 					} else {
 						sessionStorage.setItem(TOKEN_KEY, res.token);
 					}
-				} catch {}
+				} catch {
+					// ignore
+				}
 				window.location.replace("/");
 			})
 			.catch((e) => {

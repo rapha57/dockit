@@ -1180,7 +1180,9 @@ async function readDocUnlocked() {
 			liveDoc = parsed;
 			return parsed;
 		}
-	} catch {}
+	} catch {
+		// ignore
+	}
 	const seeded = defaultStore();
 	await writeDocUnlocked(seeded);
 	return seeded;

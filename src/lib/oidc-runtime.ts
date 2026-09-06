@@ -185,6 +185,8 @@ export function publicOrigin(request: Request | undefined) {
 	}
 	try {
 		if (request?.url) return new URL(request.url).origin;
-	} catch {}
+	} catch {
+		// ignore
+	}
 	return "";
 }

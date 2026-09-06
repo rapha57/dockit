@@ -332,7 +332,9 @@ export function DockitMark({ className }: { className?: string }) {
     for (let i = fills.length - 1; i >= 0; i--) {
       try {
         if (fills[i].isPointInFill(loc)) return i;
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
     return null;
   }

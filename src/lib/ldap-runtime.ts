@@ -212,7 +212,9 @@ async function withClient(d, fn) {
 	} finally {
 		try {
 			await client.unbind();
-		} catch {}
+		} catch {
+			// ignore
+		}
 	}
 }
 
