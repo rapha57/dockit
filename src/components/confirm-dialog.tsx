@@ -24,7 +24,7 @@ export function askConfirm({ title, body, okLabel, danger = true }: AskConfirmOp
   });
 }
 
-type ConfirmDialogProps = {
+export type ConfirmDialogProps = {
   open?: boolean;
   title?: ReactNode;
   body?: ReactNode;
