@@ -328,7 +328,8 @@ function actionHits(list: string[], action: string): boolean {
 	return list.includes("*") || list.includes(action);
 }
 
-type Pack = { grant: Grant; kind: "direct" | "system" | "role" | "group"; role?: Role | null; group?: Group };
+export type SourceKind = "direct" | "system" | "role" | "group" | "public";
+type Pack = { grant: Grant; kind: SourceKind; role?: Role | null; group?: Group };
 
 function collectPacked(user: User | null | undefined, doc: AclDoc): Pack[] {
 	const out: Pack[] = [];
