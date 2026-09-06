@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Copy, Folder, Lock, Plus, Search, Shield, Users, X } from "lucide-react";
 import { toast } from "sonner";
@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/select";
 
 import { EmptyState } from "@/components/empty-state";
 import { EdgeFade } from "@/components/edge-fade";
-import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ConfirmDialog, type ConfirmDialogProps } from "@/components/confirm-dialog";
 import { EntityPicker } from "@/components/entity-picker";
 import { ExpandRow, NEW_ROW, useExpandSession } from "@/components/expand-row";
 import {
@@ -20,6 +20,18 @@ import {
   PORTAL_ACTIONS,
   syntheticUserFromGroup,
   TREE_ACTIONS,
+  type AclDoc,
+  type Category,
+  type CategoryMoveImpact,
+  type Decision,
+  type Grant,
+  type GrantInput,
+  type Group,
+  type ResKind,
+  type Role,
+  type Source,
+  type Tab,
+  type User,
 } from "@/lib/acl";
 import { t, te, tp, localeTag } from "@/lib/i18n";
 import { PASSWORD_MAX, PASSWORD_MIN, passwordMeter, passwordPolicyError } from "@/lib/security";
@@ -34,18 +46,31 @@ import {
   searchLdapGroups,
   linkLdapGroups,
 } from "@/lib/portal";
+import type { LdapGroupHit } from "@/lib/ldap-runtime";
 
 const INPUT_SM = "h-9 rounded-md bg-transparent";
 
-function sessionGone(err) {
-  return String(err?.message || err || "").includes("errors.sessionExpired");
+type Provider = { id: string; label: string; kind: string };
+type LdapDirectory = { id: string; domain?: string };
+type Actor = {
+  id?: string;
+  role?: string;
+  canManageUsers?: boolean;
+  canManageGroups?: boolean;
+  canManageRoles?: boolean;
+  canManageSettings?: boolean;
+};
+type Effect = "inherit" | "allow" | "deny";
+
+function sessionGone(err: unknown): boolean {
+  return String((err as any)?.message || err || "").includes("errors.sessionExpired");
 }
 
-function prettyLogin(name) {
+function prettyLogin(name: unknown): string {
   return String(name || "").trim();
 }
 
-function roleTitle(id, roles) {
+function roleTitle(id: string, roles: Role[]): string {
   if (id === "owner") return t("access.roleOwner");
   if (id === "admin") return t("access.roleAdminShort");
   if (id === "editeur") return t("access.roleEditeur");
@@ -53,13 +78,13 @@ function roleTitle(id, roles) {
   return roles.find((r) => r.id === id)?.name || id;
 }
 
-function actionLabel(a) {
+function actionLabel(a: string): string {
   const key = `access.act.${a}`;
   const s = t(key);
   return s === key ? a : s;
 }
 
-function sourceLabel(src) {
+function sourceLabel(src: Source | null | undefined): string {
   if (!src) return t("access.whyNone");
   if (src.kind === "direct") return t("access.whyDirect");
   if (src.kind === "public") return t("access.whyPublic");
@@ -74,21 +99,21 @@ function sourceLabel(src) {
   return t("access.whyDirect");
 }
 
-function accountSource(src) {
+function accountSource(src: unknown): string {
   if (src === "ad") return t("access.sourceAd");
   if (src === "oidc") return t("access.sourceOidc");
   return t("access.sourceLocal");
 }
 
-function pickerProviders(directories) {
-  const list = [{ id: "local", label: t("access.sourceLocal"), kind: "local" }];
+function pickerProviders(directories: LdapDirectory[] | null | undefined): Provider[] {
+  const list: Provider[] = [{ id: "local", label: t("access.sourceLocal"), kind: "local" }];
   for (const d of directories || []) {
     list.push({ id: d.id, label: d.domain || t("ldap.directory"), kind: "ad" });
   }
   return list;
 }
 
-function localEffect(grants, res, id, action) {
+function localEffect(grants: GrantInput[] | null | undefined, res: ResKind, id: string, action: string): Effect {
   const g = (grants || []).find((x) => x.res === res && x.id === id);
   if (!g) return "inherit";
   if ((g.deny || []).includes(action) || (g.deny || []).includes("*")) return "deny";
@@ -96,9 +121,11 @@ function localEffect(grants, res, id, action) {
   return "inherit";
 }
 
-function setEffect(grants, res, id, action, next) {
-  const list = (grants || []).map((g) => ({
-    ...g,
+function setEffect(grants: GrantInput[] | null | undefined, res: ResKind, id: string, action: string, next: Effect): Grant[] {
+  const list: Grant[] = (grants || []).map((g) => ({
+    res: g.res,
+    id: g.id,
+    scope: g.scope,
     allow: [...(g.allow || [])],
     deny: [...(g.deny || [])],
   }));
@@ -114,13 +141,13 @@ function setEffect(grants, res, id, action, next) {
   return list.filter((x) => x.allow.length || x.deny.length);
 }
 
-function cycleEffect(cur) {
+function cycleEffect(cur: Effect): Effect {
   if (cur === "inherit") return "allow";
   if (cur === "allow") return "deny";
   return "inherit";
 }
 
-function roleProbe(grants, tabs) {
+function roleProbe(grants: GrantInput[] | null | undefined, tabs: Tab[] | null | undefined): AclDoc {
   return {
     roles: [{ id: "_probe", name: "_", grants: grants || [] }],
     users: [],
@@ -129,20 +156,30 @@ function roleProbe(grants, tabs) {
   };
 }
 
-function MiniDoc(dir) {
+type Dir = {
+  users: User[];
+  groups: Group[];
+  roles: Role[];
+  tabs: Tab[];
+  busy: boolean;
+  apply: (res: Partial<{ users: User[]; groups: Group[]; roles: Role[]; tabs: Tab[] }>) => void;
+  setBusy: (v: boolean) => void;
+};
+
+function MiniDoc(dir: Dir): AclDoc {
   return { users: dir.users, groups: dir.groups, roles: dir.roles, tabs: dir.tabs };
 }
 
-function inheritedGrantsOf(user, dir) {
-  const grants = [];
+function inheritedGrantsOf(user: User | null | undefined, dir: Dir): Grant[] {
+  const grants: Grant[] = [];
   const roles = dir.roles || [];
-  const roleOf = (id) => roles.find((r) => r.id === id);
+  const roleOf = (id: string) => roles.find((r) => r.id === id);
   for (const rid of user?.roleIds || []) {
     const role = roleOf(rid);
     if (role) for (const g of role.grants || []) mergeGrant(grants, g);
   }
   const groups = (dir.groups || []).filter(
-    (g) => (user?.groupIds || []).includes(g.id) || (g.members || []).includes(user?.id),
+    (g) => (user?.groupIds || []).includes(g.id) || (g.members || []).includes(user?.id || ""),
   );
   for (const group of groups) {
     for (const g of group.grants || []) mergeGrant(grants, g);
@@ -154,21 +191,21 @@ function inheritedGrantsOf(user, dir) {
   return grants;
 }
 
-function clone(value) {
+function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
 }
 
-function same(a, b) {
+function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function useDirectory(token) {
-  const [users, setUsers] = useState([]);
-  const [groups, setGroups] = useState([]);
-  const [roles, setRoles] = useState([]);
-  const [tabs, setTabs] = useState([]);
+function useDirectory(token: string): Dir {
+  const [users, setUsers] = useState<User[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [tabs, setTabs] = useState<Tab[]>([]);
   const [busy, setBusy] = useState(true);
-  function apply(res) {
+  function apply(res: Partial<{ users: User[]; groups: Group[]; roles: Role[]; tabs: Tab[] }>) {
     if (res.users) setUsers(res.users);
     if (res.groups) setGroups(res.groups);
     if (res.roles) setRoles(res.roles);
@@ -176,11 +213,11 @@ function useDirectory(token) {
   }
   useEffect(() => {
     listUsers({ data: { token } })
-      .then((res) => {
+      .then((res: any) => {
         apply(res);
         setBusy(false);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         setBusy(false);
         if (!sessionGone(err)) toast.error(te(err));
       });
@@ -188,7 +225,7 @@ function useDirectory(token) {
   return { users, groups, roles, tabs, busy, apply, setBusy };
 }
 
-function ListShell({ toolbar, head, children }) {
+function ListShell({ toolbar, head, children }: { toolbar?: ReactNode; head?: ReactNode; children?: ReactNode }) {
   return (
     <div className="am-work">
       <div className="am-toolbar">{toolbar}</div>
@@ -198,7 +235,7 @@ function ListShell({ toolbar, head, children }) {
   );
 }
 
-function ListHead({ cells, grip }) {
+function ListHead({ cells, grip }: { cells?: ReactNode; grip?: boolean }) {
   return (
     <div className="am-list-head">
       {grip ? <span className="am-chevron-spacer" /> : null}
@@ -208,12 +245,14 @@ function ListHead({ cells, grip }) {
   );
 }
 
+export type ColSort = { key: string | null; dir: "asc" | "desc" };
+
 export function useColSort() {
-  const [sort, setSort] = useState({
+  const [sort, setSort] = useState<ColSort>({
     key: null,
     dir: "asc",
   });
-  const toggle = useCallback((key) => {
+  const toggle = useCallback((key: string) => {
     setSort((cur) =>
       cur.key === key
         ? {
@@ -227,8 +266,8 @@ export function useColSort() {
     );
   }, []);
   const apply = useCallback(
-    (rows, get) => {
-      if (!sort.key || !rows?.length) return rows;
+    <T,>(rows: T[] | null | undefined, get: (row: T, key: string) => string | number): T[] => {
+      if (!sort.key || !rows?.length) return rows || [];
       const sign = sort.dir === "asc" ? 1 : -1;
       const key = sort.key;
       return [...rows].sort((a, b) => {
@@ -252,7 +291,19 @@ export function useColSort() {
   };
 }
 
-export function SortLabel({ id, sort, onToggle, children, className }) {
+export function SortLabel({
+  id,
+  sort,
+  onToggle,
+  children,
+  className,
+}: {
+  id: string;
+  sort: ColSort;
+  onToggle: (id: string) => void;
+  children?: ReactNode;
+  className?: string;
+}) {
   const on = sort.key === id;
   return (
     <button
@@ -274,18 +325,30 @@ export function SortLabel({ id, sort, onToggle, children, className }) {
   );
 }
 
-function holdersLine(users, groups) {
+function holdersLine(users: number, groups: number): string {
   return `${tp("access.nUsers", users || 0)} · ${tp("access.nGroups", groups || 0)}`;
 }
 
-function bits(names) {
+function bits(names: (string | null | undefined)[] | null | undefined): string {
   const list = (names || []).filter(Boolean);
   if (!list.length) return "—";
   if (list.length <= 2) return list.join(", ");
   return `${list.slice(0, 2).join(", ")} +${list.length - 2}`;
 }
 
-function FilterBar({ value, onChange, items, pills }) {
+type FilterItem = { id: string; label: ReactNode };
+
+function FilterBar({
+  value,
+  onChange,
+  items,
+  pills,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  items: FilterItem[];
+  pills?: boolean;
+}) {
   return (
     <div className={`am-filters${pills ? " is-pills" : ""}`} role="tablist" aria-label={t("access.filterAll")}>
       {items.map((f) => (
@@ -304,7 +367,15 @@ function FilterBar({ value, onChange, items, pills }) {
   );
 }
 
-function SearchField({ value, onChange, placeholder }) {
+function SearchField({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
   return (
     <label className="am-search">
       <Search className="size-3.5" aria-hidden />
@@ -318,7 +389,7 @@ function SearchField({ value, onChange, placeholder }) {
   );
 }
 
-function StatusText({ off }) {
+function StatusText({ off }: { off?: boolean }) {
   return (
     <span className={`am-status${off ? " is-off" : ""}`}>
       {off ? t("access.disabled") : t("access.active")}
@@ -326,7 +397,19 @@ function StatusText({ off }) {
   );
 }
 
-function PermWord({ action, state, inheritedOn, onCycle, readOnly }) {
+function PermWord({
+  action,
+  state,
+  inheritedOn,
+  onCycle,
+  readOnly,
+}: {
+  action: string;
+  state: Effect;
+  inheritedOn?: boolean;
+  onCycle?: () => void;
+  readOnly?: boolean;
+}) {
   const label = actionLabel(action);
   const title =
     state === "allow"
@@ -368,9 +451,25 @@ function PermWord({ action, state, inheritedOn, onCycle, readOnly }) {
   );
 }
 
-function PermLine({ res, id, actions, grants, setGrants, tabs, readOnly }) {
+function PermLine({
+  res,
+  id,
+  actions,
+  grants,
+  setGrants,
+  tabs,
+  readOnly,
+}: {
+  res: ResKind;
+  id: string;
+  actions: string[];
+  grants: GrantInput[] | null | undefined;
+  setGrants: (g: Grant[]) => void;
+  tabs: Tab[] | null | undefined;
+  readOnly?: boolean;
+}) {
   const probe = roleProbe(grants, tabs);
-  const user = { id: "_u", roleIds: ["_probe"], grants: [] };
+  const user: User = { id: "_u", roleIds: ["_probe"], grants: [] };
   return (
     <span className="am-perms">
       {actions.map((action) => {
@@ -391,12 +490,24 @@ function PermLine({ res, id, actions, grants, setGrants, tabs, readOnly }) {
   );
 }
 
-function ResourceTree({ tabs, grants, setGrants, query, readOnly }) {
-  const [open, setOpen] = useState({});
+function ResourceTree({
+  tabs,
+  grants,
+  setGrants,
+  query,
+  readOnly,
+}: {
+  tabs: Tab[] | null | undefined;
+  grants: GrantInput[] | null | undefined;
+  setGrants: (g: Grant[]) => void;
+  query?: string;
+  readOnly?: boolean;
+}) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   const q = String(query || "")
     .trim()
     .toLowerCase();
-  function hit(name) {
+  function hit(name: unknown): boolean {
     return (
       !q ||
       String(name || "")
@@ -450,7 +561,7 @@ function ResourceTree({ tabs, grants, setGrants, query, readOnly }) {
             >
               {tab.name}
               {tab.restricted ? (
-                <Lock className="size-3" aria-label={t("access.restricted")} title={t("access.restricted")} />
+                <Lock className="size-3" aria-label={t("access.restricted")} {...{ title: t("access.restricted") }} />
               ) : null}
             </button>
             <PermLine
@@ -510,10 +621,18 @@ function ResourceTree({ tabs, grants, setGrants, query, readOnly }) {
   );
 }
 
-function EffectiveTree({ user, doc, onWhy }) {
+function EffectiveTree({
+  user,
+  doc,
+  onWhy,
+}: {
+  user: User | null | undefined;
+  doc: AclDoc;
+  onWhy?: (d: Decision) => void;
+}) {
   const tree = useMemo(() => effectiveAccess(user, doc), [user, doc]);
-  const [open, setOpen] = useState({});
-  function words(allowed, res, id, all) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  function words(allowed: string[] | undefined, res: ResKind, id: string, all?: string[]) {
     const on = new Set(allowed || []);
     return (
       <span className="am-perms">
@@ -581,7 +700,7 @@ function EffectiveTree({ user, doc, onWhy }) {
   );
 }
 
-function WhyPanel({ info, onClose }) {
+function WhyPanel({ info, onClose }: { info: Decision | null | undefined; onClose: () => void }) {
   if (!info) return null;
   return (
     <div className="am-why" role="status">
@@ -618,11 +737,11 @@ function WhyPanel({ info, onClose }) {
   );
 }
 
-export function ConfirmPopup(props) {
+export function ConfirmPopup(props: ConfirmDialogProps) {
   return <ConfirmDialog {...props} />;
 }
 
-function Section({ title, hint, children }) {
+function Section({ title, hint, children }: { title?: ReactNode; hint?: ReactNode; children?: ReactNode }) {
   return (
     <section className="am-sec">
       {title ? <h5>{title}</h5> : null}
@@ -632,11 +751,19 @@ function Section({ title, hint, children }) {
   );
 }
 
-function Pair({ children }) {
+function Pair({ children }: { children?: ReactNode }) {
   return <div className="am-pair">{children}</div>;
 }
 
-function DiscardAsk({ ask, onKeep, onDiscard }) {
+function DiscardAsk({
+  ask,
+  onKeep,
+  onDiscard,
+}: {
+  ask?: unknown;
+  onKeep: () => void;
+  onDiscard: () => void;
+}) {
   if (!ask) return null;
   return (
     <ConfirmPopup
@@ -649,7 +776,27 @@ function DiscardAsk({ ask, onKeep, onDiscard }) {
   );
 }
 
-function PermBlocks({ user, dir, tabs, grants, setGrants, editing, why, setWhy, hideDirectEdit }) {
+function PermBlocks({
+  user,
+  dir,
+  tabs,
+  grants,
+  setGrants,
+  editing,
+  why,
+  setWhy,
+  hideDirectEdit,
+}: {
+  user: User | null | undefined;
+  dir: Dir;
+  tabs: Tab[] | null | undefined;
+  grants: GrantInput[] | null | undefined;
+  setGrants?: (g: Grant[]) => void;
+  editing?: boolean;
+  why: Decision | null | undefined;
+  setWhy: (d: Decision | null) => void;
+  hideDirectEdit?: boolean;
+}) {
   const inherited = useMemo(() => inheritedGrantsOf(user, dir), [user, dir]);
   const [pane, setPane] = useState(editing ? "direct" : "effective");
   const [pq, setPq] = useState("");
@@ -728,7 +875,23 @@ function PasswordHint({ value, required = false }: { value?: string; required?: 
   );
 }
 
-function RowActions({ editing, onEdit, onCancel, onSave, saveDisabled, extra, danger }) {
+function RowActions({
+  editing,
+  onEdit,
+  onCancel,
+  onSave,
+  saveDisabled,
+  extra,
+  danger,
+}: {
+  editing?: boolean;
+  onEdit?: (() => void) | null;
+  onCancel: () => void;
+  onSave: () => void;
+  saveDisabled?: boolean;
+  extra?: ReactNode;
+  danger?: ReactNode;
+}) {
   if (editing) {
     return (
       <div className="am-actions">
@@ -754,16 +917,36 @@ function RowActions({ editing, onEdit, onCancel, onSave, saveDisabled, extra, da
   );
 }
 
-export function AccessUsers({ token, actor, tabs: seedTabs }) {
+type UserDraft = {
+  id: string;
+  username: string;
+  password: string;
+  password2: string;
+  roleIds: string[];
+  groupIds: string[];
+  grants: GrantInput[];
+  disabled: boolean;
+  source: string;
+};
+
+export function AccessUsers({
+  token,
+  actor,
+  tabs: seedTabs,
+}: {
+  token: string;
+  actor?: Actor;
+  tabs?: Tab[];
+}) {
   const dir = useDirectory(token);
   const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
   const expand = useExpandSession();
-  const snap = useRef(null);
+  const snap = useRef<UserDraft | null>(null);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
-  const [draft, setDraft] = useState(null);
-  const [why, setWhy] = useState(null);
-  const [confirm, setConfirm] = useState(null);
+  const [draft, setDraft] = useState<UserDraft | null>(null);
+  const [why, setWhy] = useState<Decision | null>(null);
+  const [confirm, setConfirm] = useState<User | null>(null);
   const creating = expand.openId === NEW_ROW;
   const people = dir.users;
   const canCreate = actor?.role === "admin" || actor?.canManageUsers;
@@ -790,10 +973,10 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
     [filtered, col, dir.roles],
   );
 
-  function userDraft(u) {
+  function userDraft(u: User): UserDraft {
     return {
       id: u.id,
-      username: u.username,
+      username: u.username || "",
       password: "",
       password2: "",
       roleIds: [...(u.roleIds || [])],
@@ -803,7 +986,7 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
       source: u.source || "local",
     };
   }
-  function blankDraft() {
+  function blankDraft(): UserDraft {
     return {
       id: "",
       username: "",
@@ -816,18 +999,18 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
       source: "local",
     };
   }
-  function load(next, edit) {
+  function load(next: UserDraft | null, edit?: boolean) {
     snap.current = next ? clone(next) : null;
     setDraft(next);
     setWhy(null);
     expand.markDirty(false);
     if (edit) expand.setEditing(true);
   }
-  function patch(next) {
+  function patch(next: UserDraft) {
     setDraft(next);
     expand.markDirty(!same(next, snap.current));
   }
-  function toggleRow(u) {
+  function toggleRow(u: User) {
     if (expand.openId === u.id) {
       expand.requestClose(() => load(null));
       return;
@@ -881,16 +1064,16 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
       });
       dir.apply(res);
       toast.success(t("toast.saved"));
-      const saved =
-        (res.users || []).find((u) => u.id === draft.id) ||
-        (res.users || []).find((u) => u.username === draft.username.trim().toLowerCase());
+      const saved: User | undefined =
+        (res.users || []).find((u: User) => u.id === draft.id) ||
+        (res.users || []).find((u: User) => u.username === draft.username.trim().toLowerCase());
       if (saved) {
         expand.stay(saved.id);
         load(userDraft(saved));
       } else {
         expand.stay(draft.id || null);
         patch({ ...draft, password: "" });
-        snap.current = clone({ ...draft, password: "" });
+        snap.current = clone({ ...draft, password: "" } as UserDraft);
         expand.markDirty(false);
         expand.setEditing(false);
       }
@@ -900,7 +1083,7 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
       dir.setBusy(false);
     }
   }
-  async function setDisabled(u, disabled) {
+  async function setDisabled(u: User, disabled: boolean) {
     dir.setBusy(true);
     try {
       dir.apply(
@@ -908,7 +1091,7 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
           data: {
             token,
             id: u.id,
-            username: u.username,
+            username: u.username || "",
             roleIds: u.roleIds,
             groupIds: u.groupIds,
             grants: u.grants,
@@ -919,7 +1102,7 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
       toast.success(t("toast.saved"));
       if (draft && draft.id === u.id) {
         const next = { ...draft, disabled };
-        snap.current = clone({ ...snap.current, disabled });
+        snap.current = clone({ ...(snap.current as UserDraft), disabled });
         setDraft(next);
       }
     } catch (err) {
@@ -928,7 +1111,7 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
       dir.setBusy(false);
     }
   }
-  async function remove(u) {
+  async function remove(u: User) {
     dir.setBusy(true);
     try {
       dir.apply(await deleteUser({ data: { token, id: u.id } }));
@@ -1239,17 +1422,36 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
   );
 }
 
-export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
+type GroupDraft = {
+  id: string;
+  name: string;
+  roleIds: string[];
+  members: string[];
+  grants: GrantInput[];
+  source: string;
+};
+
+export function AccessGroups({
+  token,
+  actor,
+  tabs: seedTabs,
+  directories,
+}: {
+  token: string;
+  actor?: Actor;
+  tabs?: Tab[];
+  directories?: LdapDirectory[];
+}) {
   const dir = useDirectory(token);
   const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
   const expand = useExpandSession();
-  const snap = useRef(null);
+  const snap = useRef<GroupDraft | null>(null);
   const [q, setQ] = useState("");
-  const [draft, setDraft] = useState(null);
-  const [why, setWhy] = useState(null);
-  const [confirm, setConfirm] = useState(null);
+  const [draft, setDraft] = useState<GroupDraft | null>(null);
+  const [why, setWhy] = useState<Decision | null>(null);
+  const [confirm, setConfirm] = useState<Group | null>(null);
   const creating = expand.openId === NEW_ROW;
-  const filtered = dir.groups.filter((g) => !q || g.name.toLowerCase().includes(q.toLowerCase()));
+  const filtered = dir.groups.filter((g) => !q || (g.name || "").toLowerCase().includes(q.toLowerCase()));
   const col = useColSort();
   const sorted = useMemo(
     () =>
@@ -1268,11 +1470,11 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
   const providers = pickerProviders(directories);
   const adProviders = providers.filter((p) => p.kind === "ad");
 
-  const searchDirGroups = useCallback(async (directoryId, query) => {
+  const searchDirGroups = useCallback(async (directoryId: string, query: string) => {
     const res = await searchLdapGroups({ data: { token, directoryId, query } });
-    return res.groups || [];
+    return (res.groups || []) as LdapGroupHit[];
   }, [token]);
-  async function linkDirGroups(directoryId, rows) {
+  async function linkDirGroups(directoryId: string, rows: LdapGroupHit[]) {
     if (!rows.length) return;
     dir.setBusy(true);
     try {
@@ -1293,31 +1495,31 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
     }
   }
 
-  function groupDraft(g) {
+  function groupDraft(g: Group): GroupDraft {
     return {
       id: g.id,
-      name: g.name,
+      name: g.name || "",
       roleIds: [...(g.roleIds || [])],
       members: [...(g.members || [])],
       grants: clone(g.grants || []),
       source: g.source || "local",
     };
   }
-  function blankDraft() {
+  function blankDraft(): GroupDraft {
     return { id: "", name: "", roleIds: ["lecteur"], members: [], grants: [], source: "local" };
   }
-  function load(next, edit) {
+  function load(next: GroupDraft | null, edit?: boolean) {
     snap.current = next ? clone(next) : null;
     setDraft(next);
     setWhy(null);
     expand.markDirty(false);
     if (edit) expand.setEditing(true);
   }
-  function patch(next) {
+  function patch(next: GroupDraft) {
     setDraft(next);
     expand.markDirty(!same(next, snap.current));
   }
-  function toggleRow(g) {
+  function toggleRow(g: Group) {
     if (expand.openId === g.id) {
       expand.requestClose(() => load(null));
       return;
@@ -1358,9 +1560,9 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
       });
       dir.apply(res);
       toast.success(t("toast.saved"));
-      const saved =
-        (res.groups || []).find((g) => g.id === draft.id) ||
-        (res.groups || []).find((g) => g.name.toLowerCase() === draft.name.trim().toLowerCase());
+      const saved: Group | undefined =
+        (res.groups || []).find((g: Group) => g.id === draft.id) ||
+        (res.groups || []).find((g: Group) => (g.name || "").toLowerCase() === draft.name.trim().toLowerCase());
       if (saved) {
         expand.stay(saved.id);
         load(groupDraft(saved));
@@ -1375,7 +1577,7 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
       dir.setBusy(false);
     }
   }
-  async function remove(g) {
+  async function remove(g: Group) {
     dir.setBusy(true);
     try {
       dir.apply(await deleteGroup({ data: { token, id: g.id } }));
@@ -1390,7 +1592,10 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
     }
   }
 
-  const rows = creating
+  type GroupRow =
+    | Group
+    | { id: string; name: string; roleIds: string[]; members: string[]; phantom: true; source?: string };
+  const rows: GroupRow[] = creating
     ? [
         {
           id: NEW_ROW,
@@ -1418,7 +1623,8 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
               addLabel={t("access.addFromDir")}
               providers={adProviders}
               excludeIds={dir.groups.filter((g) => g.source === "ad").map((g) => g.externalId)}
-              labelOf={(g) => g.name}
+              labelOf={(g) => g.name || ""}
+              onChange={() => {}}
               searchRemote={searchDirGroups}
               onRemoteAdd={linkDirGroups}
             />
@@ -1464,15 +1670,15 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
       ) : (
         <div className="am-list" role="list">
           {rows.map((g) => {
-            const open = expand.openId === g.id || (g.phantom && creating);
+            const open = expand.openId === g.id || (("phantom" in g && g.phantom) && creating);
             const rowDraft = open ? draft : null;
-            const view = current?.id === g.id && !g.phantom ? current : g;
+            const view: GroupRow = current?.id === g.id && !("phantom" in g) ? current : g;
             return (
               <ExpandRow
                 key={g.id}
                 id={g.id}
                 expanded={open}
-                onToggle={() => (g.phantom ? expand.requestClose(() => load(null)) : toggleRow(g))}
+                onToggle={() => ("phantom" in g ? expand.requestClose(() => load(null)) : toggleRow(g))}
                 cells={[
                   <span key="n" className="am-row-title">
                     {rowDraft?.name || g.name || t("access.newGroup")}
@@ -1603,16 +1809,35 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
   );
 }
 
-export function AccessRoles({ token, tabs: seedTabs, directories }) {
+type RoleDraft = {
+  id: string;
+  name: string;
+  description: string;
+  grants: GrantInput[];
+  userIds: string[];
+  groupIds: string[];
+  system: boolean;
+};
+type RoleRow = Role & { userCount?: number; groupCount?: number };
+
+export function AccessRoles({
+  token,
+  tabs: seedTabs,
+  directories,
+}: {
+  token: string;
+  tabs?: Tab[];
+  directories?: LdapDirectory[];
+}) {
   const dir = useDirectory(token);
   const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
   const expand = useExpandSession();
-  const snap = useRef(null);
-  const [draft, setDraft] = useState(null);
+  const snap = useRef<RoleDraft | null>(null);
+  const [draft, setDraft] = useState<RoleDraft | null>(null);
   const [q, setQ] = useState("");
   const [search, setSearch] = useState("");
   const [basedOn, setBasedOn] = useState("");
-  const [confirm, setConfirm] = useState(null);
+  const [confirm, setConfirm] = useState<RoleRow | null>(null);
   const [filter, setFilter] = useState("all");
   const creating = expand.openId === NEW_ROW;
   const current = dir.roles.find((r) => r.id === expand.openId);
@@ -1637,7 +1862,7 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
   );
   const providers = pickerProviders(directories);
 
-  function holders(r) {
+  function holders(r: Role) {
     return {
       userIds: dir.users
         .filter((u) => (u.roleIds || []).includes(r.id) && u.id !== "admin")
@@ -1645,11 +1870,11 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
       groupIds: dir.groups.filter((g) => (g.roleIds || []).includes(r.id)).map((g) => g.id),
     };
   }
-  function roleDraft(r) {
+  function roleDraft(r: Role): RoleDraft {
     const h = holders(r);
     return {
       id: r.id,
-      name: r.name,
+      name: r.name || "",
       description: r.description || "",
       grants: clone(r.grants || []),
       userIds: h.userIds,
@@ -1657,13 +1882,13 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
       system: Boolean(r.system),
     };
   }
-  function blankDraft(from) {
+  function blankDraft(from?: Role): RoleDraft {
     const src = from || dir.roles.find((r) => r.id === basedOn);
     const copied = Boolean(from && src);
     return {
       id: "",
       name: copied
-        ? `${String(src.name || "").replace(/\s*\((copie|copy)\)\s*$/i, "")} (${t("copy.suffix")})`.slice(
+        ? `${String(src?.name || "").replace(/\s*\((copie|copy)\)\s*$/i, "")} (${t("copy.suffix")})`.slice(
             0,
             40,
           )
@@ -1675,24 +1900,24 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
       system: false,
     };
   }
-  function load(next, edit) {
+  function load(next: RoleDraft | null, edit?: boolean) {
     snap.current = next ? clone(next) : null;
     setDraft(next);
     expand.markDirty(false);
     if (edit) expand.setEditing(true);
   }
-  function patch(next) {
+  function patch(next: RoleDraft) {
     setDraft(next);
     expand.markDirty(!same(next, snap.current));
   }
-  function toggleRow(r) {
+  function toggleRow(r: Role) {
     if (expand.openId === r.id) {
       expand.requestClose(() => load(null));
       return;
     }
     expand.requestOpen(r.id, { apply: () => load(roleDraft(r)) });
   }
-  function openCreate(from) {
+  function openCreate(from?: Role) {
     expand.requestOpen(NEW_ROW, { edit: true, apply: () => load(blankDraft(from), true) });
   }
   function beginEdit() {
@@ -1727,9 +1952,9 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
       });
       dir.apply(res);
       toast.success(t("toast.saved"));
-      const saved =
-        (res.roles || []).find((r) => r.id === draft.id) ||
-        (res.roles || []).find((r) => r.name.toLowerCase() === draft.name.trim().toLowerCase());
+      const saved: Role | undefined =
+        (res.roles || []).find((r: Role) => r.id === draft.id) ||
+        (res.roles || []).find((r: Role) => (r.name || "").toLowerCase() === draft.name.trim().toLowerCase());
       if (saved) {
         expand.stay(saved.id);
         load(roleDraft(saved));
@@ -1744,7 +1969,7 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
       dir.setBusy(false);
     }
   }
-  async function remove(r) {
+  async function remove(r: RoleRow) {
     dir.setBusy(true);
     try {
       dir.apply(await deleteRole({ data: { token, id: r.id } }));
@@ -1759,7 +1984,10 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
     }
   }
 
-  const rows = creating
+  type RoleTableRow =
+    | RoleRow
+    | { id: string; name: string; system: boolean; userCount: number; groupCount: number; phantom: true };
+  const rows: RoleTableRow[] = creating
     ? [
         {
           id: NEW_ROW,
@@ -1827,15 +2055,15 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
       ) : (
         <div className="am-list" role="list">
           {rows.map((r) => {
-            const open = expand.openId === r.id || (r.phantom && creating);
+            const open = expand.openId === r.id || (("phantom" in r && r.phantom) && creating);
             const rowDraft = open ? draft : null;
-            const view = current?.id === r.id && !r.phantom ? current : r;
+            const view: RoleTableRow = current?.id === r.id && !("phantom" in r) ? current : r;
             return (
               <ExpandRow
                 key={r.id}
                 id={r.id}
                 expanded={open}
-                onToggle={() => (r.phantom ? expand.requestClose(() => load(null)) : toggleRow(r))}
+                onToggle={() => ("phantom" in r ? expand.requestClose(() => load(null)) : toggleRow(r))}
                 cells={[
                   <span key="n" className="am-row-title">
                     {rowDraft?.name || roleTitle(r.id, dir.roles) || t("access.createRole")}
@@ -1979,7 +2207,7 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
                             type="button"
                             className="am-text-btn"
                             title={t("access.duplicate")}
-                            onClick={() => openCreate(view)}
+                            onClick={() => openCreate(view as RoleRow)}
                           >
                             <Copy className="size-3.5" /> {t("access.duplicate")}
                           </button>
@@ -1990,7 +2218,7 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
                           <button
                             type="button"
                             className="am-text-btn is-danger"
-                            onClick={() => setConfirm(view)}
+                            onClick={() => setConfirm(view as RoleRow)}
                           >
                             {t("access.deleteConfirm")}
                           </button>
@@ -2021,7 +2249,21 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
   );
 }
 
-export function MovePickDialog({ category, tabs, fromTabId, busy, onCancel, onContinue }) {
+export function MovePickDialog({
+  category,
+  tabs,
+  fromTabId,
+  busy,
+  onCancel,
+  onContinue,
+}: {
+  category?: Category | null;
+  tabs?: Tab[];
+  fromTabId?: string;
+  busy?: boolean;
+  onCancel: () => void;
+  onContinue: (destId: string) => void;
+}) {
   const others = (tabs || []).filter((tab) => tab.id !== fromTabId);
   const [dest, setDest] = useState(others[0]?.id || "");
   return (
@@ -2054,7 +2296,17 @@ export function MovePickDialog({ category, tabs, fromTabId, busy, onCancel, onCo
   );
 }
 
-export function MoveSectionDialog({ impact, busy, onCancel, onConfirm }) {
+export function MoveSectionDialog({
+  impact,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  impact?: CategoryMoveImpact | null;
+  busy?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
   if (!impact) return null;
   return (
     <div>
