@@ -70,6 +70,7 @@ Derrière un proxy : `PORTAL_PUBLIC_ORIGIN` + `PORTAL_TRUST_PROXY=1`.
 
 - Formats d’instance : date (`ymd` YY/MM/DD, `yyyy` YYYY/MM/DD, `dmy`, `mdy`, `iso`), heure `24h` / `12h`, fuseau IANA ou navigateur. Ça alimente historique, exports, inventaires — pas un format « cosmétique ».
 - Tags : 3 max par carte, pastels (`src/lib/tag-colors.ts`).
+- Hauteurs UI : champs (`input` / `textarea` / `select`) et boutons principaux (`Button`, Save) = **36px (`h-9`)**. Le login est la référence (boutons = champs). Constantes secondaires assumées : `am-create` (toolbars Access/Historique, actions secondaires) = **32px**, `card-tool` (actions de ligne) = **1.85rem**, `am-text-btn` (liens d’action sous les champs) = **2rem**. Ne pas mettre un bouton 32px côte à côte avec un champ 36px.
 - Toasts : `sonner`. Confirmations destructives : `window.confirm` ou popup Access, pas un delete silencieux.
 
 ## Git et version

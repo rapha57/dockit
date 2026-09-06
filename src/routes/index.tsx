@@ -188,7 +188,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.4";
+var PORTAL_VERSION = "2026.09.06.5";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -6780,7 +6780,7 @@ function BackupForm({ token, busy, catalog, title, onImport }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `inventaire-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `${t("inventory.fileName")}-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -6795,7 +6795,7 @@ function BackupForm({ token, busy, catalog, title, onImport }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `inventaire-${new Date().toISOString().slice(0, 10)}.pdf`;
+      a.download = `${t("inventory.fileName")}-${new Date().toISOString().slice(0, 10)}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -10180,7 +10180,6 @@ function FormActions({ busy, onCancel, label = t("actions.save"), form, disabled
         type="submit"
         form={form}
         size={hideCancel ? "sm" : "default"}
-        className={hideCancel ? "am-create" : undefined}
         disabled={busy || disabled}
       >
         {label}

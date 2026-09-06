@@ -41,7 +41,7 @@ const COLS = [78, 78, 52, 108, 248, 128, 78];
 function inventoryHead() {
 	return [t("inventory.space"), t("inventory.category"), t("inventory.type"), t("inventory.title"), t("inventory.link"), t("inventory.otherLinks"), t("inventory.tags")];
 }
-const CHAR_W = 4.2;
+const CHAR_W = 3.9;
 const LINE_H = 11;
 
 function pdfStr(value) {
@@ -83,8 +83,8 @@ function wrapCell(text, width) {
 			lines.push(rest);
 			break;
 		}
-		let cut = rest.lastIndexOf(" ", max);
-		if (cut < max * 0.5) cut = max;
+		const space = rest.lastIndexOf(" ", max);
+		const cut = space > 0 ? space : max;
 		lines.push(rest.slice(0, cut).trim());
 		rest = rest.slice(cut).trim();
 		if (lines.length >= 8) {

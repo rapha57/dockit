@@ -371,6 +371,7 @@
     "kindNote": "Note",
     "kindEmbed": "Web page",
     "titleSuffix": "Inventory",
+    "fileName": "inventory",
     "entries": "{n} entry",
     "entries_other": "{n} entries",
     "noCards": "No cards"
