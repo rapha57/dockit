@@ -1,17 +1,40 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ModalShell } from "@/components/modal-shell";
 import { t } from "@/lib/i18n";
 
 const EVENT = "dockit-confirm";
 
-export function askConfirm({ title, body, okLabel, danger = true } = {}) {
-  return new Promise((resolve) => {
+type AskConfirmOptions = {
+  title?: ReactNode;
+  body?: ReactNode;
+  okLabel?: string;
+  danger?: boolean;
+};
+
+type ConfirmDetail = AskConfirmOptions & {
+  resolve: (ok: boolean) => void;
+};
+
+export function askConfirm({ title, body, okLabel, danger = true }: AskConfirmOptions = {}) {
+  return new Promise<boolean>((resolve) => {
     window.dispatchEvent(
-      new CustomEvent(EVENT, { detail: { title, body, okLabel, danger, resolve } }),
+      new CustomEvent<ConfirmDetail>(EVENT, { detail: { title, body, okLabel, danger, resolve } }),
     );
   });
 }
+
+type ConfirmDialogProps = {
+  open?: boolean;
+  title?: ReactNode;
+  body?: ReactNode;
+  onCancel: () => void;
+  onOk: () => void;
+  busy?: boolean;
+  okLabel?: string;
+  danger?: boolean;
+  inline?: boolean;
+};
 
 export function ConfirmDialog({
   open,
@@ -23,7 +46,7 @@ export function ConfirmDialog({
   okLabel,
   danger = true,
   inline = false,
-}) {
+}: ConfirmDialogProps) {
   const box = (
     <div
       role={inline ? "alertdialog" : undefined}
@@ -59,10 +82,10 @@ export function ConfirmDialog({
 }
 
 export function ConfirmHost() {
-  const [ask, setAsk] = useState(null);
+  const [ask, setAsk] = useState<ConfirmDetail | null>(null);
   useEffect(() => {
-    function onAsk(e) {
-      setAsk(e.detail);
+    function onAsk(e: Event) {
+      setAsk((e as CustomEvent<ConfirmDetail>).detail);
     }
     window.addEventListener(EVENT, onAsk);
     return () => window.removeEventListener(EVENT, onAsk);
