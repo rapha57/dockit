@@ -13,8 +13,10 @@ let current: Locale = "en";
 let dateFormat = "ymd";
 let timeFormat = "24h";
 let timeZone = "";
+let numberFormat = "auto";
 
 export const DATE_FORMATS = ["ymd", "yyyy", "dmy", "mdy", "iso"];
+export const NUMBER_FORMATS = ["auto", "space-comma", "comma-dot", "dot-comma", "apostrophe-comma"];
 
 function flatten(obj, prefix = "") {
 	const out = {};
@@ -41,6 +43,7 @@ export function applyDisplayPrefs(settings) {
 	setDateFormat(settings?.dateFormat);
 	setTimeFormat(settings?.timeFormat);
 	setTimeZone(settings?.timezone);
+	setNumberFormat(settings?.numberFormat);
 }
 
 export function withLocale(localeOrSettings, fn) {
@@ -48,7 +51,8 @@ export function withLocale(localeOrSettings, fn) {
 		locale: current,
 		dateFormat,
 		timeFormat,
-		timeZone
+		timeZone,
+		numberFormat
 	};
 	if (localeOrSettings && typeof localeOrSettings === "object") applyDisplayPrefs(localeOrSettings);
 	else setLocale(localeOrSettings);
@@ -59,6 +63,7 @@ export function withLocale(localeOrSettings, fn) {
 		dateFormat = prev.dateFormat;
 		timeFormat = prev.timeFormat;
 		timeZone = prev.timeZone;
+		numberFormat = prev.numberFormat;
 	}
 }
 
@@ -98,6 +103,34 @@ export function asTimeZone(raw) {
 export function setTimeZone(id) {
 	timeZone = asTimeZone(id);
 	return timeZone;
+}
+
+export function asNumberFormat(raw) {
+	return NUMBER_FORMATS.includes(raw) ? raw : "auto";
+}
+
+export function setNumberFormat(fmt) {
+	numberFormat = asNumberFormat(fmt);
+	return numberFormat;
+}
+
+const NUMBER_SEPS = {
+	"space-comma": [" ", ","],
+	"comma-dot": [",", "."],
+	"dot-comma": [".", ","],
+	"apostrophe-comma": ["\u2019", ","]
+};
+
+export function formatNumber(n, fmt) {
+	const useFmt = fmt != null ? asNumberFormat(fmt) : numberFormat;
+	const num = Number(n) || 0;
+	const seps = NUMBER_SEPS[useFmt];
+	if (!seps) return num.toLocaleString(localeTag());
+	const raw = num.toLocaleString("en-US", { maximumFractionDigits: 2 });
+	const dot = raw.lastIndexOf(".");
+	const int = dot === -1 ? raw : raw.slice(0, dot);
+	const frac = dot === -1 ? null : raw.slice(dot + 1);
+	return frac != null ? `${int.replaceAll(",", seps[0])}${seps[1]}${frac}` : int.replaceAll(",", seps[0]);
 }
 
 function zoneOffset(id, at) {

@@ -146,6 +146,8 @@ import {
   asDateFormat,
   asTimeFormat,
   asTimeZone,
+  asNumberFormat,
+  formatNumber,
   formatWhen,
   listTimeZones,
 } from "@/lib/i18n";
@@ -169,7 +171,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.8";
+var PORTAL_VERSION = "2026.09.06.9";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -596,7 +598,7 @@ function tagPaint(name, colors) {
 }
 var ITEM_GRID = "item-grid";
 function fmtCount(n) {
-  return Math.max(0, Math.floor(Number(n) || 0)).toLocaleString(localeTag());
+  return formatNumber(n);
 }
 function StatsBar({ stats, infoBar, geekTip, downCount, downOn, probeBlink, onDown, onStats }) {
   const span = Number(stats?.spanDays) || 0;
@@ -6452,6 +6454,7 @@ function settingsBase(initial) {
     dateFormat: asDateFormat(initial.dateFormat),
     timeFormat: asTimeFormat(initial.timeFormat),
     timezone: asTimeZone(initial.timezone),
+    numberFormat: asNumberFormat(initial.numberFormat),
     probeBlink: Boolean(initial.probeBlink),
     annexFade: Boolean(initial.annexFade),
     catCounts: Boolean(initial.catCounts),
@@ -6617,16 +6620,36 @@ function TimeZoneField({ value, onChange }) {
     </Field>
   );
 }
+const REGIONS = [
+  { id: "en-US", labelKey: "lang.regionEnUs", locale: "en", dateFormat: "mdy", timeFormat: "12h", numberFormat: "comma-dot" },
+  { id: "en-GB", labelKey: "lang.regionEnGb", locale: "en", dateFormat: "dmy", timeFormat: "24h", numberFormat: "comma-dot" },
+  { id: "fr-FR", labelKey: "lang.regionFrFr", locale: "fr", dateFormat: "dmy", timeFormat: "24h", numberFormat: "space-comma" },
+  { id: "fr-CH", labelKey: "lang.regionFrCh", locale: "fr", dateFormat: "dmy", timeFormat: "24h", numberFormat: "apostrophe-comma" },
+  { id: "fr-BE", labelKey: "lang.regionFrBe", locale: "fr", dateFormat: "dmy", timeFormat: "24h", numberFormat: "dot-comma" },
+  { id: "fr-LU", labelKey: "lang.regionFrLu", locale: "fr", dateFormat: "dmy", timeFormat: "24h", numberFormat: "space-comma" },
+];
 function LocalesForm({ initial, onSave }) {
   const [locale, setLocaleDraft] = useState(asLocale(initial.locale));
   const [dateFormat, setDateDraft] = useState(asDateFormat(initial.dateFormat));
   const [timeFormat, setTimeDraft] = useState(asTimeFormat(initial.timeFormat));
   const [timezone, setZoneDraft] = useState(asTimeZone(initial.timezone));
+  const [numberFormat, setNumberDraft] = useState(asNumberFormat(initial.numberFormat));
+  const [regionId, setRegionId] = useState(
+    () =>
+      REGIONS.find(
+        (r) =>
+          r.locale === asLocale(initial.locale) &&
+          r.dateFormat === asDateFormat(initial.dateFormat) &&
+          r.timeFormat === asTimeFormat(initial.timeFormat) &&
+          r.numberFormat === asNumberFormat(initial.numberFormat),
+      )?.id ?? null,
+  );
   const sample = formatWhen(new Date(), true, {
     dateFormat,
     timeFormat,
     timezone,
   });
+  const currentRegion = regionId ?? "custom";
   return (
     <form
       id="settings-form"
@@ -6639,15 +6662,41 @@ function LocalesForm({ initial, onSave }) {
           dateFormat: asDateFormat(dateFormat),
           timeFormat: asTimeFormat(timeFormat),
           timezone: asTimeZone(timezone),
+          numberFormat: asNumberFormat(numberFormat),
         });
       }}
     >
       {" "}
-      <div className="settings-card">
-        {" "}
+<div className="settings-card">
+        <p className="settings-kicker">{t("lang.sectionRegion")}</p>
+        <Field label={t("lang.region")}>
+          {" "}
+          <Select
+            value={currentRegion}
+            onChange={(e) => {
+              const reg = REGIONS.find((r) => r.id === e.target.value);
+              if (reg) {
+                setRegionId(reg.id);
+                setLocaleDraft(reg.locale);
+                setDateDraft(reg.dateFormat);
+                setTimeDraft(reg.timeFormat);
+                setNumberDraft(reg.numberFormat);
+              }
+            }}
+          >
+            {" "}
+            {REGIONS.map((r) => (
+              <option key={r.id} value={r.id}>
+                {t(r.labelKey)}
+              </option>
+            ))}
+            <option value="custom">{t("lang.regionCustom")}</option>
+          </Select>{" "}
+          <p className="settings-hint">{t("lang.regionHint")}</p>
+        </Field>
         <Field label={t("lang.label")}>
           {" "}
-          <Select value={locale} onChange={(e) => setLocaleDraft(asLocale(e.target.value))}>
+          <Select value={locale} onChange={(e) => { setRegionId(null); setLocaleDraft(asLocale(e.target.value)); }}>
             {" "}
             <option value="en">{t("lang.en")}</option>
             <option value="fr">{t("lang.fr")}</option>
@@ -6656,12 +6705,12 @@ function LocalesForm({ initial, onSave }) {
         </Field>
       </div>{" "}
       <div className="settings-card">
-        {" "}
+        <p className="settings-kicker">{t("lang.sectionFormat")}</p>
         <div className="field-row">
           {" "}
           <Field label={t("lang.dateFormat")}>
             {" "}
-            <Select value={dateFormat} onChange={(e) => setDateDraft(asDateFormat(e.target.value))}>
+            <Select value={dateFormat} onChange={(e) => { setRegionId(null); setDateDraft(asDateFormat(e.target.value)); }}>
               {" "}
               <option value="ymd">{t("lang.dateYmd")}</option>
               <option value="yyyy">{t("lang.dateYyyy")}</option>
@@ -6673,7 +6722,7 @@ function LocalesForm({ initial, onSave }) {
           </Field>{" "}
           <Field label={t("lang.timeFormat")}>
             {" "}
-            <Select value={timeFormat} onChange={(e) => setTimeDraft(asTimeFormat(e.target.value))}>
+            <Select value={timeFormat} onChange={(e) => { setRegionId(null); setTimeDraft(asTimeFormat(e.target.value)); }}>
               {" "}
               <option value="24h">{t("lang.time24")}</option>
               <option value="12h">{t("lang.time12")}</option>
@@ -6682,11 +6731,37 @@ function LocalesForm({ initial, onSave }) {
           </Field>
         </div>{" "}
         <TimeZoneField value={timezone} onChange={setZoneDraft} />
-        <p className="settings-hint tz-preview">
-          {t("lang.preview", {
-            sample,
-          })}
-        </p>
+      </div>{" "}
+      <div className="settings-card">
+        <p className="settings-kicker">{t("lang.sectionNumbers")}</p>
+        <Field label={t("lang.numberFormat")}>
+          {" "}
+          <Select
+            value={numberFormat}
+            onChange={(e) => { setRegionId(null); setNumberDraft(asNumberFormat(e.target.value)); }}
+          >
+            {" "}
+            <option value="auto">{t("lang.numberAuto")}</option>
+            <option value="space-comma">{t("lang.numberSpaceComma")}</option>
+            <option value="comma-dot">{t("lang.numberCommaDot")}</option>
+            <option value="dot-comma">{t("lang.numberDotComma")}</option>
+            <option value="apostrophe-comma">{t("lang.numberApostropheComma")}</option>
+          </Select>{" "}
+          <p className="settings-hint">{t("lang.numberHint")}</p>
+        </Field>
+      </div>{" "}
+      <div className="settings-card">
+        <p className="settings-kicker">{t("lang.sectionSample")}</p>
+        <div className="lang-sample" aria-hidden>
+          <span className="lang-sample-row">
+            <span className="lang-sample-label">{t("lang.sampleDate")}</span>
+            <span className="lang-sample-value">{sample}</span>
+          </span>
+          <span className="lang-sample-row">
+            <span className="lang-sample-label">{t("lang.sampleNumbers")}</span>
+            <span className="lang-sample-value">{formatNumber(1234567.89, numberFormat)}</span>
+          </span>
+        </div>
       </div>
     </form>
   );

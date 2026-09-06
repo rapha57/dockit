@@ -1748,8 +1748,30 @@ html.dark .settings-hint.is-warn {
 .settings-card .settings-toggles label {
   min-height: 2rem;
 }
-.tz-preview {
+.lang-sample {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--color-elevated) 40%, transparent);
+}
+.lang-sample-row {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+.lang-sample-label {
+  flex-shrink: 0;
+  min-width: 4.5rem;
+  font-size: 0.75rem;
+  color: var(--color-subtle);
+}
+.lang-sample-value {
   font-variant-numeric: tabular-nums;
+  color: var(--color-fg);
+  font-size: 0.875rem;
 }
 .brand-row,
 .field-row {

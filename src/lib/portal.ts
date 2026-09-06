@@ -19,7 +19,7 @@ import {
 	publicTrash,
 	emptyTrash
 } from "./history";
-import { t, withLocale, asTimeFormat, asTimeZone, DATE_FORMATS } from "./i18n";
+import { t, withLocale, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "./i18n";
 import { adGroupKey, asDirectories, asLoginOrder, directoryReady, pickDirectory, syncLegacyLdap } from "./ldap-runtime";
 import { defaultTagHex, remapTagHex } from "./tag-colors";
 import {
@@ -1694,6 +1694,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	dateFormat: z.enum(["ymd", "yyyy", "dmy", "mdy", "iso"]).optional(),
 	timeFormat: z.enum(["24h", "12h"]).optional(),
 	timezone: z.string().max(80).optional(),
+	numberFormat: z.enum(["auto", "space-comma", "comma-dot", "dot-comma", "apostrophe-comma"]).optional(),
 	tabId: z.string().optional()
 })).handler(async ({ data, request }) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
@@ -1728,7 +1729,8 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		dateFormat: DATE_FORMATS.includes(data.dateFormat) ? data.dateFormat : DATE_FORMATS.includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd",
 		timeFormat: data.timeFormat === "12h" || data.timeFormat === "24h" ? data.timeFormat : asTimeFormat(doc.settings.timeFormat),
 		timezone: typeof data.timezone === "string" ? asTimeZone(data.timezone) : asTimeZone(doc.settings.timezone),
-		locale: data.locale === "fr" || data.locale === "en" ? data.locale : doc.settings.locale === "fr" ? "fr" : "en"
+		locale: data.locale === "fr" || data.locale === "en" ? data.locale : doc.settings.locale === "fr" ? "fr" : "en",
+		numberFormat: NUMBER_FORMATS.includes(data.numberFormat) ? data.numberFormat : NUMBER_FORMATS.includes(doc.settings.numberFormat) ? doc.settings.numberFormat : "auto"
 	};
 	pruneUnusedTags(doc);
 	appendHistory(doc, user, {
