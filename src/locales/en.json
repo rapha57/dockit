@@ -139,7 +139,7 @@
     "importJson": "Import JSON",
     "addLink": "Add a link",
     "addCard": "Add a card",
-    "addCategory": "Add a block",
+    "addCategory": "Add a category",
     "saved": "Saved"
   },
   "aria": {
@@ -152,8 +152,8 @@
     "deleteSpace": "Delete this space",
     "editCategory": "Edit category",
     "deleteCategory": "Delete category",
-    "addBlock": "Add a block",
-    "restrictedTab": "Restricted tab",
+    "addBlock": "Add a category",
+    "restrictedTab": "Restricted space",
     "favorites": "Favorites"
   },
   "stats": {
@@ -348,11 +348,11 @@
     "permLead": "Who can view and edit this space.",
     "hideLabel": "Hide the name — Icon only",
     "visibility": "Visibility",
-    "seeHint": "By default everyone can see this tab, including when signed out. The admin always sees everything.",
+    "seeHint": "By default everyone can see this space, including when signed out. The admin always sees everything.",
     "restrict": "Restrict access",
     "noAccounts": "No account to allow — Create accounts in Users.",
     "editors": "Editors",
-    "editHint": "Can edit cards and categories in this tab."
+    "editHint": "Can edit cards and categories in this space."
   },
   "category": {
     "edit": "Edit category",
@@ -432,7 +432,7 @@
     "sessionExpired": "Session expired. Sign in again.",
     "userNotFound": "User not found",
     "readonly": "Read-only account",
-    "noEditTab": "No permission to edit this tab",
+    "noEditTab": "No permission to edit this space",
     "insufficient": "Insufficient permissions",
     "adminOnly": "Admin only",
     "noManageSpaces": "No permission to manage spaces",
@@ -1017,7 +1017,7 @@
     "noLocked": "No locked space.",
     "canEdit": "Can edit",
     "canCreateSpaces": "Can create spaces",
-    "canCreateHint": "Also allows reordering tabs.",
+    "canCreateHint": "Also allows reordering spaces.",
     "changePassword": "Change password",
     "newPassword": "New password",
     "accounts": "Accounts",

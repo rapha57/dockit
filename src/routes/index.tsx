@@ -59,6 +59,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/field";
 import { EmptyState } from "@/components/empty-state";
+import { useEdgeFade } from "@/components/edge-fade";
 import { ConfirmDialog, askConfirm } from "@/components/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -171,7 +172,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.15";
+var PORTAL_VERSION = "2026.09.06.16";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -5568,6 +5569,7 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
   const [ready, setReady] = useState(false);
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
+  const fade = useEdgeFade();
   async function reload() {
     const res = await listHistory({
       data: {
@@ -5828,7 +5830,23 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
                 </Button>
               ) : null}
             </div>
-            <div className="am-list-wrap">
+            {ready && rows.length ? (
+              <div className={`am-list-head is-history${pane === "recovery" ? " is-recovery" : ""}`}>
+                <div className="am-row-cells">
+                  <SortLabel id="a" sort={col.sort} onToggle={col.toggle}>
+                    {pane === "audit" ? t("audit.csvAction") : t("audit.csvItem")}
+                  </SortLabel>
+                  <SortLabel id="b" sort={col.sort} onToggle={col.toggle}>
+                    {pane === "audit" ? t("audit.csvItem") : t("audit.csvPlace")}
+                  </SortLabel>
+                  <SortLabel id="date" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                    {t("audit.csvDate")}
+                  </SortLabel>
+                  {pane === "recovery" ? <span className="am-row-end" /> : null}
+                </div>
+              </div>
+            ) : null}
+            <div ref={fade} className="am-list-wrap">
               {!ready ? (
                 <div className="am-list" aria-busy="true" aria-label={t("history.loading")}>
                   <Skeleton className="h-9 w-full" />
@@ -5839,20 +5857,7 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
               ) : !rows.length ? (
                 <EmptyState compact icon={pane === "audit" ? ScrollText : Undo2} text={emptyText} />
               ) : (
-                <div className="am-list is-history" role="list">
-                  <div className="am-list-head">
-                    <div className="am-row-cells">
-                      <SortLabel id="a" sort={col.sort} onToggle={col.toggle}>
-                        {pane === "audit" ? t("audit.csvAction") : t("audit.csvItem")}
-                      </SortLabel>
-                      <SortLabel id="b" sort={col.sort} onToggle={col.toggle}>
-                        {pane === "audit" ? t("audit.csvItem") : t("audit.csvPlace")}
-                      </SortLabel>
-                      <SortLabel id="date" sort={col.sort} onToggle={col.toggle} className="am-row-end">
-                        {t("audit.csvDate")}
-                      </SortLabel>
-                    </div>
-                  </div>
+                <div className={`am-list is-history${pane === "recovery" ? " is-recovery" : ""}`} role="list">
                   {pane === "audit"
                     ? auditRows.map((row) => (
                         <div key={row.id} className="am-row is-static" role="listitem">
@@ -6000,6 +6005,7 @@ function AdminPanel({
     return session?.canManageSettings;
   });
   const current = sections.find((s) => s.id === tab) ?? sections[0];
+  const fade = useEdgeFade();
   return (
     <div className="settings-frame is-wide is-access">
       {" "}
@@ -6041,7 +6047,7 @@ function AdminPanel({
           </Button>
         </div>
         {tab === "general" ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <SettingsForm
               initial={settings}
@@ -6052,22 +6058,22 @@ function AdminPanel({
             />
           </div>
         ) : tab === "locales" ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <LocalesForm initial={settings} onSave={(payload) => onSaveSettings(payload)} />
           </div>
         ) : tab === "presentation" ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <PresentationForm initial={settings} onSave={(payload) => onSaveSettings(payload)} />
           </div>
         ) : tab === "reachability" ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <ReachabilityForm initial={settings} onSave={(payload) => onSaveSettings(payload)} />
           </div>
         ) : tab === "security" ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <SecurityForm
               initial={settings}
@@ -6076,12 +6082,12 @@ function AdminPanel({
             />
           </div>
         ) : tab === "debug" ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <DebugPanel settings={settings} runtime={runtime} session={session} />
           </div>
         ) : tab === "info" ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <InfoBarForm
               initial={settings}
@@ -6091,12 +6097,12 @@ function AdminPanel({
             />
           </div>
         ) : tab === "themes" ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <ThemeForm initial={settings} busy={busy} onCancel={onCancel} onSave={onSaveTheme} />
           </div>
         ) : tab === "backup" ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <BackupForm
               token={token}
@@ -6107,7 +6113,7 @@ function AdminPanel({
             />
           </div>
         ) : tab === "about" || tab === "reset" || !session?.canManageSettings ? (
-          <div className="settings-pane">
+          <div ref={fade} className="settings-pane">
             {" "}
             <AboutForm
               busy={busy}
@@ -6116,9 +6122,9 @@ function AdminPanel({
             />
           </div>
         ) : (
-          <div className="settings-pane">
+          <div className="settings-pane is-fill">
             {" "}
-            <TagManager
+            <TagManager>
               tags={tags}
               colors={settings.tagColors}
               busy={busy}
@@ -7785,6 +7791,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
   const [dragKey, setDragKey] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [oidcDraft, setOidcDraft] = useState(false);
+  const fade = useEdgeFade();
   function patchDir(id, next) {
     setDirs((cur) => {
       const out = cur.map((d) =>
@@ -8142,7 +8149,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
           <Plus className="size-3.5" /> {t("access.idpAddOidc")}
         </Button>
       </div>
-      <div className="am-list-wrap">
+      <div ref={fade} className="am-list-wrap">
         <div ref={listRef} className="am-providers" role="list">
           {ranked.map(renderCard)}
           {extras.map(renderCard)}
@@ -8470,6 +8477,7 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
   const [q, setQ] = useState("");
   const [remote, setRemote] = useState([]);
   const [busyIcon, setBusyIcon] = useState(false);
+  const fade = useEdgeFade();
   const query = q.trim().toLowerCase();
   const products = query
     ? PRODUCT_ICONS.filter((p) => p.label.toLowerCase().includes(query) || p.slug.includes(query))
@@ -8626,7 +8634,7 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
                   <X className="size-4" />
                 </Button>
               </div>{" "}
-              <div className="icon-pick-body">
+              <div ref={fade} className="icon-pick-body">
                 {" "}
                 <div className="icon-pick-current">
                   {" "}
@@ -8858,6 +8866,7 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
       : []),
   ];
   const current = sections.find((s) => s.id === pane) ?? sections[0];
+  const fade = useEdgeFade();
   return (
     <form
       className="settings-frame is-access is-item"
@@ -8909,7 +8918,7 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
             <X className="size-4" />
           </Button>
         </div>{" "}
-        <div className="settings-pane">
+        <div ref={fade} className="settings-pane">
           {pane === "permissions" && canAcl ? (
             <div className="settings-stack">
               {" "}
@@ -9029,6 +9038,7 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
       : []),
   ];
   const current = sections.find((s) => s.id === pane) ?? sections[0];
+  const fade = useEdgeFade();
   return (
     <form
       className="settings-frame is-access is-item"
@@ -9079,7 +9089,7 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
             <X className="size-4" />
           </Button>
         </div>{" "}
-        <div className="settings-pane">
+        <div ref={fade} className="settings-pane">
           {pane === "permissions" && canAcl ? (
             <div className="settings-stack">
               {" "}
@@ -9362,6 +9372,7 @@ function AppForm({
   const [probeBusy, setProbeBusy] = useState(false);
   const [pane, setPane] = useState("general");
   const catOptions = useMemo(() => categories, [categories]);
+  const fade = useEdgeFade();
   const paneSafe =
     (pane === "lien" && kind !== "app") || pane === "tags"
       ? "general"
@@ -9599,7 +9610,7 @@ function AppForm({
             </Button>
           </div>
         </div>{" "}
-        <div className="settings-pane">
+        <div ref={fade} className="settings-pane">
           <div className={paneSafe === "general" ? "settings-stack" : "hidden"}>
             <div className="settings-card">
               <p className="settings-kicker">{t("item.general")}</p>
@@ -9977,6 +9988,7 @@ function TagManager({
   const [alpha, setAlpha] = useState(tagsAlpha !== false);
   const [drafts, setDrafts] = useState({});
   const [createDraft, setCreateDraft] = useState("");
+  const fade = useEdgeFade();
   const col = useColSort();
   const sortedTags = col.apply(tags, (row, key) => {
     if (key === "name") return row.name || "";
@@ -10077,7 +10089,7 @@ function TagManager({
           <p className="settings-hint">{t("tags.alphaHint")}</p>
         </div>
       </div>
-      <div className="settings-card">
+      <div className="settings-card tag-list-card">
         <p className="settings-kicker">
           {tags.length ? tp("tags.count", tags.length) : t("item.tags")}
         </p>
@@ -10098,7 +10110,7 @@ function TagManager({
         {tags.length === 0 ? (
           <p className="settings-hint">{t("tags.empty")}</p>
         ) : (
-          <div className="am-list tag-list">
+          <>
             <div className="am-list-head tag-list-head">
               <span className="am-chevron-spacer" />
               <SortLabel id="name" sort={col.sort} onToggle={col.toggle}>
@@ -10109,6 +10121,8 @@ function TagManager({
               </SortLabel>
               <span className="am-chevron-spacer" />
             </div>
+            <div ref={fade} className="am-list-wrap">
+            <div className="am-list tag-list">
             {sortedTags.map((row) => {
               const draft = drafts[row.name] ?? row.name;
               const hex = lookupTagColor(row.name, localColors) ?? defaultTagHex(row.name);
@@ -10162,7 +10176,9 @@ function TagManager({
                 </div>
               );
             })}
-          </div>
+            </div>
+            </div>
+          </>
         )}
       </div>
     </form>

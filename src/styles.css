@@ -1564,6 +1564,7 @@ html.dark .debug-row.is-warn .debug-level {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .settings-pane:not(.is-access) {
   margin-bottom: 1.25rem;
@@ -1630,6 +1631,7 @@ html.dark .debug-row.is-warn .debug-level {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 1.1rem 1.15rem 1.25rem;
+  scrollbar-gutter: stable;
 }
 .icon-pick-current {
   display: flex;
@@ -2284,9 +2286,15 @@ button.user-row-main:hover .user-row-name {
   margin-top: auto;
 }
 .tag-list-card {
+  display: flex;
   flex: 1;
   min-height: 0;
+  flex-direction: column;
   overflow: hidden;
+}
+.tag-list-card .am-list-wrap {
+  flex: 1;
+  min-height: 0;
 }
 .tag-manager-list {
   display: flex;
@@ -2301,7 +2309,7 @@ button.user-row-main:hover .user-row-name {
   list-style: none;
 }
 .tag-list {
-  margin-top: 0.35rem;
+  margin-top: 0;
 }
 .tag-item {
   cursor: default;
@@ -2736,6 +2744,7 @@ html.dark .about-mark .dockit-stroke {
   min-height: 0;
   flex: 1;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 .note-body a {
   color: var(--color-primary);
@@ -3097,9 +3106,14 @@ html.dark .dockit-mark {
 .am-row.is-static .am-row-head {
   cursor: default;
 }
-.am-list.is-history .am-row-cells {
-  grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 1.1fr) minmax(8.5rem, 11rem) minmax(2rem, 2.5rem);
+.am-list.is-history .am-row-cells,
+.am-list-head.is-history .am-row-cells {
+  grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 1.1fr) minmax(8.5rem, 1fr);
   align-items: start;
+}
+.am-list.is-history.is-recovery .am-row-cells,
+.am-list-head.is-history.is-recovery .am-row-cells {
+  grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 1.1fr) minmax(8.5rem, 11rem) minmax(2rem, 2.5rem);
 }
 .am-list.is-history .am-row-title {
   white-space: normal;
@@ -3210,6 +3224,7 @@ html.dark .dockit-mark {
   flex-direction: column;
   overflow: hidden;
   padding-right: 0;
+  scrollbar-gutter: auto;
 }
 .settings-pane.is-access .empty-page.is-compact {
   padding: 2.75rem 1rem;
@@ -3241,6 +3256,9 @@ html.dark .dockit-mark {
   gap: 0.45rem 0.65rem;
   padding: 0 0 0.85rem;
   border-bottom: 1px solid color-mix(in oklab, var(--color-border) 72%, transparent);
+  position: relative;
+  z-index: 2;
+  background: var(--color-surface);
 }
 .am-toolbar-title {
   margin-right: auto;
@@ -3350,7 +3368,38 @@ html.dark .am-filters.is-pills button.is-on {
   flex: 1;
   min-width: 0;
   overflow: auto;
-  padding-top: 0.15rem;
+  scrollbar-gutter: stable;
+}
+.is-fade-top {
+  --edge-top: 2.35rem;
+}
+.is-fade-bottom {
+  --edge-bot: 2.35rem;
+}
+.is-fade-top,
+.is-fade-bottom {
+  --fade-mask: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--edge-top, 0px),
+    #000 calc(100% - var(--edge-bot, 0px)),
+    transparent
+  );
+  -webkit-mask-image: var(--fade-mask), linear-gradient(#000, #000);
+  mask-image: var(--fade-mask), linear-gradient(#000, #000);
+  -webkit-mask-size: calc(100% - var(--sb, 0px)) 100%, var(--sb, 0px) 100%;
+  mask-size: calc(100% - var(--sb, 0px)) 100%, var(--sb, 0px) 100%;
+  -webkit-mask-position: 0 0, 100% 0;
+  mask-position: 0 0, 100% 0;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+@media (prefers-reduced-motion: reduce) {
+  .is-fade-top,
+  .is-fade-bottom {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
 }
 .am-list {
   display: flex;
@@ -3366,8 +3415,7 @@ html.dark .am-filters.is-pills button.is-on {
   padding: 0.05rem 0.2rem;
 }
 .am-list-head {
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   z-index: 1;
   min-height: 1.85rem;
   padding: 0.55rem 0.2rem 0.4rem;
@@ -3378,6 +3426,10 @@ html.dark .am-filters.is-pills button.is-on {
   font-weight: 500;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+.am-list-head .am-chevron-spacer {
+  height: auto;
+  min-height: 0;
 }
 .am-sort {
   display: inline-flex;

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "r
 import { Baseline, Bold, Code, FileCode, Italic, Link, Type } from "lucide-react";
 import { htmlToMd, mdToHtml, safeHref, escapeHtml, NOTE_COLORS, toHex } from "@/lib/note-md";
 import { t } from "@/lib/i18n";
+import { useEdgeFade } from "@/components/edge-fade";
 
 type NoteEditorProps = {
   value: string;
@@ -9,10 +10,12 @@ type NoteEditorProps = {
 };
 
 export function NoteBody({ source }: { source: string }) {
+  const fade = useEdgeFade();
   const html = mdToHtml(source || "");
   if (!html) return null;
   return (
     <div
+      ref={fade}
       className="note-scroll note-body text-sm leading-snug text-muted"
       dangerouslySetInnerHTML={{ __html: html }}
     />

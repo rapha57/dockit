@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
 import { EmptyState } from "@/components/empty-state";
+import { useEdgeFade } from "@/components/edge-fade";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EntityPicker } from "@/components/entity-picker";
 import { ExpandRow, NEW_ROW, useExpandSession } from "@/components/expand-row";
@@ -187,11 +188,15 @@ function useDirectory(token) {
   return { users, groups, roles, tabs, busy, apply, setBusy };
 }
 
-function ListShell({ toolbar, children }) {
+function ListShell({ toolbar, head, children }) {
+  const fade = useEdgeFade();
   return (
     <div className="am-work">
       <div className="am-toolbar">{toolbar}</div>
-      <div className="am-list-wrap">{children}</div>
+      {head}
+      <div ref={fade} className="am-list-wrap">
+        {children}
+      </div>
     </div>
   );
 }
@@ -978,6 +983,23 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
           ) : null}
         </>
       }
+      head={
+        empty ? null : (
+          <ListHead
+            cells={[
+              <SortLabel key="u" id="user" sort={col.sort} onToggle={col.toggle}>
+                {t("access.colUser")}
+              </SortLabel>,
+              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle}>
+                {t("users.role")}
+              </SortLabel>,
+              <SortLabel key="s" id="status" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                {t("access.colStatus")}
+              </SortLabel>,
+            ]}
+          />
+        )
+      }
     >
       {empty ? (
         <EmptyState
@@ -994,19 +1016,6 @@ export function AccessUsers({ token, actor, tabs: seedTabs }) {
         />
       ) : (
         <div className="am-list" role="list">
-          <ListHead
-            cells={[
-              <SortLabel key="u" id="user" sort={col.sort} onToggle={col.toggle}>
-                {t("access.colUser")}
-              </SortLabel>,
-              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle}>
-                {t("users.role")}
-              </SortLabel>,
-              <SortLabel key="s" id="status" sort={col.sort} onToggle={col.toggle} className="am-row-end">
-                {t("access.colStatus")}
-              </SortLabel>,
-            ]}
-          />
           {rows.map((u) => {
             const open = expand.openId === u.id || (u.phantom && creating);
             const rowDraft = open ? draft : null;
@@ -1424,6 +1433,23 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
           ) : null}
         </>
       }
+      head={
+        empty ? null : (
+          <ListHead
+            cells={[
+              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle}>
+                {t("access.groupName")}
+              </SortLabel>,
+              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle}>
+                {t("users.role")}
+              </SortLabel>,
+              <SortLabel key="m" id="members" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                {t("access.members")}
+              </SortLabel>,
+            ]}
+          />
+        )
+      }
     >
       {empty ? (
         <EmptyState
@@ -1440,19 +1466,6 @@ export function AccessGroups({ token, actor, tabs: seedTabs, directories }) {
         />
       ) : (
         <div className="am-list" role="list">
-          <ListHead
-            cells={[
-              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle}>
-                {t("access.groupName")}
-              </SortLabel>,
-              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle}>
-                {t("users.role")}
-              </SortLabel>,
-              <SortLabel key="m" id="members" sort={col.sort} onToggle={col.toggle} className="am-row-end">
-                {t("access.members")}
-              </SortLabel>,
-            ]}
-          />
           {rows.map((g) => {
             const open = expand.openId === g.id || (g.phantom && creating);
             const rowDraft = open ? draft : null;
@@ -1785,6 +1798,23 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
           </Button>
         </>
       }
+      head={
+        empty ? null : (
+          <ListHead
+            cells={[
+              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle}>
+                {t("access.roleName")}
+              </SortLabel>,
+              <SortLabel key="h" id="holders" sort={col.sort} onToggle={col.toggle}>
+                {t("access.roleHolders")}
+              </SortLabel>,
+              <SortLabel key="t" id="type" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                {t("access.colType")}
+              </SortLabel>,
+            ]}
+          />
+        )
+      }
     >
       {empty ? (
         <EmptyState
@@ -1799,19 +1829,6 @@ export function AccessRoles({ token, tabs: seedTabs, directories }) {
         />
       ) : (
         <div className="am-list" role="list">
-          <ListHead
-            cells={[
-              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle}>
-                {t("access.roleName")}
-              </SortLabel>,
-              <SortLabel key="h" id="holders" sort={col.sort} onToggle={col.toggle}>
-                {t("access.roleHolders")}
-              </SortLabel>,
-              <SortLabel key="t" id="type" sort={col.sort} onToggle={col.toggle} className="am-row-end">
-                {t("access.colType")}
-              </SortLabel>,
-            ]}
-          />
           {rows.map((r) => {
             const open = expand.openId === r.id || (r.phantom && creating);
             const rowDraft = open ? draft : null;

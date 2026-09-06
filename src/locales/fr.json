@@ -139,7 +139,7 @@
     "importJson": "Importer JSON",
     "addLink": "Ajouter un lien",
     "addCard": "Ajouter une carte",
-    "addCategory": "Ajouter un bloc",
+    "addCategory": "Ajouter une catégorie",
     "saved": "Enregistré"
   },
   "aria": {
@@ -152,8 +152,8 @@
     "deleteSpace": "Supprimer cet espace",
     "editCategory": "Modifier la catégorie",
     "deleteCategory": "Supprimer la catégorie",
-    "addBlock": "Ajouter un bloc",
-    "restrictedTab": "Onglet restreint",
+    "addBlock": "Ajouter une catégorie",
+    "restrictedTab": "Espace restreint",
     "favorites": "Favoris"
   },
   "stats": {
@@ -348,11 +348,11 @@
     "permLead": "Qui peut voir et modifier cet espace.",
     "hideLabel": "Masquer le nom — Icône seule",
     "visibility": "Visibilité",
-    "seeHint": "Par défaut tout le monde voit cet onglet, y compris hors connexion. L’admin voit toujours tout.",
+    "seeHint": "Par défaut tout le monde voit cet espace, y compris hors connexion. L’admin voit toujours tout.",
     "restrict": "Restreindre l’accès",
     "noAccounts": "Aucun compte à autoriser — Créer les comptes dans Utilisateurs.",
     "editors": "Éditeurs",
-    "editHint": "Peuvent modifier les cartes et catégories de cet onglet."
+    "editHint": "Peuvent modifier les cartes et catégories de cet espace."
   },
   "category": {
     "edit": "Modifier la catégorie",
@@ -395,7 +395,7 @@
     "sessionExpired": "Session expirée. Se reconnecter.",
     "cardDuplicated": "Carte dupliquée",
     "spaceDuplicated": "Espace dupliqué",
-    "categoryDuplicated": "Section dupliquée",
+    "categoryDuplicated": "Catégorie dupliquée",
     "prefsReset": "Préférences de cet appareil réinitialisées",
     "clicksReset": "Compteurs de clics remis à zéro",
     "tagsUpdated": "Étiquettes mises à jour",
@@ -432,7 +432,7 @@
     "sessionExpired": "Session expirée. Se reconnecter.",
     "userNotFound": "Utilisateur introuvable",
     "readonly": "Compte en lecture seule",
-    "noEditTab": "Pas le droit d'éditer cet onglet",
+    "noEditTab": "Pas le droit d'éditer cet espace",
     "insufficient": "Droits insuffisants",
     "adminOnly": "Réservé à l'administrateur",
     "noManageSpaces": "Pas le droit de gérer les espaces",
@@ -1017,7 +1017,7 @@
     "noLocked": "Aucun espace verrouillé.",
     "canEdit": "Peut modifier",
     "canCreateSpaces": "Peut créer des espaces",
-    "canCreateHint": "Permet aussi de réordonner les onglets.",
+    "canCreateHint": "Permet aussi de réordonner les espaces.",
     "changePassword": "Changer le mot de passe",
     "newPassword": "Nouveau mot de passe",
     "accounts": "Comptes",
