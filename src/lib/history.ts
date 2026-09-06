@@ -3,7 +3,18 @@ import { t, formatWhen } from "./i18n";
 export const HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 export const MAX_HISTORY = 400;
 
-export function snapshotTab(tab) {
+export type TabSnapshot = {
+	id: string;
+	name: string;
+	icon: string;
+	sortOrder: number;
+	restricted: boolean;
+	viewers: string[];
+	editors: string[];
+	hideLabel: boolean;
+};
+
+export function snapshotTab(tab: any): TabSnapshot {
 	return {
 		id: String(tab.id || ""),
 		name: String(tab.name || "Space").slice(0, 40),
@@ -16,7 +27,17 @@ export function snapshotTab(tab) {
 	};
 }
 
-export function snapshotCat(cat) {
+export type CategorySnapshot = {
+	id: string;
+	name: string;
+	icon: string;
+	sortOrder: number;
+	restricted: boolean;
+	viewers: string[];
+	editors: string[];
+};
+
+export function snapshotCat(cat: any): CategorySnapshot {
 	return {
 		id: String(cat.id || ""),
 		name: String(cat.name || "Category").slice(0, 60),
@@ -28,7 +49,27 @@ export function snapshotCat(cat) {
 	};
 }
 
-export function snapshotApp(app) {
+export type AppLink = { title: string; url: string };
+export type AppSnapshot = {
+	id: string;
+	categoryId: string;
+	kind: "app" | "note" | "embed";
+	title: string;
+	description: string;
+	url: string;
+	icon: string;
+	openIn: "_self" | "_blank";
+	tags: string[];
+	colSpan: 1 | 2 | 3;
+	rowSpan: 1 | 2 | 3;
+	sortOrder: number;
+	check: "http" | "icmp" | "off";
+	checkHost: string;
+	clicks: number;
+	links: AppLink[];
+};
+
+export function snapshotApp(app: any): AppSnapshot {
 	return {
 		id: String(app.id || ""),
 		categoryId: String(app.categoryId || ""),
@@ -38,7 +79,7 @@ export function snapshotApp(app) {
 		url: String(app.url || "").slice(0, 2e3),
 		icon: String(app.icon || "Link"),
 		openIn: app.openIn === "_self" ? "_self" : "_blank",
-		tags: Array.isArray(app.tags) ? app.tags.map((t) => String(t).slice(0, 32)).slice(0, 3) : [],
+		tags: Array.isArray(app.tags) ? app.tags.map((v: unknown) => String(v).slice(0, 32)).slice(0, 3) : [],
 		colSpan: app.colSpan === 2 || app.colSpan === 3 ? app.colSpan : 1,
 		rowSpan: app.rowSpan === 2 || app.rowSpan === 3 ? app.rowSpan : 1,
 		sortOrder: Number(app.sortOrder) || 1,
@@ -46,7 +87,7 @@ export function snapshotApp(app) {
 		checkHost: String(app.checkHost || "").slice(0, 253),
 		clicks: Math.max(0, Math.floor(Number(app.clicks) || 0)),
 		links: Array.isArray(app.links)
-			? app.links.slice(0, 4).map((l) => ({
+			? app.links.slice(0, 4).map((l: any) => ({
 					title: String(l?.title || "").slice(0, 40),
 					url: String(l?.url || "").slice(0, 2e3)
 				}))
@@ -54,14 +95,14 @@ export function snapshotApp(app) {
 	};
 }
 
-function snapshotFromDisk(raw) {
+function snapshotFromDisk(raw: any): any {
 	if (!raw || typeof raw !== "object") return null;
 	const s = { ...raw };
 	if (s.space && !s.tab) s.tab = s.space;
 	if (s.card && !s.app) s.app = s.card;
 	if (Array.isArray(s.cards) && !s.apps) s.apps = s.cards;
 	if (Array.isArray(s.categories)) {
-		s.categories = s.categories.map((c) => {
+		s.categories = s.categories.map((c: any) => {
 			if (!c || typeof c !== "object") return c;
 			return {
 				...c,
@@ -72,7 +113,7 @@ function snapshotFromDisk(raw) {
 	return s;
 }
 
-export function snapshotToDisk(snap) {
+export function snapshotToDisk(snap: any): any {
 	if (!snap || typeof snap !== "object") return snap;
 	const s = { ...snap };
 	if (s.tab) {
@@ -88,7 +129,7 @@ export function snapshotToDisk(snap) {
 		delete s.apps;
 	}
 	if (Array.isArray(s.categories)) {
-		s.categories = s.categories.map((c) => {
+		s.categories = s.categories.map((c: any) => {
 			if (!c || typeof c !== "object") return c;
 			const x = { ...c };
 			if (x.apps) {
@@ -101,10 +142,22 @@ export function snapshotToDisk(snap) {
 	return s;
 }
 
-export function asHistory(raw) {
+export type HistoryRestored = { tab: boolean; categories: string[]; apps: string[] };
+export type HistoryEvent = {
+	id: string;
+	at: number;
+	actor: string;
+	type: string;
+	label: string;
+	purged: boolean;
+	restored: HistoryRestored;
+	snapshot: any;
+};
+
+export function asHistory(raw: unknown): HistoryEvent[] {
 	if (!Array.isArray(raw)) return [];
-	const out = [];
-	for (const row of raw) {
+	const out: HistoryEvent[] = [];
+	for (const row of raw as any[]) {
 		if (!row || typeof row !== "object") continue;
 		const type = String(row.type || "").slice(0, 40);
 		if (!type) continue;
@@ -132,12 +185,12 @@ export function asHistory(raw) {
 	return out;
 }
 
-export function pruneHistory(doc) {
+export function pruneHistory(doc: { history?: HistoryEvent[] }) {
 	const cutoff = Date.now() - HISTORY_MS;
 	let rows = (Array.isArray(doc.history) ? doc.history : []).filter((ev) => Number(ev?.at) >= cutoff);
 	if (rows.length > MAX_HISTORY) {
-		const deletes = [];
-		const rest = [];
+		const deletes: HistoryEvent[] = [];
+		const rest: HistoryEvent[] = [];
 		for (const ev of rows) {
 			if (String(ev.type || "").endsWith(".delete") && !ev.purged && ev.snapshot) deletes.push(ev);
 			else rest.push(ev);
@@ -148,7 +201,11 @@ export function pruneHistory(doc) {
 	doc.history = rows;
 }
 
-export function appendHistory(doc, user, payload) {
+export function appendHistory(
+	doc: { history?: HistoryEvent[] },
+	user: { username?: string } | null | undefined,
+	payload: { type?: string; label?: string; snapshot?: unknown },
+) {
 	if (!Array.isArray(doc.history)) doc.history = [];
 	pruneHistory(doc);
 	doc.history.push({
@@ -164,7 +221,7 @@ export function appendHistory(doc, user, payload) {
 	if (doc.history.length > MAX_HISTORY) doc.history = doc.history.slice(-MAX_HISTORY);
 }
 
-export function eventPath(ev) {
+export function eventPath(ev: HistoryEvent | null | undefined): string {
 	const snap = ev?.snapshot || {};
 	const tab = snap.tab?.name || snap.space?.name || "";
 	const cat = snap.category?.name || "";
@@ -172,7 +229,9 @@ export function eventPath(ev) {
 	return tab || cat || "";
 }
 
-export function publicAudit(history, limit = 200) {
+export type AuditRow = { id: string; at: number; actor: string; type: string; label: string; path: string };
+
+export function publicAudit(history: HistoryEvent[] | null | undefined, limit = 200): AuditRow[] {
 	const rows = (history || []).slice().reverse().map((ev) => ({
 		id: ev.id,
 		at: ev.at,
@@ -185,11 +244,11 @@ export function publicAudit(history, limit = 200) {
 	return rows.slice(0, limit);
 }
 
-function csvCell(value) {
+function csvCell(value: unknown): string {
 	return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
-export function auditCsv(rows) {
+export function auditCsv(rows: AuditRow[] | null | undefined): string {
 	const header = [
 		t("audit.csvDate"),
 		t("audit.csvAction"),
@@ -211,15 +270,28 @@ export function auditCsv(rows) {
 	return `\uFEFF${lines.join("\r\n")}`;
 }
 
-function isRestored(ev, scope, id) {
+function isRestored(ev: HistoryEvent, scope: "tab" | "category" | "card", id: string): boolean {
 	const r = ev.restored || { tab: false, categories: [], apps: [] };
 	if (scope === "tab") return Boolean(r.tab);
 	if (scope === "category") return (r.categories || []).includes(id);
 	return (r.apps || []).includes(id);
 }
 
-export function publicTrash(history) {
-	const out = [];
+export type TrashRow = {
+	id: string;
+	scope: "card" | "category" | "tab";
+	targetId: string;
+	at: number;
+	actor: string;
+	label: string;
+	kind?: string;
+	icon?: string;
+	path: string;
+	count?: number;
+};
+
+export function publicTrash(history: HistoryEvent[] | null | undefined): TrashRow[] {
+	const out: TrashRow[] = [];
 	for (const ev of history || []) {
 		if (ev.purged || !ev.snapshot) continue;
 		if (!String(ev.type || "").endsWith(".delete")) continue;
@@ -276,7 +348,7 @@ export function publicTrash(history) {
 				kind: "tab",
 				icon: snap.tab.icon,
 				path: "",
-				count: (snap.categories || []).reduce((n, c) => n + (c.apps?.length || 0), 0)
+				count: (snap.categories || []).reduce((n: number, c: any) => n + (c.apps?.length || 0), 0)
 			});
 			for (const cat of snap.categories || []) {
 				if (!isRestored(ev, "category", cat.id)) {
@@ -313,7 +385,7 @@ export function publicTrash(history) {
 	return out.sort((a, b) => b.at - a.at);
 }
 
-export function emptyTrash(doc) {
+export function emptyTrash(doc: { history?: HistoryEvent[] }) {
 	if (!Array.isArray(doc.history)) return;
 	for (const ev of doc.history) {
 		if (!String(ev.type || "").endsWith(".delete")) continue;
