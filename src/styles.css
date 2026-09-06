@@ -1564,19 +1564,27 @@ html.dark .debug-row.is-warn .debug-level {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+.settings-pane:not(.is-access) {
   margin-bottom: 1.25rem;
 }
-.settings-pane.is-bottom-fading:not(.is-top-fading) {
-  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 3.5rem), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 3.5rem), transparent 100%);
+.edge-fade {
+  position: sticky;
+  height: 3.5rem;
+  margin: 0;
+  pointer-events: none;
+  z-index: 1;
+  transition: opacity 140ms ease;
 }
-.settings-pane.is-top-fading:not(.is-bottom-fading) {
-  -webkit-mask-image: linear-gradient(to top, #000 0, #000 calc(100% - 3.5rem), transparent 100%);
-  mask-image: linear-gradient(to top, #000 0, #000 calc(100% - 3.5rem), transparent 100%);
+.edge-fade-top {
+  top: var(--fade-top, 0px);
+  margin-bottom: -3.5rem;
+  background: linear-gradient(to bottom, var(--color-surface), transparent);
 }
-.settings-pane.is-top-fading.is-bottom-fading {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 3.5rem, #000 calc(100% - 3.5rem), transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 3.5rem, #000 calc(100% - 3.5rem), transparent 100%);
+.edge-fade-bottom {
+  bottom: 0;
+  margin-top: -3.5rem;
+  background: linear-gradient(to top, var(--color-surface), transparent);
 }
 .settings-pane.is-fill {
   display: flex;
@@ -3109,7 +3117,6 @@ html.dark .dockit-mark {
 }
 .am-list.is-history .am-row-cells {
   grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 1.1fr) minmax(8.5rem, 11rem) minmax(2rem, 2.5rem);
-  align-items: start;
 }
 .am-list.is-history .am-row-title {
   white-space: normal;
@@ -3378,7 +3385,7 @@ html.dark .am-filters.is-pills button.is-on {
 .am-list-head {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 3;
   min-height: 1.85rem;
   padding: 0.55rem 0.2rem 0.4rem;
   border-bottom: 1px solid color-mix(in oklab, var(--color-border) 65%, transparent);
