@@ -12,27 +12,17 @@ import {
   AppWindow,
   BadgeInfo,
   BarChart3,
-  Baseline,
   Bug,
-  Bold,
   Check,
   Copy,
   ChevronDown,
-  ChevronLeft,
-  ChevronUp,
   CircleUser,
-  Cloud,
-  Code,
   Download,
   ExternalLink,
-  FileCode,
   FileText,
   Folder,
   Globe,
   GripVertical,
-  Italic,
-  KeyRound,
-  Layers,
   LayoutGrid,
   Link,
   History,
@@ -55,7 +45,6 @@ import {
   Star,
   Tags,
   Trash2,
-  Type,
   Undo2,
   Upload,
   User,
@@ -103,15 +92,12 @@ import {
   deleteApp,
   deleteCategory,
   deleteTab,
-  deleteUser,
-  deleteGroup,
   duplicateTab,
   exportAudit,
   exportPortal,
   getPortal,
   grabSiteFavicon,
   importPortal,
-  listUsers,
   manageTags,
   rememberTab,
   moveApp,
@@ -124,10 +110,6 @@ import {
   resetClicks,
   resetPortal,
   saveCustomIcon,
-  saveUser,
-  saveGroup,
-  saveRole,
-  deleteRole,
   startOidc,
   unlockEdit,
   updateOidcSettings,
@@ -153,7 +135,6 @@ import { findUrlDuplicates } from "@/lib/dup-url";
 import { collectInventory, inventoryCsv, inventoryPdf } from "@/lib/inventory";
 import { CSS_MAX, sanitizeThemeCss } from "@/lib/theme-css";
 import { DEFAULT_UI_PREFS, clearUiPrefs, readUiPrefs, writeUiPrefs } from "@/lib/ui-prefs";
-import { PASSWORD_MIN } from "@/lib/security";
 import {
   t,
   te,
@@ -188,7 +169,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.7";
+var PORTAL_VERSION = "2026.09.06.8";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -7704,62 +7685,6 @@ function LockForm({
       ) : null}
     </form>
   );
-}
-function roleLabel(role) {
-  if (role === "admin") return t("users.admin");
-  if (role === "editeur") return t("access.roleEditeur");
-  return t("access.roleLecteur");
-}
-function accessSummary(user, tabs) {
-  const list = tabs || [];
-  if (user.role === "editeur") {
-    const names = list.filter((t) => (user.editTabIds || []).includes(t.id)).map((t) => t.name);
-    if (!names.length) return t("users.noSpaces");
-    return names.join(", ");
-  }
-  const locked = list
-    .filter((t) => t.restricted && (user.viewTabIds || []).includes(t.id))
-    .map((t) => t.name);
-  if (!locked.length) return t("users.publicSpaces");
-  return t("users.publicPlus", {
-    list: locked.join(", "),
-  });
-}
-function catSummary(user, tabs) {
-  const ids = new Set(user.viewCatIds || []);
-  const names = [];
-  for (const tab of tabs || [])
-    for (const cat of tab.categories || []) {
-      if (ids.has(cat.id)) names.push(cat.name);
-    }
-  return names.length ? names.join(", ") : "—";
-}
-function emptyUserDraft(role) {
-  return {
-    kind: "user",
-    id: "",
-    username: "",
-    password: "",
-    role: role || "editeur",
-    viewTabIds: [],
-    editTabIds: [],
-    viewCatIds: [],
-    groupIds: [],
-    canCreateTabs: false,
-  };
-}
-function emptyGroupDraft() {
-  return {
-    kind: "group",
-    id: "",
-    name: "",
-    role: "lecteur",
-    members: [],
-    viewTabIds: [],
-    editTabIds: [],
-    viewCatIds: [],
-    canCreateTabs: false,
-  };
 }
 function issuerHost(url) {
   try {

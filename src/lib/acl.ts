@@ -356,15 +356,6 @@ export function explain(user, action, resource, doc) {
 	return decide(user, action, resource, doc);
 }
 
-function nodeActions(res) {
-	if (res === "portal") return PORTAL_ACTIONS;
-	return NODE_ACTIONS;
-}
-
-export function actionsOn(user, resource, doc) {
-	return nodeActions(resource.res).filter((a) => can(user, a, resource, doc));
-}
-
 export function effectiveAccess(user, doc) {
 	const portal = PORTAL_ACTIONS.filter((a) => can(user, a, { res: "portal" }, doc));
 	const tabs = [];

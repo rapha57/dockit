@@ -38,7 +38,6 @@
     "resetPrefsConfirm": "Reset preferences? Favorites, open-on-load, collapsed categories and theme are stored in this browser’s local storage and will be cleared. Portal content is not changed."
   },
   "lock": {
-    "title": "Sign in",
     "username": "Username",
     "password": "Password",
     "or": "or",
@@ -55,16 +54,10 @@
     "searchTitle": "Type to search · / to focus · Ctrl+E edit · Ctrl+N new card",
     "done": "Done",
     "space": "Space",
-    "addSpace": "Space",
     "dropHere": "Drop here",
     "addTagOrName": "Add a tag or a name…",
     "removeTag": "Remove {name}",
     "moreSpaces": "More spaces"
-  },
-  "roles": {
-    "admin": "admin",
-    "editeur": "editor",
-    "lecteur": "viewer"
   },
   "empty": {
     "favs": "Add a card to favorites with the star.",
@@ -158,7 +151,6 @@
     "audit": "Audit",
     "recoveryLead": "Items deleted in the last 30 days.",
     "auditLead": "Actions from the last 30 days.",
-    "all": "All",
     "cards": "Cards",
     "categories": "Categories",
     "spaces": "Spaces",
@@ -191,7 +183,6 @@
     "portalName": "Portal name",
     "subtitle": "Subtitle",
     "documentTitle": "Browser tab title",
-    "language": "Language",
     "sectionsAria": "Settings sections",
     "brandClick": "Click a thumbnail to import. A logo also copies the favicon.",
     "resetBody": "Reset the portal: base setup, statistics cleared, accounts removed, admin / admin access, a single Home space with a sample card.",

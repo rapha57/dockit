@@ -55,23 +55,6 @@ export function adGroupKey(dirId, dn) {
 	return `${String(dirId || "").slice(0, 80)}:${normDn(dn)}`.slice(0, 400);
 }
 
-export function blankDirectory() {
-	return {
-		id: crypto.randomUUID(),
-		enabled: false,
-		host: "",
-		port: 636,
-		tls: true,
-		tlsVerify: true,
-		bindDn: "",
-		bindPassword: "",
-		baseDn: "",
-		userFilter: "",
-		domain: "",
-		autoCreate: false
-	};
-}
-
 export function asDirectory(row) {
 	if (!row || typeof row !== "object") return null;
 	const tls = row.tls !== false && row.ldapTls !== false;
@@ -181,11 +164,6 @@ export function asLoginOrder(raw, dirs) {
 	if (!seen.has("local")) out.unshift("local");
 	for (const d of list) push(d.id);
 	return out;
-}
-
-export function ldapReady(s) {
-	if (s && (s.host || s.id) && s.ldapHost == null) return directoryReady(asDirectory(s));
-	return asDirectories(s).some(directoryReady);
 }
 
 export function pickDirectory(s, id) {

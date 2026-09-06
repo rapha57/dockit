@@ -15,7 +15,6 @@ let timeFormat = "24h";
 let timeZone = "";
 
 export const DATE_FORMATS = ["ymd", "yyyy", "dmy", "mdy", "iso"];
-export const TIME_FORMATS = ["24h", "12h"];
 
 function flatten(obj, prefix = "") {
 	const out = {};
@@ -30,10 +29,6 @@ function flatten(obj, prefix = "") {
 
 export function asLocale(raw) {
 	return raw === "fr" ? "fr" : "en";
-}
-
-export function getLocale() {
-	return current;
 }
 
 export function setLocale(locale) {

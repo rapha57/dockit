@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes, scryptSync } from "node:crypto";
 import { safeAppHref } from "./safe-href";
 import { MAX_CUSTOM_ICONS, toClientAsset } from "./assets-url";
 import { CSS_MAX, sanitizeThemeCss } from "./theme-css";
@@ -198,34 +198,6 @@ export type ClickStats = {
   year: number;
   spanDays: number;
   fullCatalog?: boolean;
-};
-
-export type PortalData = {
-  settings: PortalSettings;
-  customIcons: CustomIcon[];
-  tabs: PortalTab[];
-  activeTabId: string;
-  categories: PortalCategory[];
-  catalog: (PortalTab & { categories: PortalCategory[] })[];
-  clickStats: ClickStats;
-  session: SessionInfo | null;
-  directory: DirectoryUser[];
-  runtime: {
-    isDev: boolean;
-    publicOrigin: string;
-    trustProxy: boolean;
-  };
-};
-
-type StoredTab = PortalTab & { categories: PortalCategory[] };
-
-type StoreFile = {
-  settings: PortalSettings;
-  customIcons: CustomIcon[];
-  tabs: StoredTab[];
-  lastTabId?: string;
-  clickDays?: Record<string, number>;
-  users: PortalUser[];
 };
 
 var SESSION_MS = 432e5;
@@ -687,11 +659,6 @@ function normalizeCatAccess(cat) {
 		editors
 	};
 }
-function hasPrincipal(list, user) {
-	if (!user) return false;
-	const ids = user._ids || [user.id];
-	return (list || []).some((id) => ids.includes(id));
-}
 function tabCanSee(tab, user, doc) {
 	if (!tab) return false;
 	return can(user, "view", { res: "tab", id: tab.id }, doc);
@@ -820,23 +787,6 @@ function requireCreateTab(doc, token) {
 	const user = requireUser(doc, token);
 	if (isOwnerUser(user) || user.canCreateTabs) return user;
 	throw new Error("errors.noManageSpaces");
-}
-function directAccess(doc, principalId) {
-	const viewTabIds = [];
-	const editTabIds = [];
-	const viewCatIds = [];
-	for (const tab of doc.tabs) {
-		if ((tab.editors || []).includes(principalId)) editTabIds.push(tab.id);
-		if (tab.restricted && (tab.viewers || []).includes(principalId)) viewTabIds.push(tab.id);
-		for (const cat of tab.categories || []) {
-			if (cat.restricted && ((cat.viewers || []).includes(principalId) || (cat.editors || []).includes(principalId))) viewCatIds.push(cat.id);
-		}
-	}
-	return {
-		viewTabIds,
-		editTabIds,
-		viewCatIds
-	};
 }
 function publicUser(u, doc) {
 	const roleIds = roleIdsOf(u);
@@ -995,28 +945,6 @@ function directoryPayload(doc, actor) {
 		tabs: manageTabs(doc),
 		directory: directoryOf(doc)
 	};
-}
-function applyUserAccess(doc, userId, role, viewTabIds, editTabIds, viewCatIds) {
-	if (role === "admin") {
-		stripUserAccess(doc, userId);
-		return;
-	}
-	const views = new Set(viewTabIds);
-	const edits = role === "editeur" ? new Set(editTabIds) : /* @__PURE__ */ new Set();
-	const catViews = new Set(viewCatIds);
-	for (const tab of doc.tabs) {
-		tab.editors = (tab.editors || []).filter((id) => id !== userId);
-		tab.viewers = (tab.viewers || []).filter((id) => id !== userId);
-		if (edits.has(tab.id)) {
-			tab.editors.push(userId);
-			if (tab.restricted && !tab.viewers.includes(userId)) tab.viewers.push(userId);
-		} else if (tab.restricted && views.has(tab.id)) tab.viewers.push(userId);
-		for (const cat of tab.categories || []) {
-			cat.editors = (cat.editors || []).filter((id) => id !== userId);
-			cat.viewers = (cat.viewers || []).filter((id) => id !== userId);
-			if (cat.restricted && catViews.has(cat.id) && tabCanSee(tab, { id: userId, role })) cat.viewers.push(userId);
-		}
-	}
 }
 function stripUserAccess(doc, userId) {
 	for (const tab of doc.tabs) {

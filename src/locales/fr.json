@@ -38,7 +38,6 @@
     "resetPrefsConfirm": "Réinitialiser les préférences ? Favoris, ouverture au chargement, catégories repliées et thème sont stockés dans le local storage du navigateur et seront effacés. Le contenu du portail n’est pas modifié."
   },
   "lock": {
-    "title": "Connexion",
     "username": "Identifiant",
     "password": "Mot de passe",
     "or": "ou",
@@ -55,16 +54,10 @@
     "searchTitle": "Tapez pour rechercher · / pour focaliser · Ctrl+E éditer · Ctrl+N nouvelle carte",
     "done": "Terminé",
     "space": "Espace",
-    "addSpace": "Espace",
     "dropHere": "Déposer ici",
     "addTagOrName": "Ajouter un tag ou un nom…",
     "removeTag": "Retirer {name}",
     "moreSpaces": "Autres espaces"
-  },
-  "roles": {
-    "admin": "admin",
-    "editeur": "éditeur",
-    "lecteur": "lecteur"
   },
   "empty": {
     "favs": "Ajouter une carte aux favoris via l’étoile.",
@@ -158,7 +151,6 @@
     "audit": "Audit",
     "recoveryLead": "Éléments supprimés depuis moins de 30 jours.",
     "auditLead": "Actions des 30 derniers jours.",
-    "all": "Tout",
     "cards": "Cartes",
     "categories": "Catégories",
     "spaces": "Espaces",
@@ -191,7 +183,6 @@
     "portalName": "Nom du portail",
     "subtitle": "Sous-titre",
     "documentTitle": "Titre de l’onglet (navigateur)",
-    "language": "Langue",
     "sectionsAria": "Sections des réglages",
     "brandClick": "Cliquer une vignette pour importer. Un logo recopie aussi le favicon.",
     "resetBody": "Remettre le portail à zéro : paramétrage de base, statistiques vidées, comptes supprimés, accès admin / admin, un seul espace Accueil avec une carte de test.",

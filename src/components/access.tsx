@@ -752,7 +752,7 @@ function RowActions({ editing, onEdit, onCancel, onSave, saveDisabled, extra, da
   );
 }
 
-export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
+export function AccessUsers({ token, actor, tabs: seedTabs }) {
   const dir = useDirectory(token);
   const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
   const expand = useExpandSession();
@@ -764,7 +764,6 @@ export function AccessUsers({ token, actor, tabs: seedTabs, directories }) {
   const [confirm, setConfirm] = useState(null);
   const creating = expand.openId === NEW_ROW;
   const people = dir.users;
-  const providers = pickerProviders(directories);
   const canCreate = actor?.role === "admin" || actor?.canManageUsers;
   const lockedOwner = draft?.id === "admin";
   const current = people.find((u) => u.id === expand.openId);

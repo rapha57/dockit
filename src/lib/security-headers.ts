@@ -17,9 +17,3 @@ export const SECURITY_HEADERS: Record<string, string> = {
 		"object-src 'none'",
 	].join("; "),
 };
-
-export function applySecurityHeaders(res: { setHeader: (k: string, v: string) => void }) {
-	for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
-		res.setHeader(key, value);
-	}
-}
