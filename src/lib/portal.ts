@@ -1220,7 +1220,7 @@ function scheduleClickFlush() {
 	}, CLICK_FLUSH_MS);
 }
 let ioChain = Promise.resolve();
-function withLock(fn) {
+function withLock<T>(fn: () => T | Promise<T>): Promise<T> {
 	const run = ioChain.then(fn, fn);
 	ioChain = run.then(() => void 0, () => void 0);
 	return run;
@@ -1228,7 +1228,7 @@ function withLock(fn) {
 async function readDoc() {
 	return withLock(readDocUnlocked);
 }
-function mutate(fn) {
+function mutate<T>(fn: (doc: any) => T | Promise<T>): Promise<T> {
 	return withLock(async () => {
 		const doc = await readDocUnlocked();
 		const result = await fn(doc);
