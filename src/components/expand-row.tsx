@@ -1,22 +1,25 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
 import { t } from "@/lib/i18n";
 
 export const NEW_ROW = "new";
 
+type Ask = { run: () => void };
+type RequestOpenOptions = { edit?: boolean; apply?: () => void };
+
 export function useExpandSession() {
 	const dirtyRef = useRef(false);
-	const [openId, setOpenId] = useState(null);
+	const [openId, setOpenId] = useState<string | null>(null);
 	const [editing, setEditing] = useState(false);
-	const [ask, setAsk] = useState(null);
+	const [ask, setAsk] = useState<Ask | null>(null);
 
-	function exec(fn) {
+	function exec(fn: () => void) {
 		dirtyRef.current = false;
 		setAsk(null);
 		fn();
 	}
 
-	function requestClose(apply) {
+	function requestClose(apply?: () => void) {
 		const run = () => exec(() => {
 			setOpenId(null);
 			setEditing(false);
@@ -30,7 +33,7 @@ export function useExpandSession() {
 		return true;
 	}
 
-	function requestOpen(id, { edit = false, apply } = {}) {
+	function requestOpen(id: string | null | undefined, { edit = false, apply }: RequestOpenOptions = {}) {
 		if (id == null) return requestClose(apply);
 		if (openId === id && !edit) return requestClose(apply);
 		const run = () => exec(() => {
@@ -46,7 +49,7 @@ export function useExpandSession() {
 		return true;
 	}
 
-	function stay(id) {
+	function stay(id?: string | null) {
 		dirtyRef.current = false;
 		setAsk(null);
 		setEditing(false);
@@ -59,7 +62,7 @@ export function useExpandSession() {
 		ask,
 		setEditing,
 		dirty: () => dirtyRef.current,
-		markDirty: (v = true) => {
+		markDirty: (v: boolean = true) => {
 			dirtyRef.current = Boolean(v);
 		},
 		requestOpen,
@@ -69,6 +72,21 @@ export function useExpandSession() {
 		stay
 	};
 }
+
+type ExpandRowProps = {
+	id?: string | number | null;
+	expanded?: boolean;
+	onToggle: () => void;
+	cells?: ReactNode;
+	children?: ReactNode;
+	grip?: boolean;
+	onGripDown?: (e: PointerEvent<HTMLButtonElement>) => void;
+	onGripMove?: (e: PointerEvent<HTMLButtonElement>) => void;
+	onGripUp?: (e: PointerEvent<HTMLButtonElement>) => void;
+	onAltMove?: (dir: 1 | -1) => void;
+	dragging?: boolean;
+	className?: string;
+};
 
 export function ExpandRow({
 	id,
@@ -83,11 +101,12 @@ export function ExpandRow({
 	onAltMove,
 	dragging,
 	className
-}) {
+}: ExpandRowProps) {
 	const panelId = `am-exp-${String(id || "row").replace(/[^a-zA-Z0-9_-]/g, "")}`;
 	const padGrip = Boolean(grip) || /\bis-provider\b/.test(className || "");
-	function onHeadKey(e) {
-		if (e.target !== e.currentTarget && e.target.closest("button, input, select, textarea, a, [contenteditable]")) return;
+	function onHeadKey(e: KeyboardEvent<HTMLDivElement>) {
+		const target = e.target as HTMLElement;
+		if (target !== e.currentTarget && target.closest("button, input, select, textarea, a, [contenteditable]")) return;
 		if (e.key === "Enter" || e.key === " ") {
 			e.preventDefault();
 			onToggle();
@@ -98,8 +117,9 @@ export function ExpandRow({
 			onAltMove?.(e.key === "ArrowUp" ? -1 : 1);
 		}
 	}
-	function onHeadClick(e) {
-		if (e.target.closest(".am-row-grip, .am-expand, button, a, input, select, textarea, label")) return;
+	function onHeadClick(e: MouseEvent<HTMLDivElement>) {
+		const target = e.target as HTMLElement;
+		if (target.closest(".am-row-grip, .am-expand, button, a, input, select, textarea, label")) return;
 		onToggle();
 	}
 	return (
