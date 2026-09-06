@@ -171,7 +171,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.9";
+var PORTAL_VERSION = "2026.09.06.10";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -6653,7 +6653,7 @@ function LocalesForm({ initial, onSave }) {
   return (
     <form
       id="settings-form"
-      className="settings-stack"
+      className="settings-stack locales-stack"
       onSubmit={(e) => {
         e.preventDefault();
         onSave({
@@ -6667,7 +6667,7 @@ function LocalesForm({ initial, onSave }) {
       }}
     >
       {" "}
-<div className="settings-card">
+      <div className="settings-card">
         <p className="settings-kicker">{t("lang.sectionRegion")}</p>
         <Field label={t("lang.region")}>
           {" "}
