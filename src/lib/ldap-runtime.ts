@@ -1,13 +1,30 @@
+import type { Client } from "ldapts";
+
 const TIMEOUT_MS = 8000;
 export const LDAP_FILTER_DEFAULT = "(&(objectClass=user)(sAMAccountName={username}))";
 export const LDAP_MAX = 8;
 export const LDAP_GROUP_MAX = 20;
 const GROUP_OBJECTCLASS = "(|(objectClass=group)(objectClass=groupOfUniqueNames)(objectClass=groupOfNames))";
 
-function asStrings(value) {
+export type Directory = {
+	id: string;
+	enabled: boolean;
+	host: string;
+	port: number;
+	tls: boolean;
+	tlsVerify: boolean;
+	bindDn: string;
+	bindPassword: string;
+	baseDn: string;
+	userFilter: string;
+	domain: string;
+	autoCreate: boolean;
+};
+
+function asStrings(value: unknown): string[] {
 	if (value == null || value === "") return [];
 	const list = Array.isArray(value) ? value : [value];
-	const out = [];
+	const out: string[] = [];
 	for (const item of list) {
 		if (item == null) continue;
 		if (typeof item === "string") {
@@ -25,7 +42,7 @@ function asStrings(value) {
 	return out;
 }
 
-function attrOf(entry, name) {
+function attrOf(entry: any, name: string): string[] {
 	if (!entry || typeof entry !== "object") return [];
 	if (name in entry) return asStrings(entry[name]);
 	const lower = String(name).toLowerCase();
@@ -35,11 +52,11 @@ function attrOf(entry, name) {
 	return [];
 }
 
-function entryDn(entry) {
+function entryDn(entry: any): string {
 	return String(entry?.dn || entry?.objectName || attrOf(entry, "dn")[0] || "").trim();
 }
 
-function entryName(entry) {
+function entryName(entry: any): string {
 	const cn = attrOf(entry, "cn")[0] || attrOf(entry, "sAMAccountName")[0] || attrOf(entry, "name")[0] || "";
 	if (cn) return cn.slice(0, 60);
 	const dn = entryDn(entry);
@@ -47,15 +64,15 @@ function entryName(entry) {
 	return first.replace(/^[^=]+=/i, "").slice(0, 60);
 }
 
-export function normDn(dn) {
+export function normDn(dn: unknown): string {
 	return String(dn || "").trim().replace(/\s*,\s*/g, ",").replace(/\s+/g, " ").toLowerCase();
 }
 
-export function adGroupKey(dirId, dn) {
+export function adGroupKey(dirId: unknown, dn: unknown): string {
 	return `${String(dirId || "").slice(0, 80)}:${normDn(dn)}`.slice(0, 400);
 }
 
-export function asDirectory(row) {
+export function asDirectory(row: any): Directory | null {
 	if (!row || typeof row !== "object") return null;
 	const tls = row.tls !== false && row.ldapTls !== false;
 	const id = String(row.id || "").trim().slice(0, 80) || crypto.randomUUID();
@@ -75,11 +92,11 @@ export function asDirectory(row) {
 	};
 }
 
-export function asDirectories(s) {
+export function asDirectories(s: any): Directory[] {
 	const raw = s?.ldapDirectories;
 	if (Array.isArray(raw) && raw.length) {
-		const out = [];
-		const seen = new Set();
+		const out: Directory[] = [];
+		const seen = new Set<string>();
 		for (const row of raw.slice(0, LDAP_MAX)) {
 			const d = asDirectory(row);
 			if (!d || seen.has(d.id)) continue;
@@ -108,11 +125,25 @@ export function asDirectories(s) {
 	return [];
 }
 
-export function directoryReady(d) {
-	return Boolean(d?.enabled) && Boolean(String(d.host || "").trim()) && Boolean(String(d.domain || "").trim());
+export function directoryReady(d: Directory | null | undefined): boolean {
+	return Boolean(d?.enabled) && Boolean(String(d?.host || "").trim()) && Boolean(String(d?.domain || "").trim());
 }
 
-export function syncLegacyLdap(dirs) {
+export type LegacyLdapSettings = {
+	ldapEnabled: boolean;
+	ldapHost: string;
+	ldapPort: number;
+	ldapTls: boolean;
+	ldapTlsVerify: boolean;
+	ldapBindDn: string;
+	ldapBindPassword: string;
+	ldapBaseDn: string;
+	ldapUserFilter: string;
+	ldapDomain: string;
+	ldapAutoCreate: boolean;
+};
+
+export function syncLegacyLdap(dirs: Directory[]): LegacyLdapSettings {
 	const d = dirs[0];
 	if (!d) {
 		return {
@@ -144,13 +175,13 @@ export function syncLegacyLdap(dirs) {
 	};
 }
 
-export function asLoginOrder(raw, dirs) {
+export function asLoginOrder(raw: unknown, dirs: Directory[]): string[] {
 	const list = Array.isArray(dirs) ? dirs : [];
 	const known = new Set(["local", ...list.map((d) => d.id)]);
-	const seen = new Set();
-	const out = [];
-	const push = (id) => {
-		if (!id || seen.has(id) || !known.has(id)) return;
+	const seen = new Set<string>();
+	const out: string[] = [];
+	const push = (id: unknown) => {
+		if (!id || typeof id !== "string" || seen.has(id) || !known.has(id)) return;
 		seen.add(id);
 		out.push(id);
 	};
@@ -166,27 +197,27 @@ export function asLoginOrder(raw, dirs) {
 	return out;
 }
 
-export function pickDirectory(s, id) {
+export function pickDirectory(s: any, id?: unknown): Directory | null {
 	const dirs = asDirectories(s);
 	if (id && id !== "ad" && id !== "local") return dirs.find((d) => d.id === id) || null;
 	return dirs.find(directoryReady) || dirs[0] || null;
 }
 
-export function ldapLoginName(raw) {
+export function ldapLoginName(raw: unknown): string {
 	let u = String(raw || "").trim();
 	if (u.includes("\\")) u = u.slice(u.lastIndexOf("\\") + 1);
 	if (u.includes("@")) u = u.slice(0, u.indexOf("@"));
 	return u.toLowerCase().slice(0, 40);
 }
 
-function escapeFilter(value) {
-	return String(value || "").replace(/[\0*\\\(\)]/g, (ch) => {
+function escapeFilter(value: unknown): string {
+	return String(value || "").replace(/[\0*\\()]/g, (ch) => {
 		const hex = ch.charCodeAt(0).toString(16).padStart(2, "0");
 		return `\\${hex}`;
 	});
 }
 
-function ldapUrl(d) {
+function ldapUrl(d: any): { url: string; tlsOptions?: { rejectUnauthorized: boolean } } {
 	const host = String(d.host || d.ldapHost || "").trim();
 	if (!host) throw new Error("errors.ldapHost");
 	if (/[\s/]/.test(host) || host.includes(":")) throw new Error("errors.ldapHost");
@@ -198,7 +229,7 @@ function ldapUrl(d) {
 	};
 }
 
-async function withClient(d, fn) {
+async function withClient<T>(d: any, fn: (client: Client) => Promise<T>): Promise<T> {
 	const { Client } = await import("ldapts");
 	const { url, tlsOptions } = ldapUrl(d);
 	const client = new Client({
@@ -218,14 +249,14 @@ async function withClient(d, fn) {
 	}
 }
 
-function bindIdentity(d, sam) {
+function bindIdentity(d: any, sam: string): string {
 	const domain = String(d.domain || d.ldapDomain || "").trim();
 	if (domain.includes(".")) return `${sam}@${domain}`;
 	if (domain) return `${domain}\\${sam}`;
 	return sam;
 }
 
-async function searchUserEntry(client, dir, sam) {
+async function searchUserEntry(client: Client, dir: any, sam: string): Promise<any> {
 	const base = String(dir.baseDn || "").trim();
 	if (!base) return null;
 	const filterTpl = String(dir.userFilter || "").trim() || LDAP_FILTER_DEFAULT;
@@ -241,14 +272,16 @@ async function searchUserEntry(client, dir, sam) {
 	return searchEntries[0];
 }
 
-export async function ldapAuthenticate(s, username, password) {
+export type LdapAuthResult = { username: string; memberOf: string[] | null; directoryId: string };
+
+export async function ldapAuthenticate(s: any, username: unknown, password: unknown): Promise<LdapAuthResult> {
 	const sam = ldapLoginName(username);
 	if (!sam || !password) throw new Error("errors.badLogin");
 	const dir = s && Array.isArray(s.ldapDirectories) ? pickDirectory(s, s.id) : asDirectory(s) || pickDirectory(s);
-	if (!directoryReady(dir)) throw new Error("errors.ldapOff");
+	if (!dir || !directoryReady(dir)) throw new Error("errors.ldapOff");
 	try {
 		const bindDn = String(dir.bindDn || "").trim();
-		let memberOf = null;
+		let memberOf: string[] | null = null;
 		if (bindDn) {
 			const base = String(dir.baseDn || "").trim();
 			if (!base) throw new Error("errors.ldapBaseDn");
@@ -260,19 +293,20 @@ export async function ldapAuthenticate(s, username, password) {
 			if (!userDn) throw new Error("errors.badLogin");
 			memberOf = attrOf(found, "memberOf");
 			await withClient(dir, async (client) => {
-				await client.bind(userDn, password);
+				await client.bind(userDn, String(password));
 			});
 		} else {
 			memberOf = await withClient(dir, async (client) => {
-				await client.bind(bindIdentity(dir, sam), password);
+				await client.bind(bindIdentity(dir, sam), String(password));
 				const found = await searchUserEntry(client, dir, sam);
 				return found ? attrOf(found, "memberOf") : null;
 			});
 		}
 		return { username: sam, memberOf, directoryId: dir.id };
 	} catch (err) {
-		const name = err?.name || "";
-		const code = err?.code;
+		const e = err as any;
+		const name = e?.name || "";
+		const code = e?.code;
 		if (err instanceof Error && err.message.startsWith("errors.")) throw err;
 		if (name === "InvalidCredentialsError" || name === "NoSuchObjectError" || name === "InappropriateAuthError" || code === 49) throw new Error("errors.badLogin");
 		if (name === "UnavailableError" || name === "TimeLimitExceededError" || name === "TimeoutError" || name === "ConnectionError" || code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT" || code === "CERT_HAS_EXPIRED" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
@@ -282,7 +316,9 @@ export async function ldapAuthenticate(s, username, password) {
 	}
 }
 
-export async function ldapSearchGroups(dir, query) {
+export type LdapGroupHit = { id: string; dn: string; name: string; key: string };
+
+export async function ldapSearchGroups(dir: any, query: unknown): Promise<LdapGroupHit[]> {
 	const d = asDirectory(dir);
 	if (!d || !directoryReady(d)) throw new Error("errors.ldapOff");
 	const needle = escapeFilter(String(query || "").trim());
@@ -301,8 +337,8 @@ export async function ldapSearchGroups(dir, query) {
 				timeLimit: 8,
 				attributes: ["dn", "cn", "sAMAccountName", "name"]
 			});
-			const out = [];
-			const seen = new Set();
+			const out: LdapGroupHit[] = [];
+			const seen = new Set<string>();
 			for (const entry of searchEntries || []) {
 				const dn = entryDn(entry);
 				const name = entryName(entry);
@@ -317,8 +353,9 @@ export async function ldapSearchGroups(dir, query) {
 		});
 	} catch (err) {
 		if (err instanceof Error && err.message.startsWith("errors.")) throw err;
-		const name = err?.name || "";
-		const code = err?.code;
+		const e = err as any;
+		const name = e?.name || "";
+		const code = e?.code;
 		if (name === "InvalidCredentialsError" || name === "NoSuchObjectError" || name === "InappropriateAuthError" || code === 49) throw new Error("errors.badLogin");
 		if (name === "UnavailableError" || name === "TimeLimitExceededError" || name === "TimeoutError" || name === "ConnectionError" || code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT" || code === "CERT_HAS_EXPIRED" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
 			throw new Error("errors.ldapUnreachable");
