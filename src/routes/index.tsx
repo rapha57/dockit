@@ -171,11 +171,11 @@ export const Route = createFileRoute("/")({
   },
   component: Home,
 });
-var TOKEN_KEY = "portal-edit-token";
-var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.07.1";
-var EDIT_MODE_KEY = "portal-edit-mode";
-var OIDC_NEXT_KEY = "portal-oidc-next";
+const TOKEN_KEY = "portal-edit-token";
+const SESSION_KEY = "portal-session";
+const PORTAL_VERSION = "2026.09.07.1";
+const EDIT_MODE_KEY = "portal-edit-mode";
+const OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
   return String(raw || "")
     .replace(/^v/i, "")
@@ -192,7 +192,7 @@ function isNewerVersion(latest, current) {
   }
   return false;
 }
-var editArmed = false;
+let editArmed = false;
 function lockSelection(e) {
   e?.preventDefault();
   try {
@@ -365,7 +365,7 @@ function pointerAfter(e, el) {
 function itemSpanClass(app) {
   return `${app.colSpan === 3 ? "item-span-3" : app.colSpan === 2 ? "item-span-2" : ""} ${app.rowSpan === 3 ? "item-h-3" : app.rowSpan === 2 ? "item-h-2" : "item-h-1"}`.trim();
 }
-var RESIZE_EDGE = 8;
+const RESIZE_EDGE = 8;
 function finePointer() {
   return typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches;
 }
@@ -598,7 +598,7 @@ function tagPaint(name, colors) {
     },
   };
 }
-var ITEM_GRID = "item-grid";
+const ITEM_GRID = "item-grid";
 function fmtCount(n) {
   return formatNumber(n);
 }
@@ -7334,7 +7334,7 @@ function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
     </form>
   );
 }
-var THEME_COLOR_FIELDS = [
+const THEME_COLOR_FIELDS = [
   {
     id: "bg",
     cssVar: "--color-bg",
@@ -7348,17 +7348,17 @@ var THEME_COLOR_FIELDS = [
     cssVar: "--color-header",
   },
 ];
-var LIGHT_COLORS = {
+const LIGHT_COLORS = {
   bg: "#fcfcfd",
   surface: "#ffffff",
   header: "#fcfcfc",
 };
-var DARK_COLORS = {
+const DARK_COLORS = {
   bg: "#2d333b",
   surface: "#373e47",
   header: "#373e47",
 };
-var MANAGED_BLOCK_RE =
+const MANAGED_BLOCK_RE =
   /html\.(?:light|dark)\s*\{\s*(?:--color-(?:bg|surface|header)\s*:\s*#[0-9a-fA-F]{3,8}\s*;\s*)+\}/g;
 function expandHex(raw) {
   const s = raw.trim();

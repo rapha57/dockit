@@ -201,10 +201,10 @@ export type ClickStats = {
   fullCatalog?: boolean;
 };
 
-var SESSION_MS = 432e5;
-var sessions = /* @__PURE__ */ new Map();
-var oidcPending = /* @__PURE__ */ new Map();
-var OIDC_PENDING_MS = 5 * 60 * 1000;
+const SESSION_MS = 432e5;
+const sessions = /* @__PURE__ */ new Map();
+const oidcPending = /* @__PURE__ */ new Map();
+const OIDC_PENDING_MS = 5 * 60 * 1000;
 function envUser() {
 	return (process.env.PORTAL_EDIT_USER || "admin").trim().toLowerCase() || "admin";
 }
@@ -232,9 +232,9 @@ async function verifyPassword(password, stored) {
 	if (next.length !== prev.length) return false;
 	return same(next, prev);
 }
-var loginFails = /* @__PURE__ */ new Map();
-var LOGIN_MAX = 5;
-var LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const loginFails = /* @__PURE__ */ new Map();
+const LOGIN_MAX = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 function clientKey(username, request) {
 	return `${clientIp(request)}:${String(username || "").toLowerCase()}`;
 }
@@ -242,7 +242,7 @@ function requireStrongPassword(raw) {
 	const err = passwordPolicyError(raw);
 	if (err) throw new Error(err);
 }
-var defaultAdminCache = {
+let defaultAdminCache = {
 	hash: "",
 	value: false
 };
@@ -294,7 +294,7 @@ function issueToken(userId) {
 	});
 	return token;
 }
-var tokenField = z.string().min(1);
+const tokenField = z.string().min(1);
 function tok(data, request) {
 	return parseSessCookie(typeof request?.headers?.get === "function" ? request.headers.get("cookie") : "") || String(data?.token || "");
 }
@@ -1146,9 +1146,9 @@ function toDisk(doc) {
 		history: (history || []).map(historyToDisk)
 	};
 }
-var liveDoc = null;
-var clickFlushTimer = null;
-var CLICK_FLUSH_MS = 4000;
+let liveDoc = null;
+let clickFlushTimer = null;
+const CLICK_FLUSH_MS = 4000;
 async function persistDocMedia(doc) {
 	const { persistMediaValue } = await import("./assets");
 	doc.settings.logo = await persistMediaValue("logo", doc.settings.logo);
@@ -1217,7 +1217,7 @@ function scheduleClickFlush() {
 		});
 	}, CLICK_FLUSH_MS);
 }
-var ioChain = Promise.resolve();
+let ioChain = Promise.resolve();
 function withLock(fn) {
 	const run = ioChain.then(fn, fn);
 	ioChain = run.then(() => void 0, () => void 0);
@@ -1517,7 +1517,7 @@ function restoreHistoryItem(doc, user, eventId, scope, targetId) {
 	if (scope === "category") {
 		let catMeta = snap.category && snap.category.id === targetId ? snap.category : null;
 		let apps = snap.apps || snap.cards || [];
-		let tabMeta = snap.tab || snap.space;
+		const tabMeta = snap.tab || snap.space;
 		if (!catMeta) {
 			const cat = (snap.categories || []).find((c) => c.id === targetId);
 			if (!cat) throw new Error("errors.historyCategoryMissing");
@@ -2633,7 +2633,7 @@ export const deleteCategory = createServerFn({ method: "POST" }).validator(z.obj
 	pruneUnusedTags(doc);
 	return emit(doc, user, tab.id);
 }));
-var itemPayload = {
+const itemPayload = {
 	categoryId: z.string().min(1),
 	kind: z.enum([
 		"app",

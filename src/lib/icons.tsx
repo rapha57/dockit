@@ -291,7 +291,7 @@ export async function urlToDataUrl(src: string): Promise<string> {
   });
 }
 
-var DOCKIT_FACES = [
+const DOCKIT_FACES = [
   {
     d: "M24 3.2 43.2 14.3 24 25.4 4.8 14.3 24 3.2z",
     rim: "M4.8 14.3 24 3.2 43.2 14.3",
