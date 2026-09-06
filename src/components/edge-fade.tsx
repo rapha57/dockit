@@ -1,14 +1,13 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, type HTMLAttributes } from "react";
 
 const EPS = 2;
 
-export function attachEdgeFade(el) {
+function attachEdgeFade(el: HTMLElement) {
+  const host = el.parentElement;
   const sync = () => {
     const top = el.scrollTop > EPS;
     const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - EPS;
-    const gutter = Math.max(el.offsetWidth - el.clientWidth, 0);
-    el.style.setProperty("--sb", `${gutter}px`);
-    el.classList.toggle("is-fade-top", top);
+    host?.classList.toggle("is-fade-top", top);
     el.classList.toggle("is-fade-bottom", bottom);
   };
   sync();
@@ -21,15 +20,26 @@ export function attachEdgeFade(el) {
     el.removeEventListener("scroll", sync);
     ro.disconnect();
     mo.disconnect();
-    el.classList.remove("is-fade-top", "is-fade-bottom");
-    el.style.removeProperty("--sb");
+    host?.classList.remove("is-fade-top");
+    el.classList.remove("is-fade-bottom");
   };
 }
 
-export function useEdgeFade() {
-  const stop = useRef(null);
-  return useCallback((node) => {
+function useEdgeFade() {
+  const stop = useRef<(() => void) | null>(null);
+  return useCallback((node: HTMLElement | null) => {
     stop.current?.();
     stop.current = node ? attachEdgeFade(node) : null;
   }, []);
+}
+
+export function EdgeFade({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
+  const ref = useEdgeFade();
+  return (
+    <div className="edge-fade">
+      <div ref={ref} className={className} data-edge-scroll {...props}>
+        {children}
+      </div>
+    </div>
+  );
 }

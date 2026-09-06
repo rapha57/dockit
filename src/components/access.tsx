@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
 import { EmptyState } from "@/components/empty-state";
-import { useEdgeFade } from "@/components/edge-fade";
+import { EdgeFade } from "@/components/edge-fade";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EntityPicker } from "@/components/entity-picker";
 import { ExpandRow, NEW_ROW, useExpandSession } from "@/components/expand-row";
@@ -189,14 +189,11 @@ function useDirectory(token) {
 }
 
 function ListShell({ toolbar, head, children }) {
-  const fade = useEdgeFade();
   return (
     <div className="am-work">
       <div className="am-toolbar">{toolbar}</div>
       {head}
-      <div ref={fade} className="am-list-wrap">
-        {children}
-      </div>
+      <EdgeFade className="am-list-wrap">{children}</EdgeFade>
     </div>
   );
 }

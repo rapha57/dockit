@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { ModalShell } from "@/components/modal-shell";
 import { t } from "@/lib/i18n";
 
 const EVENT = "dockit-confirm";
@@ -26,11 +26,9 @@ export function ConfirmDialog({
 }) {
   const box = (
     <div
-      className={inline ? undefined : "am-popup-box"}
-      role="alertdialog"
-      aria-modal={!inline}
-      aria-labelledby="dockit-confirm-title"
-      onClick={inline ? undefined : (e) => e.stopPropagation()}
+      role={inline ? "alertdialog" : undefined}
+      aria-modal={inline ? false : undefined}
+      aria-labelledby={inline ? "dockit-confirm-title" : undefined}
     >
       <h3 id="dockit-confirm-title" className="dialog-title">
         {title}
@@ -51,24 +49,12 @@ export function ConfirmDialog({
       </div>
     </div>
   );
-  useEffect(() => {
-    if (inline || open === false) return;
-    const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      onCancel?.();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [inline, open, onCancel]);
   if (inline) return box;
   if (open === false || typeof document === "undefined") return null;
-  return createPortal(
-    <div className="am-popup" role="presentation" onClick={onCancel}>
+  return (
+    <ModalShell onClose={onCancel} labelledBy="dockit-confirm-title" role="alertdialog">
       {box}
-    </div>,
-    document.body,
+    </ModalShell>
   );
 }
 

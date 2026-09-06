@@ -218,7 +218,7 @@
       "lead": "Nom, logo, favicon et titre de l’onglet du navigateur."
     },
     "locales": {
-      "label": "Locales",
+      "label": "Langue",
       "lead": "Langue de l’interface, date, heure et fuseau de l’instance."
     },
     "themes": {
@@ -703,22 +703,33 @@
     "menus": "Menus",
     "infoBar": "Barre d’information",
     "clickCount": "Compteur de clics sur les cartes",
+    "clickCountHint": "Affiche le nombre d’ouvertures de chaque carte.",
     "catCounts": "Compteurs de cartes sur les catégories",
+    "catCountsHint": "Affiche le nombre de cartes dans le titre de chaque catégorie.",
     "favEmbeds": "Favoris sur les pages web",
+    "favEmbedsHint": "Permet d’épingler les cartes page web. Désactivé par défaut.",
     "favNotes": "Favoris sur les notes",
+    "favNotesHint": "Permet d’épingler les cartes note. Désactivé par défaut.",
     "onlineIcons": "Icônes en ligne (Iconify)",
     "onlineIconsHint": "Hors-ligne par défaut. Activer seulement si le portail a un accès Internet — Le clic copie l’icône en local.",
     "navRichIcons": "Icônes locales et en ligne sur les espaces et les catégories",
+    "navRichIconsHint": "Les espaces et catégories peuvent utiliser des icônes importées ou Iconify, pas seulement les symboles Lucide.",
     "annexFade": "Estomper le fond des menus d’autres liens",
+    "annexFadeHint": "Estompe le portail derrière le menu des autres liens d’une carte.",
     "showInfoBar": "Afficher la barre d’information",
+    "showInfoBarHint": "Barre du bas : clics, sondes HS et statistiques. Le détail est dans Information.",
     "cardResize": "Redimensionner les cartes en tirant les bords",
+    "cardResizeHint": "Tirer le bord d’une carte pour changer sa largeur et sa hauteur sur la grille.",
     "cardContextMenu": "Menu clic droit sur les cartes",
-    "cardDragCollapse": "Replier les autres catégories pendant le déplacement d’une carte"
+    "cardContextMenuHint": "Ouvre les liens supplémentaires et la copie au clic droit. Les liens se règlent sur la carte.",
+    "cardDragCollapse": "Replier les autres catégories pendant le déplacement d’une carte",
+    "cardDragCollapseHint": "Pendant le déplacement d’une carte, les autres catégories se replient. Survoler un titre pour l’ouvrir. Déposer sur un titre pour y déplacer la carte."
   },
   "reach": {
     "probes": "Sondes",
     "httpIcmp": "Sondes HTTP / ICMP sur les cartes",
     "blink": "Faire clignoter l’alerte de sonde HS",
+    "blinkHint": "Le compteur de sondes HS dans la barre d’information pulse dès qu’une sonde est HS.",
     "infoHidden": "La barre d’information est masquée dans Présentation — l’alerte HS ne s’affiche pas.",
     "perCard": "Le contrôle par carte se règle dans Lien → Contrôle de joignabilité."
   },
@@ -774,7 +785,7 @@
     "light": "Clair",
     "dark": "Sombre",
     "css": "CSS additionnel",
-    "reset": "Réinitialiser ce thème",
+    "reset": "Réinitialiser le CSS",
     "bg": "Fond",
     "surface": "Cartes",
     "header": "Bandeau",

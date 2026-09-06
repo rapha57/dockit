@@ -59,8 +59,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/field";
 import { EmptyState } from "@/components/empty-state";
-import { useEdgeFade } from "@/components/edge-fade";
+import { EdgeFade } from "@/components/edge-fade";
 import { ConfirmDialog, askConfirm } from "@/components/confirm-dialog";
+import { ModalShell } from "@/components/modal-shell";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AccessUsers,
@@ -172,7 +173,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.17";
+var PORTAL_VERSION = "2026.09.07.1";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -5363,103 +5364,6 @@ function AppCard({
     </div>
   );
 }
-function ModalShell({ children, onClose, wide }) {
-  const dialogRef = useRef(null);
-  useEffect(() => {
-    const html = document.documentElement;
-    const body = document.body;
-    const scrollY = window.scrollY;
-    const prev = {
-      htmlOverflow: html.style.overflow,
-      bodyOverflow: body.style.overflow,
-      bodyPosition: body.style.position,
-      bodyTop: body.style.top,
-      bodyLeft: body.style.left,
-      bodyRight: body.style.right,
-      bodyWidth: body.style.width,
-      bodyPad: body.style.paddingRight,
-    };
-    const sb = window.innerWidth - html.clientWidth;
-    html.classList.add("modal-open");
-    html.style.overflow = "hidden";
-    body.style.overflow = "hidden";
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.left = "0";
-    body.style.right = "0";
-    body.style.width = "100%";
-    if (sb > 0) body.style.paddingRight = `${sb}px`;
-    const canScroll = (el) => {
-      const oy = getComputedStyle(el).overflowY;
-      return (oy === "auto" || oy === "scroll") && el.scrollHeight > el.clientHeight + 1;
-    };
-    const insideScrollable = (target, deltaY) => {
-      let n = target instanceof Element ? target : null;
-      while (n && n !== document.body && n !== document.documentElement) {
-        if (canScroll(n)) {
-          const top = n.scrollTop;
-          const max = n.scrollHeight - n.clientHeight;
-          if ((deltaY < 0 && top > 0) || (deltaY > 0 && top < max)) return true;
-          if (deltaY === 0) return true;
-        }
-        n = n.parentElement;
-      }
-      return false;
-    };
-    const onWheel = (e) => {
-      if (!insideScrollable(e.target, e.deltaY)) e.preventDefault();
-    };
-    const onTouchMove = (e) => {
-      if (!insideScrollable(e.target, 0)) e.preventDefault();
-    };
-    window.addEventListener("wheel", onWheel, {
-      passive: false,
-    });
-    window.addEventListener("touchmove", onTouchMove, {
-      passive: false,
-    });
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("keydown", onKey);
-      html.classList.remove("modal-open");
-      html.style.overflow = prev.htmlOverflow;
-      body.style.overflow = prev.bodyOverflow;
-      body.style.position = prev.bodyPosition;
-      body.style.top = prev.bodyTop;
-      body.style.left = prev.bodyLeft;
-      body.style.right = prev.bodyRight;
-      body.style.width = prev.bodyWidth;
-      body.style.paddingRight = prev.bodyPad;
-      window.scrollTo(0, scrollY);
-    };
-  }, []);
-  return (
-    <div
-      className="fixed inset-0 z-40 flex items-end justify-center overflow-hidden bg-bg/75 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-      onClick={onClose}
-      onWheel={(e) => {
-        if (e.target === e.currentTarget) e.preventDefault();
-      }}
-      role="presentation"
-    >
-      {" "}
-      <div
-        ref={dialogRef}
-        className={`w-full overflow-hidden bg-surface shadow-card-hover ${wide ? "max-h-[92dvh] rounded-t-xl sm:max-h-none sm:rounded-xl sm:w-auto" : "max-h-[90dvh] max-w-lg overflow-y-auto overscroll-contain rounded-t-xl p-6 sm:rounded-xl"}`}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
 function BrandPick({ label, hint, resetLabel, accept, src, variant, onFile, onReset, children }) {
   return (
     <div className="brand-slot">
@@ -5569,7 +5473,6 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
   const [ready, setReady] = useState(false);
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
-  const fade = useEdgeFade();
   async function reload() {
     const res = await listHistory({
       data: {
@@ -5846,7 +5749,7 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
                 </div>
               </div>
             ) : null}
-            <div ref={fade} className="am-list-wrap">
+            <EdgeFade className="am-list-wrap">
               {!ready ? (
                 <div className="am-list" aria-busy="true" aria-label={t("history.loading")}>
                   <Skeleton className="h-9 w-full" />
@@ -5913,7 +5816,7 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
                       ))}
                 </div>
               )}
-            </div>
+            </EdgeFade>
           </div>
         </div>
       </div>
@@ -6005,7 +5908,6 @@ function AdminPanel({
     return session?.canManageSettings;
   });
   const current = sections.find((s) => s.id === tab) ?? sections[0];
-  const fade = useEdgeFade();
   return (
     <div className="settings-frame is-wide is-access">
       {" "}
@@ -6047,7 +5949,7 @@ function AdminPanel({
           </Button>
         </div>
         {tab === "general" ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <SettingsForm
               initial={settings}
@@ -6056,38 +5958,38 @@ function AdminPanel({
               onCancel={onCancel}
               onSave={(payload) => onSaveSettings(payload)}
             />
-          </div>
+          </EdgeFade>
         ) : tab === "locales" ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <LocalesForm initial={settings} onSave={(payload) => onSaveSettings(payload)} />
-          </div>
+          </EdgeFade>
         ) : tab === "presentation" ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <PresentationForm initial={settings} onSave={(payload) => onSaveSettings(payload)} />
-          </div>
+          </EdgeFade>
         ) : tab === "reachability" ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <ReachabilityForm initial={settings} onSave={(payload) => onSaveSettings(payload)} />
-          </div>
+          </EdgeFade>
         ) : tab === "security" ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <SecurityForm
               initial={settings}
               isDev={Boolean(runtime?.isDev)}
               onSave={(payload) => onSaveSettings(payload)}
             />
-          </div>
+          </EdgeFade>
         ) : tab === "debug" ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <DebugPanel settings={settings} runtime={runtime} session={session} />
-          </div>
+          </EdgeFade>
         ) : tab === "info" ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <InfoBarForm
               initial={settings}
@@ -6095,14 +5997,14 @@ function AdminPanel({
               onSave={(payload) => onSaveSettings(payload)}
               onResetClicks={onResetClicks}
             />
-          </div>
+          </EdgeFade>
         ) : tab === "themes" ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <ThemeForm initial={settings} busy={busy} onCancel={onCancel} onSave={onSaveTheme} />
-          </div>
+          </EdgeFade>
         ) : tab === "backup" ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <BackupForm
               token={token}
@@ -6111,16 +6013,16 @@ function AdminPanel({
               title={settings.title}
               onImport={onImportPortal}
             />
-          </div>
+          </EdgeFade>
         ) : tab === "about" || tab === "reset" || !session?.canManageSettings ? (
-          <div ref={fade} className="settings-pane">
+          <EdgeFade className="settings-pane">
             {" "}
             <AboutForm
               busy={busy}
               canReset={session?.role === "admin"}
               onReset={onResetPortal}
             />
-          </div>
+          </EdgeFade>
         ) : (
           <div className="settings-pane is-fill">
             {" "}
@@ -6989,7 +6891,8 @@ function PresentationForm({ initial, onSave }) {
               onChange={(e) => setUsageStats(e.target.checked)}
             />
             {t("pres.clickCount")}
-          </label>{" "}
+          </label>
+          <p className="settings-hint">{t("pres.clickCountHint")}</p>
           <label>
             {" "}
             <input
@@ -6998,7 +6901,8 @@ function PresentationForm({ initial, onSave }) {
               onChange={(e) => setCatCounts(e.target.checked)}
             />
             {t("pres.catCounts")}
-          </label>{" "}
+          </label>
+          <p className="settings-hint">{t("pres.catCountsHint")}</p>
           <label>
             {" "}
             <input
@@ -7007,7 +6911,8 @@ function PresentationForm({ initial, onSave }) {
               onChange={(e) => setFavEmbeds(e.target.checked)}
             />
             {t("pres.favEmbeds")}
-          </label>{" "}
+          </label>
+          <p className="settings-hint">{t("pres.favEmbedsHint")}</p>
           <label>
             {" "}
             <input
@@ -7017,6 +6922,7 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.favNotes")}
           </label>
+          <p className="settings-hint">{t("pres.favNotesHint")}</p>
           <label>
             <input
               type="checkbox"
@@ -7025,6 +6931,7 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.cardResize")}
           </label>
+          <p className="settings-hint">{t("pres.cardResizeHint")}</p>
           <label>
             <input
               type="checkbox"
@@ -7033,6 +6940,7 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.cardContextMenu")}
           </label>
+          <p className="settings-hint">{t("pres.cardContextMenuHint")}</p>
           <label>
             <input
               type="checkbox"
@@ -7041,6 +6949,7 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.cardDragCollapse")}
           </label>
+          <p className="settings-hint">{t("pres.cardDragCollapseHint")}</p>
         </div>
       </div>{" "}
       <div className="settings-card">
@@ -7064,6 +6973,7 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.navRichIcons")}
           </label>
+          <p className="settings-hint">{t("pres.navRichIconsHint")}</p>
         </div>
       </div>{" "}
       <div className="settings-card">
@@ -7080,6 +6990,7 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.annexFade")}
           </label>
+          <p className="settings-hint">{t("pres.annexFadeHint")}</p>
         </div>
       </div>{" "}
       <div className="settings-card">
@@ -7096,6 +7007,7 @@ function PresentationForm({ initial, onSave }) {
             />
             {t("pres.showInfoBar")}
           </label>
+          <p className="settings-hint">{t("pres.showInfoBarHint")}</p>
         </div>
       </div>
     </form>
@@ -7141,6 +7053,7 @@ function ReachabilityForm({ initial, onSave }) {
             />
             {t("reach.blink")}
           </label>
+          <p className="settings-hint">{t("reach.blinkHint")}</p>
           {!infoBar ? <p className="settings-hint">{t("reach.infoHidden")}</p> : null}
         </div>
       </div>
@@ -7521,7 +7434,6 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
   const setColors = pane === "light" ? setLightColors : setDarkColors;
   const extra = pane === "light" ? lightExtra : darkExtra;
   const setExtra = pane === "light" ? setLightExtra : setDarkExtra;
-  const defaults = pane === "light" ? LIGHT_COLORS : DARK_COLORS;
   useEffect(() => {
     const el = document.createElement("style");
     el.id = "portal-user-theme-draft";
@@ -7545,7 +7457,7 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
   return (
     <form
       id="settings-form"
-      className="settings-stack"
+      className="settings-stack theme-stack"
       onSubmit={(e) => {
         e.preventDefault();
         onSave({
@@ -7558,7 +7470,7 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
       <div className="settings-card">
         {" "}
         <p className="settings-kicker">{t("theme.colors")}</p>
-        <div className="am-filters" role="tablist" aria-label={t("theme.colors")}>
+        <div className="theme-switch" role="tablist" aria-label={t("theme.colors")}>
           <button
             type="button"
             role="tab"
@@ -7620,7 +7532,6 @@ function ThemeForm({ initial, busy, onCancel, onSave }) {
             type="button"
             className="settings-link"
             onClick={() => {
-              setColors(defaults);
               setExtra("");
             }}
           >
@@ -7791,7 +7702,6 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
   const [dragKey, setDragKey] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [oidcDraft, setOidcDraft] = useState(false);
-  const fade = useEdgeFade();
   function patchDir(id, next) {
     setDirs((cur) => {
       const out = cur.map((d) =>
@@ -8149,12 +8059,12 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
           <Plus className="size-3.5" /> {t("access.idpAddOidc")}
         </Button>
       </div>
-      <div ref={fade} className="am-list-wrap">
+      <EdgeFade className="am-list-wrap">
         <div ref={listRef} className="am-providers" role="list">
           {ranked.map(renderCard)}
           {extras.map(renderCard)}
         </div>
-      </div>
+      </EdgeFade>
       {confirm ? (
         <ConfirmPopup
           title={t("access.idpRemove")}
@@ -8477,7 +8387,6 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
   const [q, setQ] = useState("");
   const [remote, setRemote] = useState([]);
   const [busyIcon, setBusyIcon] = useState(false);
-  const fade = useEdgeFade();
   const query = q.trim().toLowerCase();
   const products = query
     ? PRODUCT_ICONS.filter((p) => p.label.toLowerCase().includes(query) || p.slug.includes(query))
@@ -8511,17 +8420,6 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
       ctrl.abort();
     };
   }, [query, online, open, pictosOnly]);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      setOpen(false);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open]);
   function choose(next) {
     onChange(next);
     setOpen(false);
@@ -8600,25 +8498,8 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
       setBusyIcon(false);
     }
   }
-  const panel =
-    open && typeof document !== "undefined"
-      ? createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-bg/75 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-            onClick={() => setOpen(false)}
-            role="presentation"
-          >
-            {" "}
-            <div
-              className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-xl bg-surface shadow-card-hover sm:rounded-xl"
-              onClick={(e) => e.stopPropagation()}
-              onWheel={(e) => e.stopPropagation()}
-              onTouchMove={(e) => e.stopPropagation()}
-              role="dialog"
-              aria-modal="true"
-              aria-label={t("icons.choose")}
-            >
-              {" "}
+  const panel = open ? (
+    <ModalShell onClose={() => setOpen(false)} padded={false} label={t("icons.choose")}>
               <div className="icon-pick-head">
                 {" "}
                 <h3 className="dialog-title">{t("item.icon")}</h3>
@@ -8634,7 +8515,7 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
                   <X className="size-4" />
                 </Button>
               </div>{" "}
-              <div ref={fade} className="icon-pick-body">
+              <EdgeFade className="icon-pick-body">
                 {" "}
                 <div className="icon-pick-current">
                   {" "}
@@ -8797,12 +8678,9 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
                     ))}
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )
-      : null;
+              </EdgeFade>
+    </ModalShell>
+  ) : null;
   return (
     <>
       {" "}
@@ -8866,7 +8744,6 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
       : []),
   ];
   const current = sections.find((s) => s.id === pane) ?? sections[0];
-  const fade = useEdgeFade();
   return (
     <form
       className="settings-frame is-access is-item"
@@ -8918,7 +8795,7 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
             <X className="size-4" />
           </Button>
         </div>{" "}
-        <div ref={fade} className="settings-pane">
+        <EdgeFade className="settings-pane">
           {pane === "permissions" && canAcl ? (
             <div className="settings-stack">
               {" "}
@@ -8970,7 +8847,7 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
               </div>
             </div>
           )}
-        </div>{" "}
+        </EdgeFade>
         <FormActions busy={busy} hideCancel onCancel={onCancel} />
       </div>
     </form>
@@ -9038,7 +8915,6 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
       : []),
   ];
   const current = sections.find((s) => s.id === pane) ?? sections[0];
-  const fade = useEdgeFade();
   return (
     <form
       className="settings-frame is-access is-item"
@@ -9089,7 +8965,7 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
             <X className="size-4" />
           </Button>
         </div>{" "}
-        <div ref={fade} className="settings-pane">
+        <EdgeFade className="settings-pane">
           {pane === "permissions" && canAcl ? (
             <div className="settings-stack">
               {" "}
@@ -9131,7 +9007,7 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
               </div>
             </div>
           )}
-        </div>{" "}
+        </EdgeFade>
         <FormActions busy={busy} hideCancel onCancel={onCancel} />
       </div>
     </form>
@@ -9247,7 +9123,7 @@ function ExtraLinksField({ links, setLinks }) {
               className="is-provider is-link"
               expanded={openId === row.key}
               dragging={dragKey === row.key}
-              grip={links.length > 1}
+              grip
               onToggle={() => toggle(row.key)}
               onGripDown={(e) => onGripDown(e, row.key)}
               onGripMove={onGripMove}
@@ -9372,7 +9248,6 @@ function AppForm({
   const [probeBusy, setProbeBusy] = useState(false);
   const [pane, setPane] = useState("general");
   const catOptions = useMemo(() => categories, [categories]);
-  const fade = useEdgeFade();
   const paneSafe =
     (pane === "lien" && kind !== "app") || pane === "tags"
       ? "general"
@@ -9610,7 +9485,7 @@ function AppForm({
             </Button>
           </div>
         </div>{" "}
-        <div ref={fade} className="settings-pane">
+        <EdgeFade className="settings-pane">
           <div className={paneSafe === "general" ? "settings-stack" : "hidden"}>
             <div className="settings-card">
               <p className="settings-kicker">{t("item.general")}</p>
@@ -9861,7 +9736,7 @@ function AppForm({
               ) : null}
             </div>
           </div>
-        </div>{" "}
+        </EdgeFade>
         <FormActions busy={busy} disabled={!canSave} hideCancel onCancel={onCancel} />
       </div>
     </form>
@@ -9988,7 +9863,6 @@ function TagManager({
   const [alpha, setAlpha] = useState(tagsAlpha !== false);
   const [drafts, setDrafts] = useState({});
   const [createDraft, setCreateDraft] = useState("");
-  const fade = useEdgeFade();
   const col = useColSort();
   const sortedTags = col.apply(tags, (row, key) => {
     if (key === "name") return row.name || "";
@@ -10111,73 +9985,78 @@ function TagManager({
           <p className="settings-hint">{t("tags.empty")}</p>
         ) : (
           <>
-            <div className="am-list-head tag-list-head">
-              <span className="am-chevron-spacer" />
-              <SortLabel id="name" sort={col.sort} onToggle={col.toggle}>
-                {t("item.name")}
-              </SortLabel>
-              <SortLabel id="count" sort={col.sort} onToggle={col.toggle} className="am-row-end">
-                {t("tags.countCol")}
-              </SortLabel>
-              <span className="am-chevron-spacer" />
+            <div className="am-list-head is-tags">
+              <div className="am-row-cells">
+                <SortLabel id="name" sort={col.sort} onToggle={col.toggle}>
+                  {t("item.name")}
+                </SortLabel>
+                <SortLabel id="count" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                  {t("tags.countCol")}
+                </SortLabel>
+                <span className="am-row-action" />
+              </div>
             </div>
-            <div ref={fade} className="am-list-wrap">
-            <div className="am-list tag-list">
-            {sortedTags.map((row) => {
-              const draft = drafts[row.name] ?? row.name;
-              const hex = lookupTagColor(row.name, localColors) ?? defaultTagHex(row.name);
-              return (
-                <div key={row.name} className="am-row">
-                  <div className="am-row-head tag-item">
-                    <TagColorPick
-                      hex={hex}
-                      name={row.name}
-                      disabled={busy}
-                      onChange={(next) => changeColor(row.name, next)}
-                    />
-                    <input
-                      className="tag-item-name"
-                      value={draft}
-                      aria-label={t("tags.nameOf", {
-                        name: row.name,
-                      })}
-                      onChange={(e) =>
-                        setDrafts((d) => ({
-                          ...d,
-                          [row.name]: e.target.value,
-                        }))
-                      }
-                      onBlur={() => renameTag(row.name, draft)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          e.currentTarget.blur();
-                        }
-                      }}
-                    />
-                    <span className="am-row-end">{row.count}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="card-tool is-danger"
-                      disabled={busy}
-                      aria-label={t("tags.deleteAria", {
-                        name: row.name,
-                      })}
-                      title={t("tags.deleteAria", {
-                        name: row.name,
-                      })}
-                      onClick={() => removeTag(row.name)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-            </div>
-            </div>
+            <EdgeFade className="am-list-wrap">
+              <div className="am-list is-tags" role="list">
+                {sortedTags.map((row) => {
+                  const draft = drafts[row.name] ?? row.name;
+                  const hex = lookupTagColor(row.name, localColors) ?? defaultTagHex(row.name);
+                  return (
+                    <div key={row.name} className="am-row is-static" role="listitem">
+                      <div className="am-row-head">
+                        <div className="am-row-cells">
+                          <span className="am-row-title tag-name-cell">
+                            <TagColorPick
+                              hex={hex}
+                              name={row.name}
+                              disabled={busy}
+                              onChange={(next) => changeColor(row.name, next)}
+                            />
+                            <input
+                              className="tag-item-name h-7 w-full min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 text-[0.8125rem] font-medium outline-none hover:border-border hover:bg-elevated focus:border-border focus:bg-elevated"
+                              value={draft}
+                              aria-label={t("tags.nameOf", {
+                                name: row.name,
+                              })}
+                              onChange={(e) =>
+                                setDrafts((d) => ({
+                                  ...d,
+                                  [row.name]: e.target.value,
+                                }))
+                              }
+                              onBlur={() => renameTag(row.name, draft)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  e.currentTarget.blur();
+                                }
+                              }}
+                            />
+                          </span>
+                          <span className="am-row-end">{row.count}</span>
+                          <span className="am-row-action">
+                            <button
+                              type="button"
+                              className="card-tool is-danger"
+                              disabled={busy}
+                              aria-label={t("tags.deleteAria", {
+                                name: row.name,
+                              })}
+                              title={t("tags.deleteAria", {
+                                name: row.name,
+                              })}
+                              onClick={() => removeTag(row.name)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </EdgeFade>
           </>
         )}
       </div>
