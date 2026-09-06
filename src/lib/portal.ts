@@ -15,6 +15,7 @@ import {
 	snapshotTab,
 	snapshotCat,
 	snapshotApp,
+	snapshotToDisk,
 	publicAudit,
 	publicTrash,
 	emptyTrash
@@ -1044,7 +1045,8 @@ function dataPath(join) {
 function asStore(raw) {
 	if (!raw || typeof raw !== "object") return null;
 	const doc = raw;
-	if (!doc.settings || !Array.isArray(doc.tabs)) return null;
+	const tabs = Array.isArray(doc.spaces) ? doc.spaces : doc.tabs;
+	if (!doc.settings || !Array.isArray(tabs)) return null;
 	return {
 		settings: {
 			title: String(doc.settings.title || "Dockit"),
@@ -1092,13 +1094,13 @@ function asStore(raw) {
 			timezone: asTimeZone(doc.settings.timezone)
 		},
 		customIcons: (Array.isArray(doc.customIcons) ? doc.customIcons : []).slice(0, MAX_CUSTOM_ICONS),
-		lastTabId: typeof doc.lastTabId === "string" ? doc.lastTabId : void 0,
+		lastTabId: typeof doc.lastSpaceId === "string" ? doc.lastSpaceId : typeof doc.lastTabId === "string" ? doc.lastTabId : void 0,
 		clickDays: asClickDays(doc.clickDays),
 		users: asUsers(doc.users),
 		groups: asGroups(doc.groups),
 		roles: asRoles(doc.roles),
 		history: asHistory(doc.history),
-		tabs: doc.tabs.map((t, i) => ({
+		tabs: tabs.map((t, i) => ({
 			id: t.id || crypto.randomUUID(),
 			name: t.name,
 			icon: t.icon || "Layers",
@@ -1108,9 +1110,40 @@ function asStore(raw) {
 				...c,
 				sortOrder: Number(c.sortOrder ?? j + 1),
 				...normalizeCatAccess(c),
-				apps: (c.apps ?? []).map((a, k) => normalizeItem(a, c.id, Number(a.sortOrder ?? k + 1)))
+				apps: (c.cards ?? c.apps ?? []).map((a, k) => normalizeItem(a, c.id, Number(a.sortOrder ?? k + 1)))
 			}))
 		}))
+	};
+}
+function historyToDisk(row) {
+	if (!row || typeof row !== "object") return row;
+	const restored = row.restored && typeof row.restored === "object" ? row.restored : {};
+	return {
+		...row,
+		restored: {
+			space: Boolean(restored.tab || restored.space),
+			categories: Array.isArray(restored.categories) ? restored.categories : [],
+			cards: Array.isArray(restored.cards) ? restored.cards : Array.isArray(restored.apps) ? restored.apps : []
+		},
+		snapshot: snapshotToDisk(row.snapshot)
+	};
+}
+function toDisk(doc) {
+	const { tabs, lastTabId, history, ...rest } = doc;
+	return {
+		...rest,
+		lastSpaceId: lastTabId,
+		spaces: (tabs || []).map((t) => ({
+			...t,
+			categories: (t.categories || []).map((c) => {
+				const { apps, ...cat } = c;
+				return {
+					...cat,
+					cards: apps || []
+				};
+			})
+		})),
+		history: (history || []).map(historyToDisk)
 	};
 }
 var liveDoc = null;
@@ -1161,7 +1194,7 @@ async function persistDoc(doc) {
 	await mkdir(dirn(path), { recursive: true });
 	const tmp = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
 	try {
-		await writeFile(tmp, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
+		await writeFile(tmp, `${JSON.stringify(toDisk(doc), null, 2)}\n`, "utf8");
 		await rename(tmp, path);
 	} catch (err) {
 		await unlink(tmp).catch(() => void 0);
@@ -1445,17 +1478,17 @@ function markRestored(ev, scope, id) {
 }
 function snapshotAppFromEvent(ev, targetId) {
 	const snap = ev.snapshot || {};
-	if (snap.app && snap.app.id === targetId) return {
-		app: snap.app,
+	if ((snap.app || snap.card) && (snap.app || snap.card).id === targetId) return {
+		app: snap.app || snap.card,
 		category: snap.category,
-		tab: snap.tab
+		tab: snap.tab || snap.space
 	};
-	for (const app of snap.apps || []) if (app.id === targetId) return {
+	for (const app of snap.apps || snap.cards || []) if (app.id === targetId) return {
 		app,
 		category: snap.category,
-		tab: snap.tab
+		tab: snap.tab || snap.space
 	};
-	for (const cat of snap.categories || []) for (const app of cat.apps || []) if (app.id === targetId) return {
+	for (const cat of snap.categories || []) for (const app of cat.apps || cat.cards || []) if (app.id === targetId) return {
 		app,
 		category: snapshotCat(cat),
 		tab: snap.tab
@@ -1483,13 +1516,13 @@ function restoreHistoryItem(doc, user, eventId, scope, targetId) {
 	}
 	if (scope === "category") {
 		let catMeta = snap.category && snap.category.id === targetId ? snap.category : null;
-		let apps = snap.apps || [];
-		let tabMeta = snap.tab;
+		let apps = snap.apps || snap.cards || [];
+		let tabMeta = snap.tab || snap.space;
 		if (!catMeta) {
 			const cat = (snap.categories || []).find((c) => c.id === targetId);
 			if (!cat) throw new Error("errors.historyCategoryMissing");
 			catMeta = snapshotCat(cat);
-			apps = cat.apps || [];
+			apps = cat.apps || cat.cards || [];
 		}
 		const tab = ensureRestoredTab(doc, tabMeta);
 		const cat = ensureRestoredCat(tab, catMeta);
@@ -1507,11 +1540,11 @@ function restoreHistoryItem(doc, user, eventId, scope, targetId) {
 		return tab.id;
 	}
 	if (scope === "tab") {
-		if (!snap.tab) throw new Error("errors.historySpaceMissing");
-		const tab = ensureRestoredTab(doc, snap.tab);
+		if (!snap.tab && !snap.space) throw new Error("errors.historySpaceMissing");
+		const tab = ensureRestoredTab(doc, snap.tab || snap.space);
 		for (const cat of snap.categories || []) {
 			const created = ensureRestoredCat(tab, snapshotCat(cat));
-			for (const app of cat.apps || []) {
+			for (const app of cat.apps || cat.cards || []) {
 				if (liveAppId(doc, app.id)) continue;
 				putRestoredApp(doc, snapshotTab(tab), snapshotCat(created), app);
 				markRestored(ev, "card", app.id);
@@ -3007,7 +3040,7 @@ export const saveCustomIcon = createServerFn({ method: "POST" }).validator(z.obj
 
 function unwrapBackup(raw) {
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
-	if (raw.settings && Array.isArray(raw.tabs)) return raw;
+	if (raw.settings && (Array.isArray(raw.spaces) || Array.isArray(raw.tabs))) return raw;
 	if (raw.backup && typeof raw.backup === "object") return raw.backup;
 	return raw;
 }
@@ -3023,19 +3056,15 @@ export const exportPortal = createServerFn({ method: "POST" }).validator(z.objec
 	return {
 		version: 1,
 		exportedAt: new Date().toISOString(),
-		settings: {
-			...doc.settings,
-			logo: await assetToDataUrl(doc.settings.logo),
-			favicon: await assetToDataUrl(doc.settings.favicon)
-		},
-		customIcons,
-		lastTabId: doc.lastTabId ?? "",
-		clickDays: doc.clickDays ?? {},
-		users: doc.users,
-		groups: doc.groups || [],
-		roles: doc.roles || [],
-		history: asHistory(doc.history),
-		tabs: doc.tabs
+		...toDisk({
+			...doc,
+			settings: {
+				...doc.settings,
+				logo: await assetToDataUrl(doc.settings.logo),
+				favicon: await assetToDataUrl(doc.settings.favicon)
+			},
+			customIcons
+		})
 	};
 }));
 export const exportAudit = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {

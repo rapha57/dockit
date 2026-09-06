@@ -4,7 +4,7 @@ export function collectInventory(catalog) {
 	const rows = [];
 	for (const tab of catalog ?? []) {
 		for (const cat of tab.categories ?? []) {
-			for (const app of cat.apps ?? []) {
+			for (const app of cat.cards ?? cat.apps ?? []) {
 				const kind = app.kind || "app";
 				rows.push({
 					tab: tab.name || "",

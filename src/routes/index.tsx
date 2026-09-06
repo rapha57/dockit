@@ -172,7 +172,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.16";
+var PORTAL_VERSION = "2026.09.06.17";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -5842,7 +5842,7 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
                   <SortLabel id="date" sort={col.sort} onToggle={col.toggle} className="am-row-end">
                     {t("audit.csvDate")}
                   </SortLabel>
-                  {pane === "recovery" ? <span className="am-row-end" /> : null}
+                  {pane === "recovery" ? <span className="am-row-action" /> : null}
                 </div>
               </div>
             ) : null}
@@ -5895,7 +5895,7 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
                               <span className="am-dim am-row-end">
                                 {[formatHistoryWhen(row.at), row.actor].filter(Boolean).join(" · ")}
                               </span>
-                              <span className="am-row-end am-row-action">
+                              <span className="am-row-action">
                                 <button
                                   type="button"
                                   className="card-tool am-row-restore"
@@ -6124,7 +6124,7 @@ function AdminPanel({
         ) : (
           <div className="settings-pane is-fill">
             {" "}
-            <TagManager>
+            <TagManager
               tags={tags}
               colors={settings.tagColors}
               busy={busy}

@@ -54,6 +54,53 @@ export function snapshotApp(app) {
 	};
 }
 
+function snapshotFromDisk(raw) {
+	if (!raw || typeof raw !== "object") return null;
+	const s = { ...raw };
+	if (s.space && !s.tab) s.tab = s.space;
+	if (s.card && !s.app) s.app = s.card;
+	if (Array.isArray(s.cards) && !s.apps) s.apps = s.cards;
+	if (Array.isArray(s.categories)) {
+		s.categories = s.categories.map((c) => {
+			if (!c || typeof c !== "object") return c;
+			return {
+				...c,
+				apps: c.apps || c.cards || []
+			};
+		});
+	}
+	return s;
+}
+
+export function snapshotToDisk(snap) {
+	if (!snap || typeof snap !== "object") return snap;
+	const s = { ...snap };
+	if (s.tab) {
+		s.space = s.tab;
+		delete s.tab;
+	}
+	if (s.app) {
+		s.card = s.app;
+		delete s.app;
+	}
+	if (s.apps) {
+		s.cards = s.apps;
+		delete s.apps;
+	}
+	if (Array.isArray(s.categories)) {
+		s.categories = s.categories.map((c) => {
+			if (!c || typeof c !== "object") return c;
+			const x = { ...c };
+			if (x.apps) {
+				x.cards = x.apps;
+				delete x.apps;
+			}
+			return x;
+		});
+	}
+	return s;
+}
+
 export function asHistory(raw) {
 	if (!Array.isArray(raw)) return [];
 	const out = [];
@@ -70,11 +117,15 @@ export function asHistory(raw) {
 			label: String(row.label || "").slice(0, 120),
 			purged: Boolean(row.purged),
 			restored: {
-				tab: Boolean(restored.tab),
+				tab: Boolean(restored.tab || restored.space),
 				categories: Array.isArray(restored.categories) ? restored.categories.map(String).slice(0, 80) : [],
-				apps: Array.isArray(restored.apps) ? restored.apps.map(String).slice(0, 400) : []
+				apps: Array.isArray(restored.cards)
+					? restored.cards.map(String).slice(0, 400)
+					: Array.isArray(restored.apps)
+						? restored.apps.map(String).slice(0, 400)
+						: []
 			},
-			snapshot: row.snapshot && typeof row.snapshot === "object" ? row.snapshot : null
+			snapshot: snapshotFromDisk(row.snapshot)
 		});
 		if (out.length >= MAX_HISTORY) break;
 	}
@@ -115,7 +166,7 @@ export function appendHistory(doc, user, payload) {
 
 export function eventPath(ev) {
 	const snap = ev?.snapshot || {};
-	const tab = snap.tab?.name || "";
+	const tab = snap.tab?.name || snap.space?.name || "";
 	const cat = snap.category?.name || "";
 	if (tab && cat) return `${tab} / ${cat}`;
 	return tab || cat || "";

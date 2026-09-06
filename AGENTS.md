@@ -33,8 +33,8 @@ Production: Node 22, `PORTAL_EDIT_PASSWORD` required (≥ 12 chars, no default).
 - Stack: React 19, TanStack Router / Start, Vite, Nitro, Tailwind 4, Zod, `jose` (OIDC), `ldapts`, lucide-react, sonner.
 - Server: `createServerFn` + Zod. Every mutation goes through `mutate` / `withLock`.
 - `src/routes/index.tsx` is very large and uses **JSX** — match its style. UI primitives live in `src/components/ui/` (shadcn-style with Dockit tokens). Do not reintroduce `jsx()` / `jsxs()`.
-- Data model: `settings`, `customIcons`, `tabs[] → categories[] → apps[]`, `users`, `groups`, `roles`, `history`, `clickDays`, `lastTabId`.
-- UI vocabulary: **Space / Category / Card** (FR: Espace / Catégorie / Carte). Never « tab » or « app » in user-facing copy — internally the JSON still uses `tabs` / `apps`.
+- Data model: `settings`, `customIcons`, `spaces[] → categories[] → cards[]`, `users`, `groups`, `roles`, `history`, `clickDays`, `lastSpaceId`. Older files with `tabs` / `apps` / `lastTabId` are still read.
+- UI vocabulary: **Space / Category / Card** (FR: Espace / Catégorie / Carte). Never « tab » or « app » in user-facing copy. JSON uses `spaces` / `categories` / `cards` (`kind` on a card stays `app` / `note` / `embed`).
 
 ## Persistence
 
@@ -92,7 +92,7 @@ Behind a proxy: `PORTAL_PUBLIC_ORIGIN` + `PORTAL_TRUST_PROXY=1`.
 - **Heights**: fields (`input` / `textarea` / `select`) and primary buttons (`Button`, Save) = **36px (`h-9`)**. The login screen is the reference (buttons = fields). Secondary constants: `am-create` (Access/History toolbars, secondary actions) = **32px**, `card-tool` (row actions) = **1.85rem**, `am-text-btn` (action links under fields) = **2rem**. Never put a 32px button next to a 36px field.
 - **Edit forms (Space / Category / Card) follow the Settings grammar**: `.settings-card` blocks with `.settings-kicker`, field pairs via `.field-row`, header `title + lead`. No off-charte patterns (live preview, segmented control, inline icon inside a field).
 - **Row actions = `card-tool`** (1.85rem square, 14px `size-3.5` icon) — consistent across spaces, categories, cards, tags, and history.
-- History: Restore = `card-tool` button hover-revealed and vertically centered; « Empty trash » = a real `am-create` button; columns aligned between Audit and Recovery.
+- History: Restore = always-visible `card-tool` button, vertically centered in its own column; « Empty trash » = a real `am-create` button; columns aligned between Audit and Recovery.
 - **List tables (Access, History, Tags, any `.am-list`)**: never put `.am-list-head` inside the scroll area. Order is `.am-work` → `.am-toolbar` → `.am-list-head` (static, glued to the toolbar) → `.am-list-wrap` (overflow, **rows only**). Do **not** use `position: sticky` on the header — rows must not scroll under the search fields or through a 1px gap. Access uses `ListShell`’s `head` prop. Header height matches History: `.am-list-head .am-chevron-spacer { height: auto }` (spacers are width-only).
 - **Edge fade**: `useEdgeFade` + `mask-image` on the **scroll container** (`.am-list-wrap`, `.settings-pane`, `.icon-pick-body`, `.note-scroll`). Never an overlay between header and rows. Fade top only after scroll, fade bottom only if more content below. Tables: header stays outside the scroller so the fade starts **below** the header border. `scrollbar-gutter: stable` + a solid mask strip on the gutter so the scrollbar does not fade.
 - **Preview panels** (sample boxes in settings, e.g. Locales « Example »): a `settings-card` with a `settings-kicker`, inside a bordered rounded box like `SizePreview` (`border`, `radius-lg`, `elevated`-ish background), one labeled row per value (« Date: … », « Numbers: … » in `muted` label + `tabular-nums` value). The preview lives inside the section it illustrates, never as a separate banner at the top, and never a lone hint paragraph.

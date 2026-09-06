@@ -3113,7 +3113,7 @@ html.dark .dockit-mark {
 }
 .am-list.is-history.is-recovery .am-row-cells,
 .am-list-head.is-history.is-recovery .am-row-cells {
-  grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 1.1fr) minmax(8.5rem, 11rem) minmax(2rem, 2.5rem);
+  grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 1.1fr) minmax(8.5rem, 11rem) 2.25rem;
 }
 .am-list.is-history .am-row-title {
   white-space: normal;
@@ -3138,27 +3138,17 @@ html.dark .dockit-mark {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.am-list.is-history .am-row-end .am-text-btn {
-  height: 1.5rem;
-  flex-shrink: 0;
-  font-size: 0.75rem;
-}
 .am-list.is-history .am-row-restore {
   width: 1.85rem;
   height: 1.85rem;
 }
 .am-list.is-history .am-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
   align-self: center;
-}
-@media (hover: hover) {
-  .am-list.is-history .am-row .am-row-restore {
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-  .am-list.is-history .am-row:hover .am-row-restore,
-  .am-list.is-history .am-row:focus-within .am-row-restore {
-    opacity: 1;
-  }
+  overflow: visible;
 }
 .stats-panel {
   width: min(36rem, 100%);
