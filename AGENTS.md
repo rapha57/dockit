@@ -1,92 +1,103 @@
-# Dockit — pratiques pour l’agent
+# Dockit — AGENTS.md
 
-Portail d’URLs IT auto-hébergé. Une instance, un fichier JSON, pas de base. Le dépôt public est `rapha57/dockit`.
+## Project
 
-Travailler dans `/Users/raphael/Documents/Developpement/dockit`. L’ancien dossier `dashboard-it` n’est plus le projet.
+Dockit is a self-hosted IT URL portal: a shared home page where teams gather links to the web tools and apps they actually use, organized by space, category and card. One instance, one JSON file (`data/portal.json`), **no database**. Public repo: `rapha57/dockit`.
 
-## Comment travailler avec Raphael
+The maintainer (Raphael) speaks **French** — respond in French. Code, identifiers, README and this file are in **English**.
 
-- Parler **français**. Code, identifiants et README en **anglais**.
-- **Proposer, puis attendre GO** — sauf s’il dit clairement « code », « fais », « vire », « ajoute ».
-- **Ne pas committer ni pousser** sans qu’il le demande. Un commit ≠ un push.
-- Petites diffs, ciblées. Pas de refacto, de fichier markdown ou de « polish » hors sujet.
-- UI web : vérifier le comportement (pas seulement un screenshot), desktop et mobile si le layout change.
-
-## Produit
-
-- **Un seul produit.** Pas de SKU Community / Business, pas de licence. Un « buy me a coffee » éventuel, plus tard, n’est pas un palier de fonctionnalités.
-- Vocabulaire UI : **Space / Category / Card** (FR : Espace / Catégorie / Carte). Pas « tab » ni « app » dans le copy utilisateur — en interne le JSON parle encore de `tabs` / `apps`.
-- Comptes : identifiant + mot de passe. **Pas d’avatar, pas d’e-mail.**
-- Auth locale **toujours** disponible, même avec LDAP / OIDC. LDAP et Entra ne sont pas des éditions du produit.
-- Les groupes existent dans le JSON pour un AD plus tard. Ne pas inventer un modèle parallèle.
-- Install neuve : **anglais** (`settings.locale = "en"`). Chaînes dans `src/locales/en.json` **et** `fr.json` à chaque ajout.
-- README public en anglais. Copy produit : pas de noms d’employeur, de banque, ni de NAS grand public.
-- Seed GitHub : Home + Applications **vides**. Une démo locale dans `data/portal.json` est gitignorée ; ne jamais la committer.
-
-## Données
-
-Tout vit dans `data/portal.json` (surcharge : `PORTAL_DATA_FILE`). **Pas de DB.**
-
-`readDocUnlocked` garde un `liveDoc` en mémoire. Un process `npm run dev` déjà lancé **réécrit le disque** avec ce cache. Après un edit manuel du JSON : **redémarrer le serveur**, sinon le fichier revient à l’ancien état.
-
-Sauvegarder / déplacer = copier ce JSON. Le traiter comme un secret (hashes scrypt, secret OIDC, bind LDAP).
-
-## Où toucher
-
-| Sujet | Fichier |
-| --- | --- |
-| Persist, settings, users, server fns | `src/lib/portal.ts` |
-| ACL (`can`, rôles, grants) | `src/lib/acl.ts` |
-| UI Access (Users / Groups / Roles) | `src/components/access.tsx` |
-| Portail, Settings, cartes | `src/routes/index.tsx` |
-| Dates / heures / i18n runtime | `src/lib/i18n.ts` + `src/locales/*.json` |
-| Liens cartes | `src/lib/safe-href.ts` (http/https seulement) |
-| Version GitHub | `src/lib/release.ts` → `rapha57/dockit` |
-| Styles | `src/styles.css` (préfixes `.am-*` pour Access) |
-
-`index.tsx` est volumineux ; il est en JSX. Matcher ce style. Primitives : `src/components/ui/`.
-
-Server : `createServerFn` + Zod. Toute mutation passe par `mutate` / `withLock`.
-
-## Accès (RBAC)
-
-- Rôles système : `owner` / `admin` / `editeur` / `lecteur` (labels EN : Owner / Admin / Editor / Viewer).
-- Effective access = union grants directs + rôles user + rôles de groupes + héritage. `view` + `open` implicites si le nœud n’est pas restricted.
-- **`move` ≠ `edit`.**
-- Access = **liste → chevron → expansion inline**. Suppressions = **popup**. Pas de barre de sélection noire. Ghost de drag catégories comme pour les cartes.
-- `index.tsx` est en JSX. Primitives UI dans `src/components/ui/` (shadcn-style, tokens Dockit). Ne pas réintroduire `jsx()`/`jsxs()`.
-
-## Sécurité (by design)
-
-Intranet + reverse proxy. En prod : `PORTAL_EDIT_PASSWORD` ≥ 12, pas de défaut.
-
-Déjà en place, à conserver : scrypt, rate limit login, ACL, OIDC PKCE, headers, iframes sans `allow-same-origin`, CSS thème sans `url(` / `@import`, probes bornées (pas de metadata cloud).
-
-Réglages Security (off par défaut, intranet) : vérif TLS probes, probes réservées aux sessions, cookie HttpOnly.
-
-Derrière un proxy : `PORTAL_PUBLIC_ORIGIN` + `PORTAL_TRUST_PROXY=1`.
-
-## UI / locales
-
-- Formats d’instance : date (`ymd` YY/MM/DD, `yyyy` YYYY/MM/DD, `dmy`, `mdy`, `iso`), heure `24h` / `12h`, fuseau IANA ou navigateur. Ça alimente historique, exports, inventaires — pas un format « cosmétique ».
-- Tags : 3 max par carte, pastels (`src/lib/tag-colors.ts`).
-- Hauteurs UI : champs (`input` / `textarea` / `select`) et boutons principaux (`Button`, Save) = **36px (`h-9`)**. Le login est la référence (boutons = champs). Constantes secondaires assumées : `am-create` (toolbars Access/Historique, actions secondaires) = **32px**, `card-tool` (actions de ligne) = **1.85rem**, `am-text-btn` (liens d’action sous les champs) = **2rem**. Ne pas mettre un bouton 32px côte à côte avec un champ 36px.
-- Toasts : `sonner`. Confirmations destructives : `window.confirm` ou popup Access, pas un delete silencieux.
-
-## Git et version
-
-- Branche unique : `main`.
-- `data/portal.json` et `data/assets/` sont gitignorés.
-- Le hook `.githooks/pre-commit` met à jour `PORTAL_VERSION` dans `src/routes/index.tsx` via `scripts/portal-version.sh`. Ne pas le contourner.
-- Check de version About : releases GitHub `rapha57/dockit`. Repo sans release = pas de badge « hors ligne ».
-
-## Commandes
+## Setup
 
 ```bash
 npm ci
-npm run dev          # :8080
+npm run dev        # http://localhost:8080
 npm run build
 npm run typecheck
+npm run lint
 ```
 
-Prod Node 22 : `PORTAL_EDIT_PASSWORD` obligatoire. Docker : port **3000**.
+There is **no test suite or CI yet** — run `npm run typecheck` and `npm run build` to verify changes.
+
+Production: Node 22, `PORTAL_EDIT_PASSWORD` required (≥ 12 chars, no default). The Docker image listens on port **3000**.
+
+## How to work with Raphael
+
+- **Propose, explain, then wait for GO** before touching any code — always. Even after explaining a fix, do not write code until he says « go ». Only exceptions: « code », « fais », « vire », « ajoute », « corrige ».
+- **Never commit or push** unless asked. A commit is not a push. Often: « commit avant et go » means commit the current state **before** starting the next batch.
+- Small, targeted diffs. No off-topic refactors, markdown files, or polish.
+- For UI work: verify behavior (not just a screenshot), desktop and mobile when the layout changes.
+- **i18n is important.** Every added string (labels, toasts, download filenames…) goes in `src/locales/en.json` **and** `fr.json`. Nothing hardcoded.
+
+## Architecture
+
+- Stack: React 19, TanStack Router / Start, Vite, Nitro, Tailwind 4, Zod, `jose` (OIDC), `ldapts`, lucide-react, sonner.
+- Server: `createServerFn` + Zod. Every mutation goes through `mutate` / `withLock`.
+- `src/routes/index.tsx` is very large and uses **JSX** — match its style. UI primitives live in `src/components/ui/` (shadcn-style with Dockit tokens). Do not reintroduce `jsx()` / `jsxs()`.
+- Data model: `settings`, `customIcons`, `tabs[] → categories[] → apps[]`, `users`, `groups`, `roles`, `history`, `clickDays`, `lastTabId`.
+- UI vocabulary: **Space / Category / Card** (FR: Espace / Section / Carte). Never « tab » or « app » in user-facing copy — internally the JSON still uses `tabs` / `apps`.
+
+## Persistence
+
+Everything lives in `data/portal.json` (override: `PORTAL_DATA_FILE`). **No DB.**
+
+`readDocUnlocked` keeps a `liveDoc` in memory. A running `npm run dev` process **rewrites the disk** with this cache — after manually editing the JSON, **restart the server**, otherwise the file reverts to the previous state.
+
+Backup / move = copy the JSON. Treat it as a secret (scrypt hashes, OIDC secret, LDAP bind).
+
+## Where to touch
+
+| Topic | File |
+| --- | --- |
+| Persistence, settings, users, server fns | `src/lib/portal.ts` |
+| ACL (`can`, roles, grants) | `src/lib/acl.ts` |
+| Access UI (Users / Groups / Roles) | `src/components/access.tsx` |
+| Portal, Settings, cards | `src/routes/index.tsx` |
+| Dates / times / i18n runtime | `src/lib/i18n.ts` + `src/locales/*.json` |
+| Card links | `src/lib/safe-href.ts` (http/https only) |
+| GitHub version | `src/lib/release.ts` → `rapha57/dockit` |
+| Styles | `src/styles.css` (`.am-*` prefixes for Access) |
+
+## Product rules
+
+- **Single product.** No Community / Business SKU, no license tiers. A possible « buy me a coffee » later is not a feature tier.
+- Accounts: username + password. **No avatar, no email.**
+- Local auth is **always** available, even with LDAP / OIDC. LDAP and Entra are not product editions.
+- Groups exist in the JSON for a future AD. Do not invent a parallel model.
+- Fresh install: **English** (`settings.locale = "en"`).
+- Public README in English. Product copy: no employer, bank, or SSN-style content.
+- GitHub seed: Home + Applications **empty**. The local demo `data/portal.json` is gitignored — never commit it.
+
+## RBAC / Access
+
+- System roles: `owner` / `admin` / `editeur` / `lecteur` (EN labels: Owner / Admin / Editor / Viewer).
+- Effective access = union of direct grants + user roles + group roles + inheritance. `view` + `open` are implicit unless a node is restricted.
+- **`move` ≠ `edit`** — no implicit implication, explicit grants only.
+- Restore: an Editor restores **only** items within their rights (spaces they can edit); everything else is hidden. Admin / Owner restore everything.
+- Access UI: **list → chevron → inline expansion**. Deletions use a **popup**. No black selection bar. Category drag ghost like cards.
+
+## Security (by design)
+
+Intranet + reverse proxy. In production: `PORTAL_EDIT_PASSWORD` ≥ 12, no default.
+
+Already in place, keep it: scrypt, login rate limiting, ACL, OIDC PKCE, security headers, iframes without `allow-same-origin`, theme CSS without `url(` / `@import`, bounded probes (no cloud metadata).
+
+Security settings (off by default, intranet): TLS probe verification, probes limited to sessions, HttpOnly session cookie.
+
+Behind a proxy: `PORTAL_PUBLIC_ORIGIN` + `PORTAL_TRUST_PROXY=1`.
+
+## UI / design conventions
+
+- Instance formats: date (`ymd` YY/MM/DD, `yyyy` YYYY/MM/DD, `dmy`, `mdy`, `iso`), time `24h` / `12h`, IANA timezone or browser. These feed history, exports, and inventories — not cosmetic.
+- Tags: 3 max per card, pastels (`src/lib/tag-colors.ts`).
+- **Heights**: fields (`input` / `textarea` / `select`) and primary buttons (`Button`, Save) = **36px (`h-9`)**. The login screen is the reference (buttons = fields). Secondary constants: `am-create` (Access/History toolbars, secondary actions) = **32px**, `card-tool` (row actions) = **1.85rem**, `am-text-btn` (action links under fields) = **2rem**. Never put a 32px button next to a 36px field.
+- **Edit forms (Space / Section / Card) follow the Settings grammar**: `.settings-card` blocks with `.settings-kicker`, field pairs via `.field-row`, header `title + lead`. No off-charte patterns (live preview, segmented control, inline icon inside a field).
+- **Row actions = `card-tool`** (1.85rem square, 14px `size-3.5` icon) — consistent across tabs, sections, cards, tags, and history.
+- History: Restore = `card-tool` button hover-revealed and vertically centered; « Empty trash » = a real `am-create` button; columns aligned between Audit and Recovery.
+- Toasts: `sonner`. Destructive confirmations: `window.confirm` or Access popup, never a silent delete.
+
+## Git & version
+
+- Single branch: `main`.
+- `data/portal.json` and `data/assets/` are gitignored.
+- The `.githooks/pre-commit` hook updates `PORTAL_VERSION` in `src/routes/index.tsx` via `scripts/portal-version.sh`. Do not bypass it.
+- About version check: GitHub releases `rapha57/dockit`. No release = no « offline » badge.
