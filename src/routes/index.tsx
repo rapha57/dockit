@@ -171,7 +171,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.13";
+var PORTAL_VERSION = "2026.09.06.14";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -1057,65 +1057,6 @@ function Home() {
   pageRef.current = page;
   tokenRef.current = token;
   activeTabRef.current = data.activeTabId;
-  useEffect(() => {
-    const FADE_SELECTOR = ".settings-pane, .am-list-wrap";
-    const update = (pane) => {
-      const can = pane.scrollHeight > pane.clientHeight + 1;
-      const atTop = pane.scrollTop <= 1;
-      const atBottom = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1;
-      const f = pane.__fade;
-      if (!f) return;
-      const head = pane.querySelector(".am-list-head");
-      f.top.style.setProperty("--fade-top", head ? `${Math.max(head.offsetHeight, 12)}px` : "0px");
-      f.top.style.opacity = can && !atTop ? "1" : "0";
-      f.bottom.style.opacity = can && !atBottom ? "1" : "0";
-    };
-    const attach = (pane) => {
-      if (pane.__fade) return;
-      const top = document.createElement("div");
-      top.className = "edge-fade edge-fade-top";
-      top.setAttribute("aria-hidden", "true");
-      const bottom = document.createElement("div");
-      bottom.className = "edge-fade edge-fade-bottom";
-      bottom.setAttribute("aria-hidden", "true");
-      pane.appendChild(bottom);
-      pane.insertBefore(top, pane.firstChild);
-      const handler = () => update(pane);
-      pane.__fade = { top, bottom, handler, ro: null };
-      update(pane);
-      pane.addEventListener("scroll", handler, { passive: true });
-      if (typeof ResizeObserver !== "undefined") {
-        pane.__fade.ro = new ResizeObserver(handler);
-        pane.__fade.ro.observe(pane);
-      }
-    };
-    const walk = () => {
-      document.querySelectorAll(FADE_SELECTOR).forEach((pane) => {
-        attach(pane);
-        update(pane);
-      });
-    };
-    walk();
-    const mo = new MutationObserver(walk);
-    mo.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener("resize", walk);
-    window.addEventListener("load", walk);
-    return () => {
-      mo.disconnect();
-      window.removeEventListener("resize", walk);
-      window.removeEventListener("load", walk);
-      document.querySelectorAll(FADE_SELECTOR).forEach((pane) => {
-        const f = pane.__fade;
-        if (f) {
-          pane.removeEventListener("scroll", f.handler);
-          f.ro?.disconnect();
-          f.top?.remove();
-          f.bottom?.remove();
-          delete pane.__fade;
-        }
-      });
-    };
-  }, []);
   function unbindDrag() {
     unbindDragRef.current?.();
     unbindDragRef.current = null;
