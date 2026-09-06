@@ -1,8 +1,18 @@
-import { Layers, Plus } from "lucide-react";
+import { Layers, Plus, type LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
 
-export function EmptyState({ editMode, onAdd, compact, icon: Icon = Layers, text, action }) {
+type EmptyStateProps = {
+  editMode?: boolean;
+  onAdd?: () => void;
+  compact?: boolean;
+  icon?: LucideIcon;
+  text?: ReactNode;
+  action?: ReactNode;
+};
+
+export function EmptyState({ editMode, onAdd, compact, icon: Icon = Layers, text, action }: EmptyStateProps) {
   return (
     <div className={`empty-page${compact ? " is-compact" : ""}`}>
       <div className="empty-page-mark">
