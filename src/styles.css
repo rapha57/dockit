@@ -3069,7 +3069,7 @@ html.dark .dockit-mark {
   cursor: default;
 }
 .am-list.is-history .am-row-cells {
-  grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 1.1fr) minmax(8.5rem, 11rem);
+  grid-template-columns: minmax(0, 1.35fr) minmax(8rem, 1.1fr) minmax(8.5rem, 11rem) minmax(2rem, 2.5rem);
   align-items: start;
 }
 .am-list.is-history .am-row-title {
@@ -3099,6 +3099,23 @@ html.dark .dockit-mark {
   height: 1.5rem;
   flex-shrink: 0;
   font-size: 0.75rem;
+}
+.am-list.is-history .am-row-restore {
+  width: 1.85rem;
+  height: 1.85rem;
+}
+.am-list.is-history .am-row-action {
+  align-self: center;
+}
+@media (hover: hover) {
+  .am-list.is-history .am-row .am-row-restore {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .am-list.is-history .am-row:hover .am-row-restore,
+  .am-list.is-history .am-row:focus-within .am-row-restore {
+    opacity: 1;
+  }
 }
 .stats-panel {
   width: min(36rem, 100%);

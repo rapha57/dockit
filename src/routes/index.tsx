@@ -188,7 +188,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.3";
+var PORTAL_VERSION = "2026.09.06.4";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -5819,14 +5819,17 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
                 ))}
               </div>
               {pane === "recovery" && canPurge ? (
-                <button
+                <Button
                   type="button"
-                  className="am-text-btn is-danger shrink-0 ml-auto"
+                  size="sm"
+                  variant="danger"
+                  className="am-create shrink-0 ml-auto"
                   disabled={busy || trash.length === 0}
                   onClick={() => void purge()}
                 >
+                  <Trash2 className="size-3.5" />
                   {t("actions.emptyTrash")}
-                </button>
+                </Button>
               ) : null}
               {pane === "audit" ? (
                 <Button
@@ -5901,17 +5904,19 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
                                 {[row.path, historyCountLabel(row.count)].filter(Boolean).join(" · ") ||
                                   "—"}
                               </span>
-                              <span className="am-row-end">
-                                <span className="am-dim">
-                                  {[formatHistoryWhen(row.at), row.actor].filter(Boolean).join(" · ")}
-                                </span>
+                              <span className="am-dim am-row-end">
+                                {[formatHistoryWhen(row.at), row.actor].filter(Boolean).join(" · ")}
+                              </span>
+                              <span className="am-row-end am-row-action">
                                 <button
                                   type="button"
-                                  className="am-text-btn"
+                                  className="card-tool am-row-restore"
+                                  aria-label={t("actions.restore")}
+                                  title={t("actions.restore")}
                                   disabled={busy}
                                   onClick={() => void restore(row)}
                                 >
-                                  {t("actions.restore")}
+                                  <Undo2 className="size-3.5" />
                                 </button>
                               </span>
                             </div>
