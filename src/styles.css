@@ -1564,8 +1564,19 @@ html.dark .debug-row.is-warn .debug-level {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 2rem), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 2rem), transparent 100%);
+  margin-bottom: 1.25rem;
+}
+.settings-pane.is-bottom-fading:not(.is-top-fading) {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 3.5rem), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 3.5rem), transparent 100%);
+}
+.settings-pane.is-top-fading:not(.is-bottom-fading) {
+  -webkit-mask-image: linear-gradient(to top, #000 0, #000 calc(100% - 3.5rem), transparent 100%);
+  mask-image: linear-gradient(to top, #000 0, #000 calc(100% - 3.5rem), transparent 100%);
+}
+.settings-pane.is-top-fading.is-bottom-fading {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 3.5rem, #000 calc(100% - 3.5rem), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 3.5rem, #000 calc(100% - 3.5rem), transparent 100%);
 }
 .settings-pane.is-fill {
   display: flex;
@@ -1592,9 +1603,6 @@ html.dark .debug-row.is-warn .debug-level {
 .settings-pane > form.locales-stack {
   min-height: 0;
   justify-content: flex-start;
-}
-.locales-stack .settings-card:last-child {
-  margin-bottom: 1.25rem;
 }
 .settings-field {
   display: flex;

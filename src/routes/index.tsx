@@ -171,7 +171,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.11";
+var PORTAL_VERSION = "2026.09.06.12";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -1057,6 +1057,44 @@ function Home() {
   pageRef.current = page;
   tokenRef.current = token;
   activeTabRef.current = data.activeTabId;
+  useEffect(() => {
+    const update = (pane) => {
+      const can = pane.scrollHeight > pane.clientHeight + 1;
+      const atTop = pane.scrollTop <= 1;
+      const atBottom = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1;
+      pane.classList.toggle("is-top-fading", can && !atTop);
+      pane.classList.toggle("is-bottom-fading", can && !atBottom);
+    };
+    const attach = (pane) => {
+      if (pane.__paneFade) return;
+      const handler = () => update(pane);
+      pane.__paneFade = { handler, ro: null };
+      update(pane);
+      pane.addEventListener("scroll", handler, { passive: true });
+      if (typeof ResizeObserver !== "undefined") {
+        pane.__paneFade.ro = new ResizeObserver(handler);
+        pane.__paneFade.ro.observe(pane);
+      }
+    };
+    const walk = () => document.querySelectorAll(".settings-pane").forEach(attach);
+    walk();
+    const mo = new MutationObserver(walk);
+    mo.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", walk);
+    return () => {
+      mo.disconnect();
+      window.removeEventListener("resize", walk);
+      document.querySelectorAll(".settings-pane").forEach((pane) => {
+        const f = pane.__paneFade;
+        if (f) {
+          pane.removeEventListener("scroll", f.handler);
+          f.ro?.disconnect();
+          delete pane.__paneFade;
+        }
+        pane.classList.remove("is-top-fading", "is-bottom-fading");
+      });
+    };
+  }, []);
   function unbindDrag() {
     unbindDragRef.current?.();
     unbindDragRef.current = null;

@@ -93,6 +93,8 @@ Behind a proxy: `PORTAL_PUBLIC_ORIGIN` + `PORTAL_TRUST_PROXY=1`.
 - **Edit forms (Space / Section / Card) follow the Settings grammar**: `.settings-card` blocks with `.settings-kicker`, field pairs via `.field-row`, header `title + lead`. No off-charte patterns (live preview, segmented control, inline icon inside a field).
 - **Row actions = `card-tool`** (1.85rem square, 14px `size-3.5` icon) — consistent across tabs, sections, cards, tags, and history.
 - History: Restore = `card-tool` button hover-revealed and vertically centered; « Empty trash » = a real `am-create` button; columns aligned between Audit and Recovery.
+- **Preview panels** (sample boxes in settings, e.g. Locales « Example »): a `settings-card` with a `settings-kicker`, inside a bordered rounded box like `SizePreview` (`border`, `radius-lg`, `elevated`-ish background), one labeled row per value (« Date: … », « Numbers: … » in `muted` label + `tabular-nums` value). The preview lives inside the section it illustrates, never as a separate banner at the top, and never a lone hint paragraph.
+- **Scroll affordance = edge fades**: overflowing `.settings-pane` gets a soft bottom/top mask only where more content exists, and fades disappear at the scroll edges (JS toggles `is-bottom-fading` / `is-top-fading` on the pane). No custom scrollbars, no `margin`/`padding` on the last card inside the fade zone (it hides the gradient); give the pane an external `margin-bottom` instead.
 - Toasts: `sonner`. Destructive confirmations: `window.confirm` or Access popup, never a silent delete.
 
 ## Git & version
