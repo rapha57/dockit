@@ -188,7 +188,7 @@ export const Route = createFileRoute("/")({
 });
 var TOKEN_KEY = "portal-edit-token";
 var SESSION_KEY = "portal-session";
-var PORTAL_VERSION = "2026.09.06.2";
+var PORTAL_VERSION = "2026.09.06.3";
 var EDIT_MODE_KEY = "portal-edit-mode";
 var OIDC_NEXT_KEY = "portal-oidc-next";
 function versionParts(raw) {
@@ -930,20 +930,6 @@ function AccountMenu({
               {t("settings.title")}
             </button>
           ) : null}
-          {showHistory ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onHistory();
-              }}
-            >
-              {" "}
-              <History className="size-4 shrink-0" />
-              {t("history.title")}
-            </button>
-          ) : null}
           {showUsers ? (
             <button
               type="button"
@@ -956,6 +942,20 @@ function AccountMenu({
               {" "}
               <Users className="size-4 shrink-0" />
               {t("access.title")}
+            </button>
+          ) : null}
+          {showHistory ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onHistory();
+              }}
+            >
+              {" "}
+              <History className="size-4 shrink-0" />
+              {t("history.title")}
             </button>
           ) : null}
           {loggedIn && (showEdit || showSettings || showHistory || showUsers) ? (
@@ -1286,23 +1286,39 @@ function Home() {
         y: ev.clientY,
       };
       moveGhost(ev.clientX, ev.clientY);
-      const inMore = hitMoreSlot(ev.clientX, ev.clientY);
-      if (inMore) {
-        setMoreOpen(true);
-        tabOverMoreRef.current = true;
-        setTabOverMore(true);
-      } else {
-        const row = tabListRef.current?.getBoundingClientRect();
-        const more = tabMoreRef.current?.getBoundingClientRect();
-        const overBar =
-          row &&
-          ev.clientY >= row.top - 8 &&
-          ev.clientY <= row.bottom + 8 &&
-          ev.clientX >= row.left &&
-          ev.clientX < (more ? more.left - 8 : row.right);
-        if (overBar) {
+      const row = tabListRef.current?.getBoundingClientRect();
+      const more = tabMoreRef.current?.getBoundingClientRect();
+      const overBar =
+        row &&
+        ev.clientY >= row.top - 8 &&
+        ev.clientY <= row.bottom + 8 &&
+        ev.clientX >= row.left &&
+        ev.clientX < (more ? more.left - 8 : row.right);
+      if (overBar) {
+        const dragTab = dragRef.current;
+        const stripTabs = tabListRef.current
+          ? [...tabListRef.current.querySelectorAll(".tab-item[data-tab-id]")].filter(
+              (el) => !el.classList.contains("is-overflow") && el.offsetWidth,
+            )
+          : [];
+        const last = stripTabs[stripTabs.length - 1];
+        const atEnd =
+          dragTab?.kind === "tab" && last
+            ? ev.clientX >= last.getBoundingClientRect().right + 8
+            : false;
+        if (atEnd && tabOverflow.includes(dragTab.id)) {
+          tabOverMoreRef.current = true;
+          setTabOverMore(true);
+        } else {
           tabOverMoreRef.current = false;
           setTabOverMore(false);
+        }
+      } else {
+        const inMore = hitMoreSlot(ev.clientX, ev.clientY);
+        if (inMore) {
+          setMoreOpen(true);
+          tabOverMoreRef.current = true;
+          setTabOverMore(true);
         }
       }
       const insertAt = tabInsertAt(
@@ -2698,6 +2714,10 @@ function Home() {
       if (!avail) return;
       const fav = strip.querySelector("[data-tab-slot=fav]");
       const favW = fav?.offsetWidth || 0;
+      const plus = strip.querySelector("[data-tab-slot=plus]");
+      const plusW = plus?.offsetWidth || 0;
+      const moreEl = strip.querySelector("[data-tab-slot=more]");
+      const moreW = moreEl?.offsetWidth || 0;
       for (const el of strip.querySelectorAll(".tab-item[data-tab-id]")) {
         if (el.classList.contains("is-overflow")) continue;
         const id = el.dataset.tabId;
@@ -2710,8 +2730,8 @@ function Home() {
         activeId,
         avail,
         favW,
-        0,
-        0,
+        plusW,
+        moreW,
         gap,
       );
       setTabOverflow((cur) =>
@@ -2732,12 +2752,17 @@ function Home() {
     const btn = tabMoreRef.current?.querySelector(".tab-more");
     const panel = morePanelRef.current;
     if (!btn || !panel) return;
-    const r = btn.getBoundingClientRect();
-    const w = panel.offsetWidth;
-    const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
-    panel.style.top = `${r.bottom + 6}px`;
-    panel.style.left = `${Math.max(8, left)}px`;
-  }, [moreOpen, tabOverflow]);
+    const place = () => {
+      const r = btn.getBoundingClientRect();
+      const w = panel.offsetWidth;
+      const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+      panel.style.top = `${r.bottom + 6}px`;
+      panel.style.left = `${Math.max(8, left)}px`;
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [moreOpen]);
   useEffect(() => {
     if (!moreOpen) return;
     const close = (e) => {
@@ -3421,6 +3446,16 @@ function Home() {
               ) : null}
             </button>
             {displayTabs.map((tab, tabIndex) => (
+              <Fragment key={tab.id}>
+                {tabOverflow.includes(tab.id) &&
+                drag?.kind === "tab" &&
+                drag.id === tab.id &&
+                !tabOverMore &&
+                displayTabs.slice(tabIndex + 1).some((t) => !tabOverflow.includes(t.id)) ? (
+                  <div className="drop-slot tab-gap">
+                    <span className="drop-slot-label">{t("nav.dropHere")}</span>
+                  </div>
+                ) : null}
               <button
                 key={tab.id}
                 type="button"
@@ -3522,6 +3557,7 @@ function Home() {
                     </span>
                   )}
               </button>
+              </Fragment>
             ))}
             </div>
             <div className="tab-row-end">
