@@ -4,22 +4,33 @@ import en from "../locales/en.json";
 export const LOCALES = ["en", "fr"] as const;
 export type Locale = (typeof LOCALES)[number];
 
-const catalogs = {
+export type Vars = Record<string, unknown>;
+type DisplayPrefs = {
+	locale?: unknown;
+	dateFormat?: unknown;
+	timeFormat?: unknown;
+	timezone?: unknown;
+	numberFormat?: unknown;
+};
+
+const catalogs: Record<Locale, Record<string, string>> = {
 	en: flatten(en),
 	fr: flatten(fr)
 };
 
 let current: Locale = "en";
-let dateFormat = "ymd";
-let timeFormat = "24h";
+let dateFormat: DateFormat = "ymd";
+let timeFormat: TimeFormat = "24h";
 let timeZone = "";
-let numberFormat = "auto";
+let numberFormat: NumberFormat = "auto";
 
-export const DATE_FORMATS = ["ymd", "yyyy", "dmy", "mdy", "iso"];
-export const NUMBER_FORMATS = ["auto", "space-comma", "comma-dot", "dot-comma", "apostrophe-comma"];
+export const DATE_FORMATS = ["ymd", "yyyy", "dmy", "mdy", "iso"] as const;
+export type DateFormat = (typeof DATE_FORMATS)[number];
+export const NUMBER_FORMATS = ["auto", "space-comma", "comma-dot", "dot-comma", "apostrophe-comma"] as const;
+export type NumberFormat = (typeof NUMBER_FORMATS)[number];
 
-function flatten(obj, prefix = "") {
-	const out = {};
+function flatten(obj: unknown, prefix = ""): Record<string, string> {
+	const out: Record<string, string> = {};
 	if (!obj || typeof obj !== "object") return out;
 	for (const [k, v] of Object.entries(obj)) {
 		const key = prefix ? `${prefix}.${k}` : k;
@@ -29,16 +40,16 @@ function flatten(obj, prefix = "") {
 	return out;
 }
 
-export function asLocale(raw) {
+export function asLocale(raw: unknown): Locale {
 	return raw === "fr" ? "fr" : "en";
 }
 
-export function setLocale(locale) {
+export function setLocale(locale: unknown): Locale {
 	current = asLocale(locale);
 	return current;
 }
 
-export function applyDisplayPrefs(settings) {
+export function applyDisplayPrefs(settings: DisplayPrefs | null | undefined) {
 	setLocale(settings?.locale);
 	setDateFormat(settings?.dateFormat);
 	setTimeFormat(settings?.timeFormat);
@@ -46,7 +57,7 @@ export function applyDisplayPrefs(settings) {
 	setNumberFormat(settings?.numberFormat);
 }
 
-export function withLocale(localeOrSettings, fn) {
+export function withLocale<T>(localeOrSettings: unknown, fn: () => T): T {
 	const prev = {
 		locale: current,
 		dateFormat,
@@ -54,7 +65,8 @@ export function withLocale(localeOrSettings, fn) {
 		timeZone,
 		numberFormat
 	};
-	if (localeOrSettings && typeof localeOrSettings === "object") applyDisplayPrefs(localeOrSettings);
+	if (localeOrSettings && typeof localeOrSettings === "object")
+		applyDisplayPrefs(localeOrSettings as DisplayPrefs);
 	else setLocale(localeOrSettings);
 	try {
 		return fn();
@@ -71,25 +83,27 @@ export function localeTag() {
 	return current === "fr" ? "fr-FR" : "en-US";
 }
 
-export function asDateFormat(raw) {
-	return DATE_FORMATS.includes(raw) ? raw : "ymd";
+export function asDateFormat(raw: unknown): DateFormat {
+	return DATE_FORMATS.includes(raw as DateFormat) ? (raw as DateFormat) : "ymd";
 }
 
-export function setDateFormat(fmt) {
+export function setDateFormat(fmt: unknown): DateFormat {
 	dateFormat = asDateFormat(fmt);
 	return dateFormat;
 }
 
-export function asTimeFormat(raw) {
+export type TimeFormat = "24h" | "12h";
+
+export function asTimeFormat(raw: unknown): TimeFormat {
 	return raw === "12h" ? "12h" : "24h";
 }
 
-export function setTimeFormat(fmt) {
+export function setTimeFormat(fmt: unknown): TimeFormat {
 	timeFormat = asTimeFormat(fmt);
 	return timeFormat;
 }
 
-export function asTimeZone(raw) {
+export function asTimeZone(raw: unknown): string {
 	const id = String(raw || "").trim();
 	if (!id) return "";
 	try {
@@ -100,31 +114,31 @@ export function asTimeZone(raw) {
 	}
 }
 
-export function setTimeZone(id) {
+export function setTimeZone(id: unknown): string {
 	timeZone = asTimeZone(id);
 	return timeZone;
 }
 
-export function asNumberFormat(raw) {
-	return NUMBER_FORMATS.includes(raw) ? raw : "auto";
+export function asNumberFormat(raw: unknown): NumberFormat {
+	return NUMBER_FORMATS.includes(raw as NumberFormat) ? (raw as NumberFormat) : "auto";
 }
 
-export function setNumberFormat(fmt) {
+export function setNumberFormat(fmt: unknown): NumberFormat {
 	numberFormat = asNumberFormat(fmt);
 	return numberFormat;
 }
 
-const NUMBER_SEPS = {
+const NUMBER_SEPS: Record<Exclude<NumberFormat, "auto">, [string, string]> = {
 	"space-comma": [" ", ","],
 	"comma-dot": [",", "."],
 	"dot-comma": [".", ","],
 	"apostrophe-comma": ["\u2019", ","]
 };
 
-export function formatNumber(n, fmt) {
+export function formatNumber(n: unknown, fmt?: unknown): string {
 	const useFmt = fmt != null ? asNumberFormat(fmt) : numberFormat;
 	const num = Number(n) || 0;
-	const seps = NUMBER_SEPS[useFmt];
+	const seps = useFmt === "auto" ? undefined : NUMBER_SEPS[useFmt];
 	if (!seps) return num.toLocaleString(localeTag());
 	const raw = num.toLocaleString("en-US", { maximumFractionDigits: 2 });
 	const dot = raw.lastIndexOf(".");
@@ -133,7 +147,7 @@ export function formatNumber(n, fmt) {
 	return frac != null ? `${int.replaceAll(",", seps[0])}${seps[1]}${frac}` : int.replaceAll(",", seps[0]);
 }
 
-function zoneOffset(id, at) {
+function zoneOffset(id: string, at: Date): string {
 	try {
 		const parts = new Intl.DateTimeFormat("en-US", {
 			timeZone: id || undefined,
@@ -145,15 +159,18 @@ function zoneOffset(id, at) {
 	}
 }
 
-export function listTimeZones(at = new Date()) {
-	let names = [];
+type TimeZoneRow = { id: string; city: string; offset: string; label: string };
+type TimeZoneGroup = { region: string; zones: TimeZoneRow[] };
+
+export function listTimeZones(at = new Date()): TimeZoneGroup[] {
+	let names: string[] = [];
 	try {
 		names = Intl.supportedValuesOf("timeZone");
 	} catch {
 		names = [];
 	}
 	if (!names.includes("UTC")) names = ["UTC", ...names];
-	const groups = new Map();
+	const groups = new Map<string, TimeZoneRow[]>();
 	for (const id of names) {
 		const slash = id.indexOf("/");
 		const region = slash === -1 ? "Other" : id.slice(0, slash);
@@ -177,18 +194,20 @@ export function listTimeZones(at = new Date()) {
 		}));
 }
 
-function part(parts, type) {
+function part(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
 	return parts.find((p) => p.type === type)?.value || "";
 }
 
-export function formatWhen(at, withSeconds = false, prefs) {
-	const d = at instanceof Date ? at : new Date(at);
+type WhenPrefs = { dateFormat?: unknown; timeFormat?: unknown; timezone?: unknown };
+
+export function formatWhen(at: unknown, withSeconds = false, prefs?: WhenPrefs): string {
+	const d = at instanceof Date ? at : new Date(at as string | number);
 	if (Number.isNaN(d.getTime())) return "";
 	const fmt = prefs?.dateFormat != null ? asDateFormat(prefs.dateFormat) : dateFormat;
 	const clock = prefs?.timeFormat != null ? asTimeFormat(prefs.timeFormat) : timeFormat;
 	const tz = prefs && "timezone" in prefs ? asTimeZone(prefs.timezone) : timeZone;
 	const hour12 = clock === "12h";
-	let parts;
+	let parts: Intl.DateTimeFormatPart[];
 	try {
 		parts = new Intl.DateTimeFormat("en-US", {
 			timeZone: tz || undefined,
@@ -238,7 +257,7 @@ export function formatWhen(at, withSeconds = false, prefs) {
 	return `${date} ${time}`;
 }
 
-export function t(key, vars) {
+export function t(key: string, vars?: Vars): string {
 	const table = catalogs[current] || catalogs.en;
 	let s = table[key] ?? catalogs.en[key] ?? catalogs.fr[key] ?? key;
 	if (vars && typeof vars === "object") {
@@ -247,17 +266,17 @@ export function t(key, vars) {
 	return s;
 }
 
-function hasKey(key) {
+function hasKey(key: string): boolean {
 	return Boolean(catalogs.en[key] || catalogs.fr[key] || catalogs[current]?.[key]);
 }
 
-export function te(err) {
+export function te(err: unknown): string {
 	const msg = err instanceof Error ? err.message : String(err || "");
 	if (!msg) return t("errors.generic");
 	return td(msg);
 }
 
-export function td(detail) {
+export function td(detail: unknown): string {
 	const msg = String(detail || "");
 	if (!msg) return t("errors.generic");
 	const pipe = msg.indexOf("|");
@@ -270,7 +289,7 @@ export function td(detail) {
 	return msg;
 }
 
-export function tp(key, n, vars) {
+export function tp(key: string, n: unknown, vars?: Vars): string {
 	const k = Number(n) === 1 ? key : `${key}_other`;
 	return t(k, { n, ...vars });
 }
