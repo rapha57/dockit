@@ -1,7 +1,28 @@
 import { t, tp, formatWhen } from "./i18n";
 
-export function collectInventory(catalog) {
-	const rows = [];
+type InventoryLink = { url?: string };
+type InventoryApp = {
+	kind?: string;
+	title?: string;
+	url?: string;
+	links?: InventoryLink[];
+	tags?: string[];
+};
+type InventoryCategory = { name?: string; cards?: InventoryApp[]; apps?: InventoryApp[] };
+type InventoryTab = { name?: string; categories?: InventoryCategory[] };
+
+export type InventoryRow = {
+	tab: string;
+	category: string;
+	kind: string;
+	title: string;
+	url: string;
+	extras: string;
+	tags: string;
+};
+
+export function collectInventory(catalog: InventoryTab[] | null | undefined): InventoryRow[] {
+	const rows: InventoryRow[] = [];
 	for (const tab of catalog ?? []) {
 		for (const cat of tab.categories ?? []) {
 			for (const app of cat.cards ?? cat.apps ?? []) {
@@ -21,11 +42,11 @@ export function collectInventory(catalog) {
 	return rows;
 }
 
-function csvCell(value) {
+function csvCell(value: unknown): string {
 	return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
-export function inventoryCsv(rows) {
+export function inventoryCsv(rows: InventoryRow[]): string {
 	const header = [t("inventory.space"), t("inventory.category"), t("inventory.type"), t("inventory.title"), t("inventory.link"), t("inventory.otherLinks"), t("inventory.tags")];
 	const lines = [header.map(csvCell).join(";")];
 	for (const r of rows) {
@@ -38,13 +59,13 @@ const PAGE_W = 842;
 const PAGE_H = 595;
 const MARGIN = 32;
 const COLS = [78, 78, 52, 108, 248, 128, 78];
-function inventoryHead() {
+function inventoryHead(): string[] {
 	return [t("inventory.space"), t("inventory.category"), t("inventory.type"), t("inventory.title"), t("inventory.link"), t("inventory.otherLinks"), t("inventory.tags")];
 }
 const CHAR_W = 3.9;
 const LINE_H = 11;
 
-function pdfStr(value) {
+function pdfStr(value: unknown): string {
 	let out = "";
 	for (const ch of String(value ?? "")) {
 		const c = ch.codePointAt(0) ?? 32;
@@ -73,10 +94,10 @@ function pdfStr(value) {
 	return `(${out})`;
 }
 
-function wrapCell(text, width) {
+function wrapCell(text: unknown, width: number): string[] {
 	const raw = String(text ?? "").trim() || "-";
 	const max = Math.max(4, Math.floor(width / CHAR_W));
-	const lines = [];
+	const lines: string[] = [];
 	let rest = raw;
 	while (rest.length) {
 		if (rest.length <= max) {
@@ -95,8 +116,10 @@ function wrapCell(text, width) {
 	return lines;
 }
 
-function pageStream(title, meta, rows, startY) {
-	const chunks = [
+type PageStreamResult = { content: string; rest: InventoryRow[]; y: number };
+
+function pageStream(title: string, meta: string, rows: InventoryRow[], startY: number): PageStreamResult {
+	const chunks: string[] = [
 		"BT",
 		"/F2 14 Tf",
 		`1 0 0 1 ${MARGIN} ${PAGE_H - 28} Tm`,
@@ -107,7 +130,7 @@ function pageStream(title, meta, rows, startY) {
 		"ET",
 	];
 	let y = startY;
-	const drawRow = (cells, bold) => {
+	const drawRow = (cells: unknown[], bold: boolean): boolean => {
 		const wrapped = cells.map((cell, i) => wrapCell(cell, COLS[i] - 6));
 		const h = Math.max(1, ...wrapped.map((w) => w.length)) * LINE_H + 4;
 		if (y - h < MARGIN) return false;
@@ -132,12 +155,12 @@ function pageStream(title, meta, rows, startY) {
 	return { content: chunks.join("\n"), rest: [], y };
 }
 
-export function inventoryPdf(rows, portalTitle) {
+export function inventoryPdf(rows: InventoryRow[], portalTitle?: string): Uint8Array {
 	const title = `${portalTitle || "Dockit"} - ${t("inventory.titleSuffix")}`;
 	const stamp = formatWhen(new Date(), true);
 	const meta = `${tp("inventory.entries", rows.length)} - ${stamp}`;
-	const list = rows.length ? rows : [{ tab: "-", category: "-", kind: "-", title: t("inventory.noCards"), url: "", extras: "", tags: "" }];
-	const pages = [];
+	const list: InventoryRow[] = rows.length ? rows : [{ tab: "-", category: "-", kind: "-", title: t("inventory.noCards"), url: "", extras: "", tags: "" }];
+	const pages: string[] = [];
 	let rest = list;
 	while (rest.length) {
 		const drawn = pageStream(title, meta, rest, PAGE_H - 52);
@@ -145,8 +168,8 @@ export function inventoryPdf(rows, portalTitle) {
 		rest = drawn.rest;
 		if (pages.length > 80) break;
 	}
-	const objs = [];
-	const add = (body) => {
+	const objs: string[] = [];
+	const add = (body: string) => {
 		objs.push(body);
 		return objs.length;
 	};
