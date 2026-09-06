@@ -5,39 +5,101 @@
 <h1 align="center">Dockit</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111" alt="React 19" />
-  <img src="https://img.shields.io/badge/TanStack_Start-FF4154?style=flat-square&logo=reactquery&logoColor=white" alt="TanStack Start" />
-  <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
-  <img src="https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
-  <img src="https://img.shields.io/badge/Nitro-00DC82?style=flat-square&logo=nitro&logoColor=white" alt="Nitro" />
-  <img src="https://img.shields.io/badge/Zod-3E67B1?style=flat-square&logo=zod&logoColor=white" alt="Zod" />
-  <img src="https://img.shields.io/badge/Lucide-F56565?style=flat-square&logo=lucide&logoColor=white" alt="Lucide" />
+  <strong>The shared home page for your IT tools.</strong>
 </p>
 
 <p align="center">
-  <img src="https://skillicons.dev/icons?i=react,vite,tailwind,ts,nodejs,docker" alt="React, Vite, Tailwind, TypeScript, Node.js, Docker" height="32" />
+  One dashboard for the tools your team uses every day.
 </p>
 
-<p align="center"><strong>Pin your URLs</strong></p>
+<p align="center">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111" alt="React 19" />
+  <img src="https://img.shields.io/badge/TanStack_Start-FF4154?style=flat-square&logo=reactquery&logoColor=white" alt="TanStack Start" />
+  <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite 8" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4" />
+  <img src="https://img.shields.io/badge/Nitro-00DC82?style=flat-square&logo=nitro&logoColor=white" alt="Nitro" />
+</p>
 
-At work, everyday tools are scattered: infrastructure consoles, HR portals, ticketing, IAM, monitoring, business apps — often stuck in a bookmark or an email. Dockit is a shared home page. You gather links to the web tools and apps teams actually use, and you organise them by space (infra, systems, business…).
+---
 
-Everything lives in a JSON file (`data/portal.json`). No database: copy that file to back up or move the portal.
+## Why Dockit?
 
-The UI language defaults to **English**. You can switch it later in Settings.
+IT engineers use dozens of tools every day: infrastructure consoles, monitoring, ticketing, IAM, cloud platforms, internal applications, documentation and more.
+
+Those links tend to end up scattered across bookmarks, browser tabs, chat messages and emails.
+
+**Dockit brings them together in one shared, structured dashboard.**
+
+A new engineer joining the team doesn't need to ask:
+
+> "Where's the link to Grafana?"
+> "What's the URL for the Kubernetes console?"
+> "Where do I find the ITSM?"
+
+It's already there.
+
+Dockit can be used as a team's browser start page, or deployed centrally and pushed to workstations through tools such as **Windows GPO**.
+
+**One place to start. Everything already organised.**
 
 ---
 
 ## Features
 
-- **Spaces** — Tabs, categories, cards; drag and drop to organise
-- **3 card types** — Application, Markdown note, embed
-- **Probes** — HTTP or ICMP availability, live on the card
-- **Access** — Users, groups, roles; granular permissions on spaces, categories and cards
-- **Sign-in** — Local accounts, LDAP / Active Directory, OIDC (Keycloak and other IdPs)
-- **Themes** — Light / dark CSS, logo, favicon, coloured tags
-- **Import / export** — One JSON to move or restore everything
-- **Icons** — Built-in library plus custom icons
+* **Spaces** — Organise tools by team or domain: Infrastructure, Systems, Security, Development…
+* **Cards** — Applications, Markdown notes and embeds
+* **Drag & drop** — Keep spaces and categories organised
+* **Probes** — HTTP and ICMP availability directly on cards
+* **Access control** — Users, groups, roles and granular ACLs
+* **Authentication** — Local accounts, LDAP / Active Directory and OIDC
+* **Themes** — Light / dark mode, logo, favicon and tags
+* **Import / export** — Move or back up the entire portal as one JSON file
+* **Icons** — Built-in and custom icons
+
+---
+
+## A shared front door for your tools
+
+Dockit doesn't replace your existing systems.
+
+It sits in front of them:
+
+```text
+                         Dockit
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+   Infrastructure        Systems           Security
+        │                  │                  │
+   Grafana              GitLab             Keycloak
+   Proxmox              ITSM               IAM
+   Kubernetes           Wiki               SIEM
+   Cloud                DNS                ...
+```
+
+The tools stay where they are.
+
+**Dockit gives your team one consistent way to reach them.**
+
+---
+
+## Data
+
+No database.
+
+The complete portal is stored in:
+
+```text
+data/portal.json
+```
+
+This makes the portal easy to back up, version, move or restore.
+
+Override the location with:
+
+```bash
+PORTAL_DATA_FILE=/path/to/portal.json
+```
 
 ---
 
@@ -48,103 +110,101 @@ npm ci
 npm run dev
 ```
 
-The portal listens on [http://localhost:8080](http://localhost:8080).
+The development server listens on `http://localhost:8080`.
 
-Default editor credentials (dev): `admin` / `admin`.  
-In production: `PORTAL_EDIT_PASSWORD` is required, 12 characters min.
+Default development credentials:
+
+```text
+admin / admin
+```
+
+> Development only. Production requires `PORTAL_EDIT_PASSWORD` with a minimum of 12 characters.
 
 ---
 
 ## Docker
 
+Configure `PORTAL_EDIT_PASSWORD` in `docker-compose.yml`, then:
+
 ```bash
-# 1. Edit docker-compose.yml: PORTAL_EDIT_PASSWORD (12 characters min.)
-# 2. Start
 docker compose up -d --build
 ```
 
-The portal listens on port **3000**.  
-Reverse proxy (nginx / Traefik / IIS ARR) to `http://127.0.0.1:3000`.
+Dockit listens on port `3000`.
 
-In production, `PORTAL_EDIT_PASSWORD` is required (not `admin` / `change-moi`).  
-Behind a reverse proxy: `PORTAL_PUBLIC_ORIGIN=https://portal.example` and `PORTAL_TRUST_PROXY=1`.
+For a reverse proxy deployment:
 
-Backup = Docker volume `portal-data`, or the file  
-`/var/lib/docker/volumes/.../portal.json`.
+```bash
+PORTAL_PUBLIC_ORIGIN=https://portal.example
+PORTAL_TRUST_PROXY=1
+```
+
+Persistent data is stored in the `portal-data` Docker volume.
 
 ---
 
-## Node in production
+## Production
 
-Requires Node.js 22.
+Requires **Node.js 22**.
 
 ```bash
 npm ci
+
 export PORTAL_EDIT_USER="admin"
-export PORTAL_EDIT_PASSWORD="a-real-password"   # 12 characters min.
+export PORTAL_EDIT_PASSWORD="a-real-password"
 export NITRO_PRESET=node-server
+
 npm run build
 node .output/server/index.mjs
-```
-
-The JSON is created on first run in `data/portal.json`  
-(override with `PORTAL_DATA_FILE`).
-
----
-
-## Reverse proxy
-
-```nginx
-server {
-  listen 443 ssl;
-  server_name portal.internal.local;
-  location / {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Forwarded-For $remote_addr;
-  }
-}
 ```
 
 ---
 
 ## Security
 
-Built for internal use (trusted network, reverse proxy). In production: a strong `PORTAL_EDIT_PASSWORD` (12 characters min.), HTTPS, and treat `data/portal.json` as a secret (password hashes and OIDC secret).
+Dockit is designed for internal environments and trusted networks, typically behind a reverse proxy.
 
-Already in place: scrypt, login rate limiting, roles + ACL, OIDC (PKCE + id_token verification), HTTP headers, iframes without `allow-same-origin`, theme CSS without `url(` / `@import`, bounded probes (ID, quota, no cloud metadata), non-root Docker image.
+Production deployments should use:
 
-In **Settings → Security** (admin): probe TLS verification, probes limited to signed-in users, HttpOnly session cookie. Off by default (intranet).
+* A strong `PORTAL_EDIT_PASSWORD`
+* HTTPS
+* A protected `data/portal.json`
 
-Behind a reverse proxy: set `Host` / `X-Forwarded-*` on the proxy, then `PORTAL_PUBLIC_ORIGIN` and `PORTAL_TRUST_PROXY=1`.
+Security features include:
+
+* scrypt password hashing
+* Login rate limiting
+* Roles and ACLs
+* OIDC with PKCE and ID token verification
+* Security HTTP headers
+* Restricted iframe handling
+* Bounded probes
+* Non-root Docker image
+* HttpOnly session cookies
+
+Additional options are available under **Settings → Security**.
 
 ---
 
 ## Stack
 
-| Layer             | Technology         |
-| ----------------- | ------------------ |
-| UI                | React 19           |
-| App / routing     | TanStack Start     |
-| Build             | Vite 8             |
-| Styles            | Tailwind CSS 4     |
-| Server runtime    | Nitro              |
-| Validation        | Zod                |
-| UI icons          | Lucide             |
-| Persistence       | `data/portal.json` |
-
----
-
-## Roadmap
-
-- **Modules** — Optional extensions, so extra features can plug in without bloating the core
+| Layer                 | Technology     |
+| --------------------- | -------------- |
+| UI                    | React 19       |
+| Application / routing | TanStack Start |
+| Build                 | Vite 8         |
+| Styling               | Tailwind CSS 4 |
+| Runtime               | Nitro          |
+| Validation            | Zod            |
+| Icons                 | Lucide         |
+| Persistence           | JSON           |
 
 ---
 
 ## Useful paths
 
-| Path | Role |
-| ---- | ---- |
-| `data/portal.json` | The whole portal (tabs, cards, themes, accounts) |
-| `public/icons/` | Built-in icon library |
+| Path               | Purpose               |
+| ------------------ | --------------------- |
+| `data/portal.json` | Complete portal data  |
+| `public/icons/`    | Built-in icon library |
+| `public/logo.svg`  | Dockit logo           |
