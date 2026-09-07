@@ -177,17 +177,14 @@ import type {
   CheckMode,
   ClickStats,
   CustomIcon,
-  Doc,
   DocTab,
   ItemKind,
   PortalApp,
   PortalCategory,
   PortalSettings,
   SessionInfo,
-  DirectoryUser,
-  UserRole,
 } from "@/lib/portal";
-import type { Category, CategoryMoveImpact, Group, Role } from "@/lib/acl";
+import type { Category, CategoryMoveImpact } from "@/lib/acl";
 import type { Directory } from "@/lib/ldap-runtime";
 export const Route = createFileRoute("/")({
   loader: async () => {
@@ -6167,8 +6164,6 @@ function AdminPanel({
   runtime,
   catalog,
   tags,
-  tabs,
-  directory,
   token,
   session,
   busy,
@@ -6513,7 +6508,6 @@ function AboutForm({
 function OidcForm({
   initial,
   onSave,
-  busy,
 }: {
   initial: PortalSettings;
   onSave: (payload: OidcPayload) => void;
@@ -6732,7 +6726,6 @@ function settingsBase(initial: PortalSettings): SettingsPayload {
 }
 function SettingsForm({
   initial,
-  busy,
   embedded,
   onCancel,
   onSave,
@@ -7862,8 +7855,6 @@ function ThemeColorField({
 }
 function ThemeForm({
   initial,
-  busy,
-  onCancel,
   onSave,
 }: {
   initial: PortalSettings;
@@ -10488,11 +10479,9 @@ function TagManager({
   tags,
   colors,
   busy,
-  embedded,
   settings,
   pruneOrphanTags,
   tagsAlpha,
-  onCancel,
   onSave,
   onApply,
 }: {

@@ -1,4 +1,4 @@
-const HOST_RE = /^[A-Za-z0-9._:\[\]-]+$/;
+const HOST_RE = /^[A-Za-z0-9._:\]-]+$/;
 const MAX_BYTES = 220_000;
 const TIMEOUT_MS = 4000;
 

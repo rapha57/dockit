@@ -25,7 +25,7 @@ export type ProbeResult = {
 };
 
 const TIMEOUT_MS = 4000;
-const HOST_RE = /^[A-Za-z0-9._:\[\]-]+$/;
+const HOST_RE = /^[A-Za-z0-9._:\]-]+$/;
 const MAX_REDIRECTS = 3;
 const PROBE_MAX = 24;
 const PROBE_WINDOW_MS = 60_000;
