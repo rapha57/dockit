@@ -80,7 +80,9 @@
     "dropHere": "Drop here",
     "addTagOrName": "Add a tag or a name…",
     "removeTag": "Remove {name}",
-    "moreSpaces": "More spaces"
+    "moreSpaces": "More spaces",
+    "filterRemove": "Remove filter {name}",
+    "filterAdd": "Add filter {name}"
   },
   "empty": {
     "favs": "Add a card to favorites with the star.",
@@ -210,7 +212,8 @@
     "brandClick": "Click a thumbnail to import. A logo also copies the favicon.",
     "resetBody": "Reset the portal: base setup, statistics cleared, accounts removed, admin / admin access, a single Home space with a sample card.",
     "resetConfirm": "Reset the whole portal? Spaces, cards, themes, tags, statistics and accounts are replaced. Admin access becomes admin / admin again.",
-    "resetAction": "Reset the portal"
+    "resetAction": "Reset the portal",
+    "importBrand": "Import {label}"
   },
   "sections": {
     "general": {
@@ -1159,5 +1162,14 @@
     "title": "Page not found",
     "lead": "This address does not match any space or card of the portal.",
     "back": "Back to the portal"
+  },
+  "error": {
+    "unexpected": "Unexpected error.",
+    "title": "Loading interrupted",
+    "reload": "Reload"
+  },
+  "card": {
+    "clicks": "{n} open since it was added",
+    "clicks_other": "{n} opens since it was added"
   }
 }

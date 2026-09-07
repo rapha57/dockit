@@ -80,7 +80,9 @@
     "dropHere": "Déposer ici",
     "addTagOrName": "Ajouter un tag ou un nom…",
     "removeTag": "Retirer {name}",
-    "moreSpaces": "Autres espaces"
+    "moreSpaces": "Autres espaces",
+    "filterRemove": "Retirer le filtre {name}",
+    "filterAdd": "Ajouter le filtre {name}"
   },
   "empty": {
     "favs": "Ajouter une carte aux favoris via l’étoile.",
@@ -210,7 +212,8 @@
     "brandClick": "Cliquer une vignette pour importer. Un logo recopie aussi le favicon.",
     "resetBody": "Remettre le portail à zéro : paramétrage de base, statistiques vidées, comptes supprimés, accès admin / admin, un seul espace Accueil avec une carte de test.",
     "resetConfirm": "Réinitialiser tout le portail ? Espaces, cartes, thèmes, étiquettes, statistiques et comptes sont remplacés. L’accès admin redevient admin / admin.",
-    "resetAction": "Réinitialiser le portail"
+    "resetAction": "Réinitialiser le portail",
+    "importBrand": "Importer {label}"
   },
   "sections": {
     "general": {
@@ -1159,5 +1162,14 @@
     "title": "Page introuvable",
     "lead": "Cette adresse ne correspond à aucun espace ni aucune carte du portail.",
     "back": "Retour au portail"
+  },
+  "error": {
+    "unexpected": "Une erreur inattendue s’est produite.",
+    "title": "Chargement interrompu",
+    "reload": "Recharger"
+  },
+  "card": {
+    "clicks": "{n} ouverture depuis l’ajout",
+    "clicks_other": "{n} ouvertures depuis l’ajout"
   }
 }

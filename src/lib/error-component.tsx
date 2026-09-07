@@ -5,7 +5,6 @@ import type { ErrorComponentProps } from "@tanstack/react-router";
 import { TriangleAlert, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
-
 const RELOAD_KEY = "portal-chunk-reload";
 
 function isStaleChunk(message: string) {
@@ -15,7 +14,7 @@ function isStaleChunk(message: string) {
 }
 
 export function AppErrorComponent({ error }: ErrorComponentProps) {
-  const message = error?.message || "Une erreur inattendue s’est produite.";
+  const message = error?.message || t("error.unexpected");
   const stale = isStaleChunk(message);
 
   useEffect(() => {
@@ -34,7 +33,7 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
       <span className="text-danger" aria-hidden="true">
         <TriangleAlert className="size-10" strokeWidth={2} />
       </span>
-      <h1 className="text-lg font-semibold">Chargement interrompu</h1>
+      <h1 className="text-lg font-semibold">{t("error.title")}</h1>
       <p className="max-w-md text-sm break-words text-muted">{message}</p>
       <button
         type="button"
@@ -48,7 +47,7 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
           window.location.reload();
         }}
       >
-        Recharger
+        {t("error.reload")}
       </button>
     </main>
   );

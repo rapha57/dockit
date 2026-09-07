@@ -5253,7 +5253,7 @@ function AppCard({
               data-tone={paint.tone}
               style={paint.style}
               className={`tag-chip ${on ? "is-on" : ""}`}
-              title={on ? `Retirer le filtre ${tag}` : `Ajouter le filtre ${tag}`}
+              title={on ? t("nav.filterRemove", { name: tag }) : t("nav.filterAdd", { name: tag })}
               aria-pressed={on}
               onClick={(e) => {
                 e.preventDefault();
@@ -5270,7 +5270,7 @@ function AppCard({
         {showClicks ? (
           <span
             className="card-clicks"
-            title={`${app.clicks || 0} ouverture${(app.clicks || 0) > 1 ? "s" : ""} depuis l’ajout`}
+            title={tp("card.clicks", app.clicks || 0)}
           >
             {" "}
             <MousePointerClick className="size-3" aria-hidden />
@@ -5628,7 +5628,7 @@ function BrandPick({
       <span>{label}</span>
       <label
         className={`brand-preview${variant === "tab" ? " is-tab" : ""}`}
-        title={`Importer ${label.toLowerCase()}`}
+        title={t("settings.importBrand", { label: label.toLowerCase() })}
       >
         {children}
         <Upload className="brand-preview-action size-3.5" aria-hidden />
@@ -5636,7 +5636,7 @@ function BrandPick({
           type="file"
           accept={accept}
           className="hidden"
-          aria-label={`Importer ${label.toLowerCase()}`}
+          aria-label={t("settings.importBrand", { label: label.toLowerCase() })}
           onChange={async (e) => {
             const file = e.target.files?.[0];
             e.target.value = "";
