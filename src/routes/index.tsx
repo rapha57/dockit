@@ -8565,7 +8565,7 @@ function InfoBarForm({
         {" "}
         <p className="settings-kicker">{t("stats.title")}</p>
         <div className="settings-toggles">
-          <label className={`is-child ${infoBar ? "" : "is-disabled"}`}>
+          <label className={infoBar ? "" : "is-disabled"}>
             <input
               type="checkbox"
               checked={infoStats}
@@ -8575,7 +8575,7 @@ function InfoBarForm({
             {t("info.statsIcon")}
           </label>
           <p className="settings-hint">{infoBar ? t("info.statsHint") : t("info.statsHintHidden")}</p>
-          <label className={`is-child ${infoBar ? "" : "is-disabled"}`}>
+          <label className={infoBar ? "" : "is-disabled"}>
             <input
               type="checkbox"
               checked={infoGeek}
