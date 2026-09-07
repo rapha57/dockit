@@ -1,6 +1,13 @@
 #!/bin/sh
 set -e
 root=$(git rev-parse --show-toplevel)
+
+echo "pre-commit: typecheck..."
+npm run typecheck
+
+echo "pre-commit: lint..."
+npm run lint -- --max-warnings 0
+
 version=$("$root/scripts/portal-version.sh" "$root/src/routes/index.tsx")
 git add "$root/src/routes/index.tsx"
 echo "build $version"

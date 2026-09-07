@@ -16,7 +16,21 @@ npm run typecheck
 npm run lint
 ```
 
-There is **no test suite or CI yet** — run `npm run typecheck` and `npm run build` to verify changes.
+There is **no test suite or CI yet**. The `.githooks/pre-commit` hook is the quality gate (see *Git & version*).
+
+**Verification policy** — what to run after a change:
+- **Always**: `npm run typecheck` + `npm run lint` (fast, catches types + lint).
+- **Only when touching** imports/exports, Vite/Nitro config, server code (`src/lib/*-runtime.ts`, `portal.ts`), or dependencies: `npm run build` in addition. Not needed for pure UI/token/type-annotation edits.
+
+## TypeScript rules (strict, no exceptions)
+
+The codebase was fully typed in 2026-09 (the `@ts-nocheck` era is over). Keep it that way:
+
+- **Never** add `@ts-nocheck`, `@ts-ignore`, or `@ts-expect-error`. Sole exception: `src/routeTree.gen.ts` (generated).
+- **Never** use `as any` (or `as unknown as X`) to silence an error — type it properly or narrow it.
+- New files are typed from the first commit. Half-typed code does not land.
+- Reuse the model types from `src/lib/portal.ts` (`PortalApp`, `PortalCategory`, `DocTab`, `Doc`, `SessionInfo`, `PortalSettings`…) and `src/lib/acl.ts` (`Role`, `Group`, `CategoryMoveImpact`…). Do not re-invent shapes; derive when possible (`Awaited<ReturnType<typeof getPortal>>` for loader data).
+- The pre-commit hook runs `typecheck` + `lint` with **zero warnings allowed** — if it blocks, fix the types, do not bypass the hook.
 
 Production: Node 22, `PORTAL_EDIT_PASSWORD` required (≥ 12 chars, no default). The Docker image listens on port **3000**.
 
@@ -103,5 +117,5 @@ Behind a proxy: `PORTAL_PUBLIC_ORIGIN` + `PORTAL_TRUST_PROXY=1`.
 
 - Single branch: `main`.
 - `data/portal.json` and `data/assets/` are gitignored.
-- The `.githooks/pre-commit` hook updates `PORTAL_VERSION` in `src/routes/index.tsx` via `scripts/portal-version.sh`. Do not bypass it.
+- The `.githooks/pre-commit` hook runs `typecheck` + `lint` (zero warnings) and updates `PORTAL_VERSION` in `src/routes/index.tsx` via `scripts/portal-version.sh`. Do not bypass it.
 - About version check: GitHub releases `rapha57/dockit`. No release = no « offline » badge.
