@@ -60,22 +60,22 @@
 
   html.dark {
     color-scheme: dark;
-    --color-bg: #2d333b;
-    --color-surface: #373e47;
-    --color-elevated: #444c56;
-    --color-header: #373e47;
-    --color-fg: #cdd9e5;
-    --color-muted: #adbac7;
-    --color-subtle: #768390;
-    --color-border: #545d68;
-    --color-primary: #539bf5;
+    --color-bg: #0e1116;
+    --color-surface: #171b22;
+    --color-elevated: #1f252e;
+    --color-header: #12151b;
+    --color-fg: #e2e6ec;
+    --color-muted: #a9b1bc;
+    --color-subtle: #78818d;
+    --color-border: #293039;
+    --color-primary: #4d9fff;
     --color-primary-fg: #ffffff;
-    --color-accent: #539bf5;
-    --color-navy: #373e47;
-    --color-fawn: #adbac7;
-    --color-danger: #f47067;
-    --color-ok: #3fb950;
-    --color-ring: #539bf5;
+    --color-accent: #4d9fff;
+    --color-navy: #171b22;
+    --color-fawn: #a9b1bc;
+    --color-danger: #ff6b5e;
+    --color-ok: #35c46b;
+    --color-ring: #4d9fff;
     --shadow-card: 0 0 0 1px var(--color-border);
     --shadow-card-hover: 0 0 0 1px
       color-mix(in oklab, var(--color-primary) 50%, var(--color-border));

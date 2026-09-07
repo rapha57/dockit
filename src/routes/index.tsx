@@ -7786,9 +7786,9 @@ const LIGHT_COLORS = {
   header: "#fcfcfc",
 };
 const DARK_COLORS = {
-  bg: "#2d333b",
-  surface: "#373e47",
-  header: "#373e47",
+  bg: "#0e1116",
+  surface: "#171b22",
+  header: "#12151b",
 };
 const MANAGED_BLOCK_RE =
   /html\.(?:light|dark)\s*\{\s*(?:--color-(?:bg|surface|header)\s*:\s*#[0-9a-fA-F]{3,8}\s*;\s*)+\}/g;
