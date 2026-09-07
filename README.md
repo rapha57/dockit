@@ -51,6 +51,7 @@ Dockit can be used as a team's browser start page, or deployed centrally and pus
 * **Cards** — Applications, Markdown notes and embeds
 * **Drag & drop** — Keep spaces and categories organised
 * **Probes** — HTTP and ICMP availability directly on cards
+* **Curation** — Server-side link checking with live progress and one-click fixes
 * **Access control** — Users, groups, roles and granular ACLs
 * **Audit & recovery** — Full change history with restore for spaces, categories and cards
 * **Reports** — Audit trail as CSV; card inventory as CSV and PDF
@@ -83,6 +84,27 @@ It sits in front of them:
 The tools stay where they are.
 
 **Dockit gives your team one consistent way to reach them.**
+
+---
+
+## Curation — be sure your links still work
+
+A portal that is never cleaned rots quietly. Services get renamed, hosts get retired, paths move behind a reverse proxy — and the bookmark stays.
+
+Past a certain volume, nobody opens every link every day. The day someone actually needs the Kubernetes console or the DNS panel, the link may be dead.
+
+**Curation answers one simple question: do the links of my cards still work?**
+
+From the user menu, **Curation** runs a server-side check of every card link — the main URL and the extra links of each card:
+
+* Live progress with a step-by-step log
+* Clear statuses: OK, redirect (with target), HTTP error, timeout, unreachable
+* A per-card breakdown in **Applications** — spot the broken cards at a glance
+* One click on **Edit card** to fix the link, through the regular card editor
+
+Checks run server-side (no CORS, shared timeouts, SSRF guards and rate limiting), and results are kept in `data/curation.json` next to `portal.json`.
+
+Available to **admins and editors**.
 
 ---
 
@@ -208,8 +230,9 @@ Additional options are available under **Settings → Security**.
 
 ## Useful paths
 
-| Path               | Purpose               |
-| ------------------ | --------------------- |
-| `data/portal.json` | Complete portal data  |
-| `public/icons/`    | Built-in icon library |
-| `public/logo.svg`  | Dockit logo           |
+| Path                 | Purpose               |
+| -------------------- | --------------------- |
+| `data/portal.json`   | Complete portal data  |
+| `data/curation.json` | Link check results    |
+| `public/icons/`      | Built-in icon library |
+| `public/logo.svg`    | Dockit logo           |

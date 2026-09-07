@@ -4,7 +4,7 @@ import { access } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import { lookup } from "node:dns/promises";
-import { clientIp } from "./security-runtime";
+import { clientIp, isDevRuntime } from "./security-runtime";
 
 export type ProbeMode = "http" | "icmp";
 
@@ -114,21 +114,25 @@ function requestOnce(
   url: URL,
   method: "HEAD" | "GET",
   tlsVerify = false,
+  resolvedIp?: string,
 ): Promise<{ status: number; location?: string }> {
   return new Promise((resolve, reject) => {
     const lib = url.protocol === "https:" ? https : http;
+    const useIp = Boolean(resolvedIp);
     const req = lib.request(
       {
         protocol: url.protocol,
-        hostname: url.hostname,
+        hostname: useIp ? resolvedIp : url.hostname,
         port: url.port || undefined,
         path: `${url.pathname}${url.search}`,
         method,
         timeout: TIMEOUT_MS,
         rejectUnauthorized: Boolean(tlsVerify),
+        servername: useIp && url.protocol === "https:" ? url.hostname : undefined,
         headers: {
           Accept: "*/*",
           "User-Agent": "Dockit-HealthCheck/1.0",
+          ...(useIp ? { Host: url.host } : {}),
         },
       },
       (res) => {
@@ -155,6 +159,7 @@ export type HttpTrace = {
 	finalUrl: string;
 	redirects: HttpTraceHop[];
 	detail: string;
+	ms: number | null;
 };
 
 /**
@@ -165,13 +170,17 @@ export type HttpTrace = {
 export async function probeHttpTrace(rawUrl: string, tlsVerify = false, dnsCache?: Map<string, string>): Promise<HttpTrace> {
 	try {
 		let url = httpUrl(rawUrl);
-		await assertProbeTarget(url.hostname, dnsCache);
+		const tDns = Date.now();
+		let ip = await assertProbeTarget(url.hostname, dnsCache);
+		if (isDevRuntime()) console.log(`[curation] dns ${url.hostname} ${Date.now() - tDns} ms`);
 		const redirects: HttpTraceHop[] = [];
+		const tReq = Date.now();
 		let method: "HEAD" | "GET" = "HEAD";
 		let status = 0;
 		let detail = "";
 		for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-			const res = await requestOnce(url, method, tlsVerify);
+			const res = await requestOnce(url, method, tlsVerify, ip);
+			if (isDevRuntime()) console.log(`[curation] http ${url.hostname} ${res.status} ${Date.now() - tDns} ms`);
 			if (res.status === 405 || res.status === 501) {
 				method = "GET";
 				continue;
@@ -179,23 +188,23 @@ export async function probeHttpTrace(rawUrl: string, tlsVerify = false, dnsCache
 			if (res.status >= 300 && res.status < 400 && res.location) {
 				try {
 					const next = httpUrl(new URL(res.location, url).href);
-					await assertProbeTarget(next.hostname, dnsCache);
+					ip = await assertProbeTarget(next.hostname, dnsCache);
 					redirects.push({ status: res.status, location: next.href });
 					url = next;
 					continue;
 				} catch {
 					status = res.status;
 					detail = `HTTP ${res.status}`;
-					return { status, finalUrl: url.href, redirects, detail };
+					return { status, finalUrl: url.href, redirects, detail, ms: Date.now() - tReq };
 				}
 			}
 			status = res.status;
 			detail = status > 0 ? `HTTP ${status}` : "probe.noHttp";
-			return { status, finalUrl: url.href, redirects, detail };
+			return { status, finalUrl: url.href, redirects, detail, ms: Date.now() - tReq };
 		}
-		return { status, finalUrl: url.href, redirects, detail: detail || "probe.noHttp" };
+		return { status, finalUrl: url.href, redirects, detail: detail || "probe.noHttp", ms: Date.now() - tReq };
 	} catch (err) {
-		return { status: 0, finalUrl: String(rawUrl || ""), redirects: [], detail: describeNetError(err) };
+		return { status: 0, finalUrl: String(rawUrl || ""), redirects: [], detail: describeNetError(err), ms: null };
 	}
 }
 

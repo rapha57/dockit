@@ -6,8 +6,8 @@
  */
 
 import { dirname } from "node:path";
-import { td, withLocale } from "./i18n";
-import { clientIp } from "./security-runtime";
+import { t, withLocale } from "./i18n";
+import { clientIp, isDevRuntime } from "./security-runtime";
 
 export type CurationStatus = "valid" | "redirect" | "error" | "timeout" | "unknown";
 
@@ -29,8 +29,8 @@ export type CurationStore = {
 
 export const CURATION_MAX_CARDS = 4000;
 
-export function curationCheckOf(url: string, trace: import("./probe-runtime").HttpTrace, ms: number): CurationCheck {
-	const check: CurationCheck = { status: "error", checkedAt: Date.now(), responseTimeMs: ms, url };
+export function curationCheckOf(url: string, trace: import("./probe-runtime").HttpTrace): CurationCheck {
+	const check: CurationCheck = { status: "error", checkedAt: Date.now(), responseTimeMs: trace.ms, url };
 	if (trace.redirects.length) {
 		check.status = "redirect";
 		check.httpStatus = trace.redirects[0].status;
@@ -100,9 +100,9 @@ function jobLine(target: CurationJobTarget, check: CurationCheck, locale: unknow
 			return `↗ ${check.httpStatus || ""} → ${to} · ${where}`.replace("↗  →", "↗ →");
 		}
 		if (check.status === "timeout") {
-			return `✕ ${td("probe.timeout")} · ${where}`;
+			return `✕ ${t("curation.statusTimeout")} · ${where}`;
 		}
-		return `✕ ${check.httpStatus || td(check.detail)} · ${where}`;
+		return `✕ ${check.httpStatus || t("curation.statusError")} · ${where}`;
 	});
 }
 
@@ -161,20 +161,24 @@ export async function startCurationJob(opts: {
 	const store = await readCurationStore();
 	const { probeHttpTrace } = await import("./probe-runtime");
 	const dnsCache = new Map<string, string>();
+	if (isDevRuntime()) {
+		const { appendFileSync } = await import("node:fs");
+		appendFileSync("/tmp/dockit-curation.log", `\n=== job ${new Date().toISOString()} · ${opts.targets.length} liens ===\n`);
+	}
 	for (let i = 0; i < opts.targets.length; i += JOB_BATCH) {
 		if (curationJobRun !== run) break;
 		if (Date.now() - curationJob.startedAt > JOB_MAX_MS) break;
 		const slice = opts.targets.slice(i, i + JOB_BATCH);
 		const first = slice[0];
 		curationJob.current = jobWhere(first);
+		if (isDevRuntime()) {
+			const { appendFileSync } = await import("node:fs");
+			appendFileSync("/tmp/dockit-curation.log", `batch ${i}..${i + slice.length} · ${slice.map((t) => t.url).join(" | ")}\n`);
+		}
 		const results = await Promise.all(
 			slice.map(async (target) => {
-				const started = Date.now();
 				const trace = await probeHttpTrace(target.url, opts.tlsVerify, dnsCache);
-				return {
-					target,
-					check: curationCheckOf(target.url, trace, Math.max(0, Date.now() - started))
-				};
+				return { target, check: curationCheckOf(target.url, trace) };
 			})
 		);
 		const job = curationJob;
@@ -184,6 +188,13 @@ export async function startCurationJob(opts: {
 			card[target.key] = check;
 			if (check.status !== "unknown") job.counts[check.status] += 1;
 			job.log.push(jobLine(target, check, opts.locale));
+			if (isDevRuntime()) {
+				const { appendFileSync } = await import("node:fs");
+				appendFileSync(
+					"/tmp/dockit-curation.log",
+					`${check.status} · ${check.responseTimeMs ?? 0} ms · ${target.url}${check.detail ? ` · ${check.detail}` : ""}\n`,
+				);
+			}
 		}
 		if (job.log.length > JOB_LOG_MAX) job.log = job.log.slice(-JOB_LOG_MAX);
 		job.done = Math.min(i + slice.length, opts.targets.length);
@@ -196,6 +207,13 @@ export async function startCurationJob(opts: {
 		curationJob.running = false;
 		curationJob.current = "";
 		curationJob.finishedAt = Date.now();
+		if (isDevRuntime()) {
+			const { appendFileSync } = await import("node:fs");
+			appendFileSync(
+				"/tmp/dockit-curation.log",
+				`fin job: done=${curationJob.done}/${curationJob.total} en ${Math.round((curationJob.finishedAt - curationJob.startedAt) / 1000)}s\n`,
+			);
+		}
 	}
 	return true;
 }

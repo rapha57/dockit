@@ -6604,13 +6604,13 @@ function CurationPanel({
                 <div className="curation-progress">
                   <div className="curation-progress-row">
                     <span className="curation-progress-title">{boxTitle}</span>
-                    {useJob && job ? (
+                    {total ? (
                       <span className="shrink-0 text-xs tabular-nums text-muted">
                         {formatNumber(done)} / {formatNumber(total)}
                       </span>
                     ) : null}
                   </div>
-                  {useJob && job && total ? (
+                  {total ? (
                     <>
                       <div
                         className="h-1.5 w-full overflow-hidden rounded-full bg-elevated"
@@ -6645,7 +6645,7 @@ function CurationPanel({
                           <span>{t("curation.countPending", { n: formatNumber(boxCounts.pending) })}</span>
                         ) : null}
                       </div>
-                      {job.running && job.current ? (
+                      {job?.running && job.current ? (
                         <p className="curation-progress-current">
                           {t("curation.lastItem")} {job.current}
                         </p>

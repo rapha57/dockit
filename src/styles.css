@@ -3149,7 +3149,7 @@ html.dark .dockit-mark {
 }
 .am-list.is-curation .am-row-cells,
 .am-list-head.is-curation .am-row-cells {
-  grid-template-columns: minmax(0, 1fr) minmax(4.5rem, 0.3fr) minmax(9rem, 1.7fr) 1.85rem;
+  grid-template-columns: minmax(0, 1.6fr) minmax(4.5rem, 0.3fr) minmax(9rem, 0.8fr) 1.85rem;
   align-items: center;
   column-gap: 0.9rem;
 }
