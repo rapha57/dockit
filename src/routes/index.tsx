@@ -7957,6 +7957,15 @@ function ThemeForm({
             />
           ))}
         </div>
+        <p className="theme-css-meta">
+          <button
+            type="button"
+            className="settings-link"
+            onClick={() => setColors({ ...(pane === "light" ? LIGHT_COLORS : DARK_COLORS) })}
+          >
+            {t("theme.resetColors")}
+          </button>
+        </p>
       </div>{" "}
       <div className="settings-card">
         {" "}

@@ -461,7 +461,6 @@
     "ldapUnreachable": "Annuaire injoignable",
     "ldapFail": "Connexion à l’annuaire impossible",
     "ldapUnknownUser": "Compte inconnu. Un admin doit créer l’accès.",
-
     "adminNotFound": "Admin introuvable",
     "adminPasswordOnly": "L'admin ne se modifie que via son mot de passe",
     "usernameTaken": "Identifiant déjà pris",
@@ -786,6 +785,7 @@
     "dark": "Sombre",
     "css": "CSS additionnel",
     "reset": "Réinitialiser le CSS",
+    "resetColors": "Réinitialiser les couleurs",
     "bg": "Fond",
     "surface": "Cartes",
     "header": "Bandeau",

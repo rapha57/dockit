@@ -461,7 +461,6 @@
     "ldapUnreachable": "Directory unreachable",
     "ldapFail": "Directory sign-in failed",
     "ldapUnknownUser": "Unknown account. An admin must grant access.",
-
     "adminNotFound": "Admin not found",
     "adminPasswordOnly": "The admin can only be changed via their password",
     "usernameTaken": "Username already taken",
@@ -786,6 +785,7 @@
     "dark": "Dark",
     "css": "Extra CSS",
     "reset": "Reset CSS",
+    "resetColors": "Reset colors",
     "bg": "Background",
     "surface": "Cards",
     "header": "Header",
