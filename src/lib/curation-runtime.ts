@@ -6,6 +6,7 @@
  */
 
 import { dirname } from "node:path";
+import { td, withLocale } from "./i18n";
 import { clientIp } from "./security-runtime";
 
 export type CurationStatus = "valid" | "redirect" | "error" | "timeout" | "unknown";
@@ -27,6 +28,176 @@ export type CurationStore = {
 };
 
 export const CURATION_MAX_CARDS = 4000;
+
+export function curationCheckOf(url: string, trace: import("./probe-runtime").HttpTrace, ms: number): CurationCheck {
+	const check: CurationCheck = { status: "error", checkedAt: Date.now(), responseTimeMs: ms, url };
+	if (trace.redirects.length) {
+		check.status = "redirect";
+		check.httpStatus = trace.redirects[0].status;
+		check.finalUrl = trace.finalUrl;
+		return check;
+	}
+	if (trace.status >= 200 && trace.status < 300) {
+		check.status = "valid";
+		check.httpStatus = trace.status;
+		return check;
+	}
+	if (trace.status >= 300 && trace.status < 400) {
+		check.status = "redirect";
+		check.httpStatus = trace.status;
+		check.finalUrl = trace.finalUrl;
+		return check;
+	}
+	if (trace.detail === "probe.timeout") {
+		check.status = "timeout";
+		return check;
+	}
+	check.detail = trace.detail;
+	return check;
+}
+
+export type CurationJobTarget = { cardId: string; key: string; url: string; label: string; title: string };
+
+export type CurationJobView = {
+	running: boolean;
+	done: number;
+	total: number;
+	current: string;
+	counts: { valid: number; redirect: number; error: number; timeout: number };
+	log: string[];
+	startedAt: number;
+	finishedAt: number;
+};
+
+type CurationJobState = CurationJobView & { run: number };
+
+const JOB_LOG_MAX = 200;
+const JOB_MAX_MS = 600_000;
+const JOB_BATCH = 4;
+
+let curationJob: CurationJobState | null = null;
+let curationJobRun = 0;
+
+function jobWhere(target: CurationJobTarget): string {
+	return target.label ? `${target.title} — ${target.label}` : target.title;
+}
+
+function jobLine(target: CurationJobTarget, check: CurationCheck, locale: unknown): string {
+	return withLocale(locale, () => {
+		const where = jobWhere(target);
+		if (check.status === "valid") {
+			return `✓ ${check.httpStatus || 200} · ${check.responseTimeMs ?? 0} ms · ${where}`;
+		}
+		if (check.status === "redirect") {
+			let to = check.finalUrl || "";
+			try {
+				const from = new URL(check.url);
+				const next = new URL(to);
+				to = next.host === from.host ? `${next.pathname}${next.search}` : to;
+			} catch {
+				// keep full URL
+			}
+			return `↗ ${check.httpStatus || ""} → ${to} · ${where}`.replace("↗  →", "↗ →");
+		}
+		if (check.status === "timeout") {
+			return `✕ ${td("probe.timeout")} · ${where}`;
+		}
+		return `✕ ${check.httpStatus || td(check.detail)} · ${where}`;
+	});
+}
+
+export function curationJobRunning(): boolean {
+	return Boolean(curationJob?.running);
+}
+
+export function curationJobStop(): boolean {
+	const job = curationJob;
+	if (!job || !job.running) return false;
+	curationJobRun += 1;
+	job.running = false;
+	job.current = "";
+	job.finishedAt = Date.now();
+	return true;
+}
+
+export function curationJobSnapshot(): CurationJobView {
+	const job = curationJob;
+	return {
+		running: Boolean(job?.running),
+		done: job?.done || 0,
+		total: job?.total || 0,
+		current: job?.current || "",
+		counts: job ? { ...job.counts } : { valid: 0, redirect: 0, error: 0, timeout: 0 },
+		log: job ? job.log.slice(-JOB_LOG_MAX) : [],
+		startedAt: job?.startedAt || 0,
+		finishedAt: job?.finishedAt || 0
+	};
+}
+
+/**
+ * Runs the whole analysis inside the server process: survives panel close
+ * and page refresh. Results merge into curation.json after every batch.
+ */
+export async function startCurationJob(opts: {
+	targets: CurationJobTarget[];
+	tlsVerify: boolean;
+	known: string[];
+	locale: unknown;
+}): Promise<boolean> {
+	if (curationJob?.running) return false;
+	const run = ++curationJobRun;
+	curationJob = {
+		running: true,
+		run,
+		done: 0,
+		total: opts.targets.length,
+		current: "",
+		startedAt: Date.now(),
+		finishedAt: 0,
+		counts: { valid: 0, redirect: 0, error: 0, timeout: 0 },
+		log: []
+	};
+	const known = new Set(opts.known);
+	const store = await readCurationStore();
+	const { probeHttpTrace } = await import("./probe-runtime");
+	for (let i = 0; i < opts.targets.length; i += JOB_BATCH) {
+		if (curationJobRun !== run) break;
+		if (Date.now() - curationJob.startedAt > JOB_MAX_MS) break;
+		const slice = opts.targets.slice(i, i + JOB_BATCH);
+		const first = slice[0];
+		curationJob.current = jobWhere(first);
+		const results = await Promise.all(
+			slice.map(async (target) => {
+				const started = Date.now();
+				const trace = await probeHttpTrace(target.url, opts.tlsVerify);
+				return {
+					target,
+					check: curationCheckOf(target.url, trace, Math.max(0, Date.now() - started))
+				};
+			})
+		);
+		const job = curationJob;
+		if (!job || job.run !== run) break;
+		for (const { target, check } of results) {
+			const card = store.checks[target.cardId] || (store.checks[target.cardId] = {});
+			card[target.key] = check;
+			if (check.status !== "unknown") job.counts[check.status] += 1;
+			job.log.push(jobLine(target, check, opts.locale));
+		}
+		if (job.log.length > JOB_LOG_MAX) job.log = job.log.slice(-JOB_LOG_MAX);
+		job.done = Math.min(i + slice.length, opts.targets.length);
+		job.current = "";
+		store.updatedAt = Date.now();
+		pruneCurationChecks(store, known);
+		await writeCurationStore(store);
+	}
+	if (curationJobRun === run && curationJob && curationJob.run === run) {
+		curationJob.running = false;
+		curationJob.current = "";
+		curationJob.finishedAt = Date.now();
+	}
+	return true;
+}
 
 const STATUSES: CurationStatus[] = ["valid", "redirect", "error", "timeout", "unknown"];
 

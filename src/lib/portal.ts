@@ -21,13 +21,19 @@ import {
 } from "./history";
 import { t, withLocale, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "./i18n";
 import {
+	curationJobRunning,
+	curationJobSnapshot,
+	curationJobStop,
 	curationScanAllowed,
 	pruneCurationChecks,
 	readCurationStore,
+	startCurationJob,
 	writeCurationStore,
-	type CurationCheck
+	type CurationCheck,
+	type CurationJobTarget
 } from "./curation-runtime";
 export type { CurationCheck } from "./curation-runtime";
+export type { CurationJobView } from "./curation-runtime";
 import { adGroupKey, asDirectories, asLoginOrder, directoryReady, pickDirectory, syncLegacyLdap } from "./ldap-runtime";
 import { defaultTagHex, remapTagHex } from "./tag-colors";
 import {
@@ -3227,7 +3233,6 @@ export type CurationView = {
 	checks: Record<string, Record<string, CurationCheck>>;
 	lastRunAt: number;
 };
-export type CurationScanResult = { cardId: string; key: string; check: CurationCheck };
 
 const CURATION_MAX_LINKS = 400;
 
@@ -3283,33 +3288,6 @@ function allCardIds(doc: Doc): Set<string> {
 	return ids;
 }
 
-function curationCheckOf(url: string, trace: import("./probe-runtime").HttpTrace, ms: number): CurationCheck {
-	const check: CurationCheck = { status: "error", checkedAt: Date.now(), responseTimeMs: ms, url };
-	if (trace.redirects.length) {
-		check.status = "redirect";
-		check.httpStatus = trace.redirects[0].status;
-		check.finalUrl = trace.finalUrl;
-		return check;
-	}
-	if (trace.status >= 200 && trace.status < 300) {
-		check.status = "valid";
-		check.httpStatus = trace.status;
-		return check;
-	}
-	if (trace.status >= 300 && trace.status < 400) {
-		check.status = "redirect";
-		check.httpStatus = trace.status;
-		check.finalUrl = trace.finalUrl;
-		return check;
-	}
-	if (trace.detail === "probe.timeout") {
-		check.status = "timeout";
-		return check;
-	}
-	check.detail = trace.detail;
-	return check;
-}
-
 export const getCuration = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField
 })).handler(async ({ data, request }: any) => withLock(async () => {
@@ -3327,51 +3305,47 @@ export const getCuration = createServerFn({ method: "POST" }).validator(z.object
 	return { items, queue: curationQueueOf(items), checks, lastRunAt: store.updatedAt };
 }));
 
-export const curationScan = createServerFn({ method: "POST" }).validator(z.object({
-	token: tokenField,
-	items: z.array(z.object({
-		cardId: z.string().min(1).max(80),
-		key: z.string().min(1).max(8)
-	})).min(1).max(8)
+export const curationStatus = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField
+})).handler(async ({ data, request }: any) => {
+	const doc = await readDoc();
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
+	return curationJobSnapshot();
+});
+
+export const curationStop = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField
+})).handler(async ({ data, request }: any) => {
+	const doc = await readDoc();
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
+	return { stopped: curationJobStop() };
+});
+
+export const curationStart = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField
 })).handler(async ({ data, request }: any) => withLock(async () => {
-	const { probeHttpTrace } = await import("./probe-runtime");
 	if (!curationScanAllowed(request)) throw new Error("errors.tooManyProbes");
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
-	const tlsVerify = Boolean(doc.settings.probeTlsVerify);
-	const store = await readCurationStore();
-	const targets: { cardId: string; key: string; url: string }[] = [];
-	for (const ref of data.items) {
-		let found: ReturnType<typeof appOf>;
-		try {
-			found = appOf(doc, ref.cardId);
-		} catch {
-			continue;
-		}
-		const { tab, cat, app } = found;
-		if (!tabCanSee(tab, user, doc) || !catCanSee(cat, user, doc)) continue;
-		if (!can(user, "view", { res: "card", id: app.id }, doc)) continue;
-		const link = curationLinksOf(app).find((row) => row.key === ref.key);
-		if (link) targets.push({ cardId: app.id, key: ref.key, url: link.url });
+	if (curationJobRunning()) return { started: false, total: 0 };
+	const items = curationItemsOf(doc, user);
+	const byCard = new Map(items.map((item) => [item.cardId, item]));
+	const targets: CurationJobTarget[] = [];
+	for (const ref of curationQueueOf(items)) {
+		const item = byCard.get(ref.cardId);
+		const link = item?.links.find((row) => row.key === ref.key);
+		if (item && link) targets.push({ cardId: ref.cardId, key: ref.key, url: link.url, label: link.label, title: item.title });
 	}
-	const results = await Promise.all(
-		targets.map(async (target) => {
-			const started = Date.now();
-			const trace = await probeHttpTrace(target.url, tlsVerify);
-			return { cardId: target.cardId, key: target.key, check: curationCheckOf(target.url, trace, Math.max(0, Date.now() - started)) };
-		})
-	);
-	for (const row of results) {
-		const card = store.checks[row.cardId] || (store.checks[row.cardId] = {});
-		card[row.key] = row.check;
-	}
-	if (results.length) {
-		store.updatedAt = Date.now();
-		pruneCurationChecks(store, allCardIds(doc));
-		await writeCurationStore(store);
-	}
-	return { results, lastRunAt: store.updatedAt };
+	void startCurationJob({
+		targets,
+		tlsVerify: Boolean(doc.settings.probeTlsVerify),
+		known: [...allCardIds(doc)],
+		locale: doc.settings.locale
+	}).catch(() => void 0);
+	return { started: true, total: targets.length };
 }));
 
 export const probeTargets = createServerFn({ method: "POST" }).validator(z.object({

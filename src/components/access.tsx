@@ -51,7 +51,7 @@ import type { LdapGroupHit } from "@/lib/ldap-runtime";
 const INPUT_SM = "h-9 rounded-md bg-transparent";
 
 type Provider = { id: string; label: string; kind: string };
-type LdapDirectory = { id: string; domain?: string };
+type LdapDirectory = { id: string; domain?: string; enabled?: boolean; host?: string };
 type Actor = {
   id?: string;
   role?: string;
@@ -1467,7 +1467,10 @@ export function AccessGroups({
   const canCreate = actor?.role === "admin" || actor?.canManageGroups || actor?.canManageUsers;
   const people = dir.users.filter((u) => u.id !== "admin");
   const current = dir.groups.find((g) => g.id === expand.openId);
-  const providers = pickerProviders(directories);
+  const readyDirs = (directories || []).filter(
+    (d) => d.enabled && String(d.host || "").trim() && String(d.domain || "").trim(),
+  );
+  const providers = pickerProviders(readyDirs);
   const adProviders = providers.filter((p) => p.kind === "ad");
 
   const searchDirGroups = useCallback(async (directoryId: string, query: string) => {

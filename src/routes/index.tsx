@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -107,7 +106,9 @@ import {
   createApp,
   createCategory,
   createTab,
-  curationScan,
+  curationStart,
+  curationStatus,
+  curationStop,
   deleteApp,
   deleteCategory,
   deleteTab,
@@ -185,6 +186,7 @@ import type {
   CheckMode,
   ClickStats,
   CurationCheck,
+  CurationJobView,
   CustomIcon,
   DocTab,
   ItemKind,
@@ -4752,28 +4754,39 @@ function Home() {
           {modal.kind === "curation" && (
             <CurationPanel
               token={token}
+              busy={busy}
               tabPerms={session?.tabPerms || {}}
+              picker={picker}
+              catalog={data.catalog}
+              probes={data.settings.healthChecks !== false}
+              knownTags={allTags.map((tag) => tag.name)}
+              tagColors={data.settings.tagColors}
+              editContext={(cardId) => {
+                for (const tb of data.catalog) {
+                  for (const cat of tb.categories) {
+                    const app = cat.apps.find((a) => a.id === cardId);
+                    if (app) {
+                      return {
+                        app,
+                        categoryId: cat.id,
+                        categories: data.categories.some((c) => c.id === cat.id) ? data.categories : tb.categories,
+                      };
+                    }
+                  }
+                }
+                return null;
+              }}
+              onSaveCard={(app, payload, onDone) =>
+                apply(() => updateApp({ data: { token, id: app.id, ...payload } }), {
+                  close: false,
+                  onDone,
+                })
+              }
               onClose={() =>
                 setModal({
                   kind: "none",
                 })
               }
-              onEditCard={(cardId) => {
-                for (const tb of data.catalog) {
-                  for (const cat of tb.categories) {
-                    const app = cat.apps.find((a) => a.id === cardId);
-                    if (app) {
-                      setModal({
-                        kind: "app",
-                        categoryId: cat.id,
-                        app,
-                        from: "curation",
-                      });
-                      return;
-                    }
-                  }
-                }
-              }}
             />
           )}
           {modal.kind === "admin" && (
@@ -5019,33 +5032,26 @@ function Home() {
               knownTags={allTags.map((t) => t.name)}
               tagColors={data.settings.tagColors}
               onCancel={() =>
-                setModal(modal.from === "curation" ? { kind: "curation" } : { kind: "none" })
+                setModal({
+                  kind: "none",
+                })
               }
               onSave={(payload) =>
-                apply(
-                  () =>
-                    modal.app
-                      ? updateApp({
-                          data: {
-                            token,
-                            id: (modal.app as PortalApp).id,
-                            ...payload,
-                          },
-                        })
-                      : createApp({
-                          data: {
-                            token,
-                            ...payload,
-                          },
-                        }),
-                  modal.from === "curation"
-                    ? {
-                        onDone: () =>
-                          setModal({
-                            kind: "curation",
-                          }),
-                      }
-                    : undefined,
+                apply(() =>
+                  modal.app
+                    ? updateApp({
+                        data: {
+                          token,
+                          id: (modal.app as PortalApp).id,
+                          ...payload,
+                        },
+                      })
+                    : createApp({
+                        data: {
+                          token,
+                          ...payload,
+                        },
+                      }),
                 )
               }
             />
@@ -6258,103 +6264,6 @@ type TagsPayload = {
   colors?: Record<string, string>;
 };
 type CurationViewData = Awaited<ReturnType<typeof getCuration>>;
-type CurationScanRow = {
-  cardId: string;
-  key: string;
-  title: string;
-  place: string;
-  label: string;
-  url: string;
-  check: CurationCheck;
-};
-type CurationScanState = {
-  running: boolean;
-  done: number;
-  total: number;
-  current: string;
-  rows: CurationScanRow[];
-  lastRunAt: number;
-};
-let curationScanState: CurationScanState = {
-  running: false,
-  done: 0,
-  total: 0,
-  current: "",
-  rows: [],
-  lastRunAt: 0,
-};
-const curationScanSubs = new Set<() => void>();
-let curationScanRun = 0;
-function patchCurationScan(patch: Partial<CurationScanState>) {
-  curationScanState = { ...curationScanState, ...patch };
-  for (const fn of curationScanSubs) fn();
-}
-function useCurationScan(): CurationScanState {
-  return useSyncExternalStore(
-    (onStoreChange) => {
-      curationScanSubs.add(onStoreChange);
-      return () => curationScanSubs.delete(onStoreChange);
-    },
-    () => curationScanState,
-  );
-}
-async function startCurationScan(token: string, queue: CurationViewData["queue"], items: CurationViewData["items"]) {
-  const run = ++curationScanRun;
-  patchCurationScan({
-    running: true,
-    done: 0,
-    total: queue.length,
-    current: "",
-    rows: [],
-    lastRunAt: curationScanState.lastRunAt,
-  });
-  let lastRunAt = curationScanState.lastRunAt;
-  for (let i = 0; i < queue.length; i += 4) {
-    if (curationScanRun !== run) break;
-    const slice = queue.slice(i, i + 4);
-    const first = slice[0];
-    const item = items.find((row) => row.cardId === first.cardId);
-    const link = item?.links.find((row) => row.key === first.key);
-    patchCurationScan({
-      current: item
-        ? t("curation.checkingItem", { title: item.title, link: link?.label || link?.url || "" })
-        : "",
-    });
-    try {
-      const res = await curationScan({
-        data: { token, items: slice.map(({ cardId, key }) => ({ cardId, key })) },
-      });
-      if (curationScanRun !== run) break;
-      lastRunAt = res.lastRunAt;
-      patchCurationScan({
-        done: Math.min(i + slice.length, queue.length),
-        rows: [
-          ...curationScanState.rows,
-          ...res.results.map((row) => {
-            const meta = items.find((it) => it.cardId === row.cardId);
-            const linkMeta = meta?.links.find((l) => l.key === row.key);
-            return {
-              cardId: row.cardId,
-              key: row.key,
-              title: meta?.title || row.cardId,
-              place: [meta?.tabName, meta?.categoryName].filter(Boolean).join(" · "),
-              label: linkMeta?.label || "",
-              url: linkMeta?.url || row.check.url,
-              check: row.check,
-            };
-          }),
-        ],
-      });
-    } catch (err) {
-      if (sessionGone(err)) break;
-      toast.error(te(err));
-      break;
-    }
-  }
-  if (curationScanRun === run) {
-    patchCurationScan({ running: false, current: "", lastRunAt });
-  }
-}
 function curationTone(status: CurationCheck["status"]): string {
   if (status === "valid") return "text-ok";
   if (status === "redirect") return "text-muted";
@@ -6381,67 +6290,100 @@ function curationStatusLabel(check: CurationCheck): string {
 }
 function CurationPanel({
   token,
+  busy,
   tabPerms,
+  picker,
+  catalog,
+  probes,
+  knownTags,
+  tagColors,
+  editContext,
+  onSaveCard,
   onClose,
-  onEditCard,
 }: {
   token: string;
+  busy: boolean;
   tabPerms: Record<string, "view" | "edit">;
+  picker: {
+    token: string;
+    library: CustomIcon[];
+    online: boolean;
+    navRichIcons: boolean;
+    onLibrary: (icons: CustomIcon[]) => void;
+  };
+  catalog: CatalogTab[];
+  probes?: boolean;
+  knownTags?: string[];
+  tagColors?: Record<string, string>;
+  editContext: (
+    cardId: string,
+  ) => { app: PortalApp; categoryId: string; categories: PortalCategory[] } | null;
+  onSaveCard: (app: PortalApp, payload: AppFormPayload, onDone: () => void) => void;
   onClose: () => void;
-  onEditCard: (cardId: string) => void;
 }) {
   const [pane, setPane] = useState<"results" | "apps">("results");
   const [view, setView] = useState<CurationViewData | null>(null);
   const [ready, setReady] = useState(false);
   const [filter, setFilter] = useState("all");
   const [openId, setOpenId] = useState<string | null>(null);
-  const scan = useCurationScan();
-  const live = useMemo(() => {
-    const map: Record<string, Record<string, CurationCheck>> = {};
-    for (const row of scan.rows) {
-      map[row.cardId] = { ...map[row.cardId], [row.key]: row.check };
-    }
-    return map;
-  }, [scan.rows]);
+  const [job, setJob] = useState<CurationJobView | null>(null);
+  const [edit, setEdit] = useState<{ app: PortalApp; categoryId: string; categories: PortalCategory[] } | null>(
+    null,
+  );
+  const jobRunningRef = useRef(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const reloadRef = useRef<() => void>(() => {});
   useEffect(() => {
+    let alive = true;
+    let timer = 0;
+    async function reload() {
+      try {
+        const res = await getCuration({ data: { token } });
+        if (alive) setView(res);
+      } catch {
+        // ignore — initial load reports its own errors
+      }
+    }
+    reloadRef.current = reload;
+    async function tick() {
+      try {
+        const res = await curationStatus({ data: { token } });
+        if (!alive) return;
+        setJob(res);
+        const wasRunning = jobRunningRef.current;
+        jobRunningRef.current = res.running;
+        if (wasRunning && !res.running) void reload();
+      } catch (err) {
+        if (!alive || sessionGone(err)) return;
+      }
+      if (alive) timer = window.setTimeout(() => void tick(), 800);
+    }
     getCuration({ data: { token } })
       .then((res) => {
+        if (!alive) return;
         setView(res);
-        if (!curationScanState.running && !curationScanState.rows.length) {
-          patchCurationScan({
-            rows: res.queue
-              .map((ref) => {
-                const meta = res.items.find((it) => it.cardId === ref.cardId);
-                const linkMeta = meta?.links.find((l) => l.key === ref.key);
-                const check = res.checks?.[ref.cardId]?.[ref.key];
-                if (!check || (linkMeta && check.url !== linkMeta.url)) return null;
-                return {
-                  cardId: ref.cardId,
-                  key: ref.key,
-                  title: meta?.title || ref.cardId,
-                  place: [meta?.tabName, meta?.categoryName].filter(Boolean).join(" · "),
-                  label: linkMeta?.label || "",
-                  url: linkMeta?.url || check.url,
-                  check,
-                };
-              })
-              .filter((row) => row !== null),
-          });
-        }
         setReady(true);
       })
       .catch((err) => {
+        if (!alive) return;
         setReady(true);
         if (sessionGone(err)) return;
         toast.error(te(err));
       });
+    void tick();
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
   }, [token]);
+  const lastLogLine = job?.log.length ? job.log[job.log.length - 1] : "";
+  useEffect(() => {
+    const el = logEndRef.current?.parentElement;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [job?.log.length, lastLogLine]);
   function checksOf(cardId: string): Record<string, CurationCheck> | undefined {
     const base = view?.checks?.[cardId];
-    const over = live[cardId];
-    if (!base) return over;
-    if (!over) return base;
-    return { ...base, ...over };
+    return base ? { ...base } : undefined;
   }
   const counts = useMemo(() => {
     let valid = 0;
@@ -6463,14 +6405,15 @@ function CurationPanel({
     }
     const checked = valid + redirect + error + timeout;
     return { valid, redirect, error, timeout, checked, pending, total: checked + pending };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- checksOf reads view/live state
-  }, [view, live]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- checksOf reads view state
+  }, [view]);
   const groups = useMemo(() => {
     const prio: Record<CurationCheck["status"], number> = { error: 4, timeout: 3, redirect: 2, valid: 1, unknown: 0 };
     const out: {
       cardId: string;
       tabId: string;
       title: string;
+      icon: string;
       place: string;
       links: { key: string; label: string; url: string; check?: CurationCheck }[];
       worst?: CurationCheck;
@@ -6491,6 +6434,7 @@ function CurationPanel({
         cardId: item.cardId,
         tabId: item.tabId,
         title: item.title,
+        icon: item.icon,
         place: [item.tabName, item.categoryName].filter(Boolean).join(" · "),
         links,
         worst,
@@ -6498,8 +6442,8 @@ function CurationPanel({
       });
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- checksOf reads view/live state
-  }, [view, live]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- checksOf reads view state
+  }, [view]);
   const filteredGroups = useMemo(() => {
     if (filter === "all") return groups;
     return groups.filter((group) => {
@@ -6513,15 +6457,40 @@ function CurationPanel({
       });
     });
   }, [groups, filter]);
-  function runScan() {
-    if (scan.running || !view || !view.queue.length) return;
-    void startCurationScan(token, view.queue, view.items);
+  async function runScan() {
+    if (job?.running || !view || !view.queue.length) return;
+    try {
+      const res = await curationStart({ data: { token } });
+      if (!res.started) toast.info(t("curation.busy"));
+    } catch (err) {
+      if (sessionGone(err)) return;
+      toast.error(te(err));
+    }
   }
-  const total = counts.total;
-  const done = scan.rows.length;
+  async function stopScan() {
+    try {
+      await curationStop({ data: { token } });
+    } catch (err) {
+      if (sessionGone(err)) return;
+      toast.error(te(err));
+    }
+  }
+  const col = useColSort();
+  const useJob = Boolean(job && (job.running || job.done > 0));
+  const total = useJob && job ? job.total : counts.total;
+  const done = useJob && job ? job.done : counts.checked;
   const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
-  const lastRunAt = Math.max(view?.lastRunAt || 0, scan.lastRunAt);
-  const statusLine = scan.running
+  const boxCounts = useJob && job
+    ? {
+        valid: job.counts.valid,
+        redirect: job.counts.redirect,
+        error: job.counts.error,
+        timeout: job.counts.timeout,
+        pending: Math.max(0, job.total - job.done),
+      }
+    : counts;
+  const lastRunAt = Math.max(view?.lastRunAt || 0, job?.finishedAt || 0);
+  const boxTitle = job?.running
     ? t("curation.running")
     : lastRunAt
       ? t("curation.lastRun", { when: formatWhen(lastRunAt) })
@@ -6556,36 +6525,28 @@ function CurationPanel({
       </span>
     );
   }
-  function linkCell(label: string, url: string) {
-    if (!url) return <span className="am-row-link">—</span>;
-    return (
-      <span className="am-row-link" title={url}>
-        {label ? `${label} · ` : ""}
-        {url}
-      </span>
-    );
-  }
   return (
-    <div className="settings-frame is-wide is-access">
-      <nav className="settings-nav" aria-label={t("curation.sectionsAria")}>
-        <p className="menu-title">{t("curation.title")}</p>
-        <button
-          type="button"
-          className={`settings-nav-item ${pane === "results" ? "is-on" : ""}`}
-          onClick={() => setPane("results")}
-        >
-          <ListChecks className="size-4 shrink-0" />
-          {t("curation.results")}
-        </button>
-        <button
-          type="button"
-          className={`settings-nav-item ${pane === "apps" ? "is-on" : ""}`}
-          onClick={() => setPane("apps")}
-        >
-          <LayoutGrid className="size-4 shrink-0" />
-          {t("curation.apps")}
-        </button>
-      </nav>
+    <>
+      <div className="settings-frame is-wide is-access">
+        <nav className="settings-nav" aria-label={t("curation.sectionsAria")}>
+          <p className="menu-title">{t("curation.title")}</p>
+          <button
+            type="button"
+            className={`settings-nav-item ${pane === "results" ? "is-on" : ""}`}
+            onClick={() => setPane("results")}
+          >
+            <ListChecks className="size-4 shrink-0" />
+            {t("curation.results")}
+          </button>
+          <button
+            type="button"
+            className={`settings-nav-item ${pane === "apps" ? "is-on" : ""}`}
+            onClick={() => setPane("apps")}
+          >
+            <LayoutGrid className="size-4 shrink-0" />
+            {t("curation.apps")}
+          </button>
+        </nav>
       <div className="settings-body">
         <div className="settings-head">
           <div className="settings-head-copy">
@@ -6606,111 +6567,97 @@ function CurationPanel({
         {pane === "results" ? (
           <div className="settings-pane is-access">
             <div className="am-work">
-              {total ? (
+              {ready ? (
                 <div className="curation-progress">
                   <div className="curation-progress-row">
-                    <span className="curation-progress-title">{statusLine}</span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted">
-                      {formatNumber(done)} / {formatNumber(total)}
-                    </span>
-                  </div>
-                  <div
-                    className="h-1.5 w-full overflow-hidden rounded-full bg-elevated"
-                    role="progressbar"
-                    aria-valuemin={0}
-                    aria-valuemax={total}
-                    aria-valuenow={done}
-                  >
-                    <div
-                      className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="curation-counts">
-                    <span className="inline-flex items-center gap-1 text-ok">
-                      <Check className="size-3.5" />
-                      {t("curation.countValid", { n: formatNumber(counts.valid) })}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-muted">
-                      <ArrowUpRight className="size-3.5" />
-                      {t("curation.countRedirect", { n: formatNumber(counts.redirect) })}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-danger">
-                      <X className="size-3.5" />
-                      {t("curation.countError", { n: formatNumber(counts.error) })}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-danger">
-                      <Clock className="size-3.5" />
-                      {t("curation.countTimeout", { n: formatNumber(counts.timeout) })}
-                    </span>
-                    {counts.pending ? (
-                      <span>{t("curation.countPending", { n: formatNumber(counts.pending) })}</span>
+                    <span className="curation-progress-title">{boxTitle}</span>
+                    {useJob && job ? (
+                      <span className="shrink-0 text-xs tabular-nums text-muted">
+                        {formatNumber(done)} / {formatNumber(total)}
+                      </span>
                     ) : null}
                   </div>
-                  {scan.current ? (
-                    <p className="curation-progress-current">
-                      {t("curation.lastItem")} {scan.current}
-                    </p>
+                  {useJob && job && total ? (
+                    <>
+                      <div
+                        className="h-1.5 w-full overflow-hidden rounded-full bg-elevated"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={total}
+                        aria-valuenow={done}
+                      >
+                        <div
+                          className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="curation-counts">
+                        <span className="inline-flex items-center gap-1 text-ok">
+                          <Check className="size-3.5" />
+                          {t("curation.countValid", { n: formatNumber(boxCounts.valid) })}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-muted">
+                          <ArrowUpRight className="size-3.5" />
+                          {t("curation.countRedirect", { n: formatNumber(boxCounts.redirect) })}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-danger">
+                          <X className="size-3.5" />
+                          {t("curation.countError", { n: formatNumber(boxCounts.error) })}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-danger">
+                          <Clock className="size-3.5" />
+                          {t("curation.countTimeout", { n: formatNumber(boxCounts.timeout) })}
+                        </span>
+                        {boxCounts.pending ? (
+                          <span>{t("curation.countPending", { n: formatNumber(boxCounts.pending) })}</span>
+                        ) : null}
+                      </div>
+                      {job.running && job.current ? (
+                        <p className="curation-progress-current">
+                          {t("curation.lastItem")} {job.current}
+                        </p>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
               ) : null}
-              {scan.rows.length ? (
-                <>
-                  <div className="am-list-head is-curation">
-                    <div className="am-row-cells">
-                      <span>{t("curation.colCard")}</span>
-                      <span>{t("curation.colLink")}</span>
-                      <span className="am-row-end">{t("curation.colResult")}</span>
-                      <span className="am-row-action" />
-                    </div>
-                  </div>
-                  <EdgeFade className="am-list-wrap">
-                    <div className="am-list is-curation" role="list">
-                      {scan.rows.map((row) => (
-                        <div key={`${row.cardId}:${row.key}`} className="am-row is-static" role="listitem">
-                          <div className="am-row-head">
-                            <div className="am-row-cells">
-                              <span className="am-row-title">
-                                {row.title}
-                                {row.place ? (
-                                  <span className="ml-1.5 text-xs font-normal text-subtle">{row.place}</span>
-                                ) : null}
-                              </span>
-                              {linkCell(row.label, row.url)}
-                              {statusCell(row.check)}
-                              <span className="am-row-action" />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </EdgeFade>
-                </>
-              ) : (
-                <EdgeFade className="am-list-wrap">
-                  {!ready ? (
-                    <div className="am-list" aria-busy="true" aria-label={t("curation.loading")}>
-                      <Skeleton className="h-9 w-full" />
-                      <Skeleton className="h-9 w-full" />
-                      <Skeleton className="h-9 w-full" />
-                      <Skeleton className="h-9 w-full" />
-                    </div>
+              <div className="curation-log-box">
+                <EdgeFade className="curation-log" aria-live="polite">
+                  {job?.log.length ? (
+                    job.log.map((line, i) => (
+                      <div
+                        key={i}
+                        className={`curation-log-line${
+                          line.startsWith("✓")
+                            ? " is-ok"
+                            : line.startsWith("↗")
+                              ? " is-redirect"
+                              : line.startsWith("✕")
+                                ? " is-error"
+                                : ""
+                        }`}
+                      >
+                        {line}
+                      </div>
+                    ))
                   ) : (
-                    <EmptyState compact icon={ScanSearch} text={t("curation.noResults")} />
+                    <p className="curation-log-empty">{t("curation.logEmpty")}</p>
                   )}
+                  <div ref={logEndRef} />
                 </EdgeFade>
-              )}
-              <div className="curation-run">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="am-create shrink-0"
-                  disabled={scan.running || !ready || !total}
-                  onClick={runScan}
-                >
-                  <ScanSearch className="size-4" />
-                  {t("curation.run")}
-                </Button>
+              </div>
+              <div className="am-actions is-center">
+                {job?.running ? (
+                  <Button type="button" size="sm" variant="danger" onClick={() => void stopScan()}>
+                    <X className="size-3.5" />
+                    {t("curation.cancel")}
+                  </Button>
+                ) : (
+                  <Button type="button" size="sm" disabled={!ready || !total} onClick={() => void runScan()}>
+                    <ScanSearch className="size-3.5" />
+                    {t("curation.run")}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -6742,10 +6689,17 @@ function CurationPanel({
                 </div>
               </div>
               <div className="am-list-head is-curation">
+                <span className="am-chevron-spacer" aria-hidden />
                 <div className="am-row-cells">
-                  <span>{t("curation.colCard")}</span>
-                  <span>{t("curation.colLink")}</span>
-                  <span className="am-row-end">{t("curation.colResult")}</span>
+                  <SortLabel id="a" sort={col.sort} onToggle={col.toggle}>
+                    {t("curation.colCard")}
+                  </SortLabel>
+                  <SortLabel id="b" sort={col.sort} onToggle={col.toggle}>
+                    {t("curation.colLink")}
+                  </SortLabel>
+                  <SortLabel id="c" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                    {t("curation.colResult")}
+                  </SortLabel>
                   <span className="am-row-action" />
                 </div>
               </div>
@@ -6765,7 +6719,15 @@ function CurationPanel({
                   />
                 ) : (
                   <div className="am-list is-curation" role="list">
-                    {filteredGroups.map((group) => {
+                    {col
+                      .apply(filteredGroups, (group, key) => {
+                        if (key === "a") return group.title;
+                        if (key === "b") return group.links.length;
+                        return group.worst
+                          ? { error: 4, timeout: 3, redirect: 2, valid: 1, unknown: 0 }[group.worst.status]
+                          : -1;
+                      })
+                      .map((group) => {
                       const canEdit = tabPerms[group.tabId] === "edit";
                       const expanded = openId === group.cardId;
                       return (
@@ -6776,10 +6738,11 @@ function CurationPanel({
                           onToggle={() => setOpenId(expanded ? null : group.cardId)}
                           cells={
                             <>
-                              <span className="am-row-title">
-                                {group.title}
+                              <span className="am-row-title is-curation-card">
+                                <PortalIcon name={group.icon} className="size-4 shrink-0" />
+                                <span className="curation-card-name">{group.title}</span>
                                 {group.place ? (
-                                  <span className="ml-1.5 text-xs font-normal text-subtle">{group.place}</span>
+                                  <span className="curation-card-place">{group.place}</span>
                                 ) : null}
                               </span>
                               <span className="am-row-link">
@@ -6793,7 +6756,7 @@ function CurationPanel({
                                   disabled={!canEdit}
                                   title={t("curation.editCard")}
                                   aria-label={t("curation.editCard")}
-                                  onClick={() => onEditCard(group.cardId)}
+                                  onClick={() => setEdit(editContext(group.cardId))}
                                 >
                                   <Pencil className="size-3.5" />
                                 </button>
@@ -6831,6 +6794,29 @@ function CurationPanel({
         )}
       </div>
     </div>
+    {edit ? (
+      <ModalShell size="wide" label={t("curation.editCard")} onClose={() => setEdit(null)}>
+        <AppForm
+          categories={edit.categories}
+          categoryId={edit.categoryId}
+          catalog={catalog}
+          initial={edit.app}
+          busy={busy}
+          picker={picker}
+          probes={probes}
+          knownTags={knownTags}
+          tagColors={tagColors}
+          onCancel={() => setEdit(null)}
+          onSave={(payload) =>
+            onSaveCard(edit.app, payload, () => {
+              setEdit(null);
+              reloadRef.current();
+            })
+          }
+        />
+      </ModalShell>
+    ) : null}
+    </>
   );
 }
 function AdminPanel({
