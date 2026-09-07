@@ -52,6 +52,7 @@
     --drop-fill-hot: #d4e9f8;
     --drop-line: #b7d4ee;
     --drop-ink: #3e6f96;
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238c8c90' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 
   html.light {
@@ -83,6 +84,7 @@
     --drop-fill-hot: color-mix(in oklab, #7db4e8 30%, var(--color-surface));
     --drop-line: color-mix(in oklab, #7db4e8 42%, var(--color-border));
     --drop-ink: #b7d6f2;
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2378818d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 
   button:not(:disabled),
@@ -627,7 +629,7 @@ select.field-input {
   padding-bottom: 0;
   line-height: 1.25;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
   background-position: right 0.65rem center;
   background-size: 1rem;
@@ -3286,6 +3288,10 @@ button.am-create,
   border-radius: 8px;
   font-size: 0.75rem;
   font-weight: 550;
+}
+.am-create:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-ring) 60%, transparent);
 }
 .am-toolbar > .am-create {
   margin-left: auto;

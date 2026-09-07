@@ -326,9 +326,9 @@ export function EntityPicker<T extends PickerRow = PickerRow>({
       : null;
 
   const addBtn = readOnly ? null : trigger === "button" ? (
-    <Button type="button" size="sm" className="am-create shrink-0" onClick={() => setOpen((v) => !v)}>
+    <button type="button" className="am-create shrink-0" onClick={() => setOpen((v) => !v)}>
       <Plus className="size-3.5" /> {addLabel || kindLabel(kind, "add")}
-    </Button>
+    </button>
   ) : (
     <button
       type="button"

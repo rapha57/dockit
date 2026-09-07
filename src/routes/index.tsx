@@ -5989,17 +5989,15 @@ function HistoryPanel({
                 </Button>
               ) : null}
               {pane === "audit" ? (
-                <Button
+                <button
                   type="button"
-                  size="sm"
-                  variant="outline"
                   className="am-create shrink-0"
                   disabled={busy || !ready}
                   onClick={() => void downloadAudit()}
                 >
                   <Download className="size-3.5" />
                   {t("actions.exportCsv")}
-                </Button>
+                </button>
               ) : null}
             </div>
             {ready && rows.length ? (
@@ -8520,19 +8518,16 @@ function IdentitySourcesPanel({
     <div className="am-work">
       <div className="am-toolbar">
         <span className="am-toolbar-title">{t("access.idpSources")}</span>
-        <Button
+        <button
           type="button"
-          size="sm"
           className="am-create shrink-0"
           onClick={addAd}
           disabled={dirs.length >= 8}
         >
           <Plus className="size-3.5" /> {t("access.idpAddAd")}
-        </Button>
-        <Button
+        </button>
+        <button
           type="button"
-          size="sm"
-          variant="outline"
           className="am-create shrink-0"
           onClick={() => {
             setOidcDraft(true);
@@ -8540,7 +8535,7 @@ function IdentitySourcesPanel({
           }}
         >
           <Plus className="size-3.5" /> {t("access.idpAddOidc")}
-        </Button>
+        </button>
       </div>
       <EdgeFade className="am-list-wrap">
         <div ref={listRef} className="am-providers" role="list">
@@ -9708,9 +9703,9 @@ function ExtraLinksField({
       <div className="am-toolbar">
         <span className="am-toolbar-title">{t("item.extraLinks")}</span>
         {links.length < 4 ? (
-          <Button type="button" size="sm" className="am-create shrink-0" onClick={addLink}>
+          <button type="button" className="am-create shrink-0" onClick={addLink}>
             <Plus className="size-3.5" /> {t("actions.addLink")}
-          </Button>
+          </button>
         ) : null}
       </div>
       <p className="settings-hint">{t("item.extraLinksHint")}</p>

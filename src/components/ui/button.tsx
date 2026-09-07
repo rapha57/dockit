@@ -11,7 +11,6 @@ const buttonVariants = cva(
         secondary: "bg-elevated text-fg border border-border hover:bg-surface",
         ghost: "text-muted hover:text-fg hover:bg-elevated",
         danger: "bg-danger/15 text-danger hover:bg-danger/25",
-        destructive: "bg-danger/15 text-danger hover:bg-danger/25",
         outline: "border border-border bg-transparent text-fg hover:bg-elevated",
         debug: "btn-debug",
       },

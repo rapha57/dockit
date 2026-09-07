@@ -1157,9 +1157,9 @@ export function AccessUsers({
             ]}
           />
           {canCreate ? (
-            <Button type="button" size="sm" className="am-create shrink-0" onClick={openCreate}>
+            <button type="button" className="am-create shrink-0" onClick={openCreate}>
               <Plus className="size-3.5" /> {t("access.create")}
-            </Button>
+            </button>
           ) : null}
         </>
       }
@@ -1630,9 +1630,9 @@ export function AccessGroups({
             />
           ) : null}
           {canCreate ? (
-            <Button type="button" size="sm" className="am-create shrink-0" onClick={openCreate}>
+            <button type="button" className="am-create shrink-0" onClick={openCreate}>
               <Plus className="size-3.5" /> {t("access.createGroup")}
-            </Button>
+            </button>
           ) : null}
         </>
       }
@@ -2018,9 +2018,9 @@ export function AccessRoles({
               { id: "custom", label: t("access.custom") },
             ]}
           />
-          <Button type="button" size="sm" className="am-create shrink-0" onClick={() => openCreate()}>
+          <button type="button" className="am-create shrink-0" onClick={() => openCreate()}>
             <Plus className="size-3.5" /> {t("access.createRole")}
-          </Button>
+          </button>
         </>
       }
       head={
