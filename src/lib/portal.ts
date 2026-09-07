@@ -626,9 +626,9 @@ const GROUP_CAP = 160;
 function asGroups(raw: unknown): Group[] {
 	if (!Array.isArray(raw)) return [];
 	return raw.slice(0, GROUP_CAP).map((g: any) => {
-		const source = g?.source === "ad" ? "ad" : "local";
+		const source = g?.source === "ad" || g?.source === "oidc" ? g.source : "local";
 		let roleIds = roleIdsOf(g).map((r) => String(r).slice(0, 80)).filter((r) => r !== "owner");
-		if (!roleIds.length && source !== "ad") roleIds = ["lecteur"];
+		if (!roleIds.length && source === "local") roleIds = ["lecteur"];
 		return {
 			id: String(g?.id || crypto.randomUUID()),
 			name: String(g?.name || "").trim().slice(0, 60),
@@ -871,7 +871,7 @@ function publicGroup(g: Group, _doc: AclDoc) {
 		role: roleIds[0] || g.role || "lecteur",
 		roleIds,
 		grants: asGrants(g.grants),
-		source: g.source === "ad" ? "ad" : "local",
+		source: g.source === "ad" || g.source === "oidc" ? g.source : "local",
 		externalId: String(g.externalId || ""),
 		members: asIdList(g.members)
 	};
@@ -959,6 +959,38 @@ function applyAdMembership(doc: Doc, user: StoredUser | null | undefined, dirId:
 	const keys = new Set((Array.isArray(memberOf) ? memberOf : []).map((dn) => adGroupKey(dirId, dn)));
 	for (const g of doc.groups) {
 		if (g.source !== "ad" || !String(g.externalId || "").startsWith(prefix)) continue;
+		const members = asIdList(g.members).filter((id) => id !== user.id);
+		if (keys.has(g.externalId)) members.push(user.id);
+		g.members = members;
+	}
+	user.groupIds = doc.groups.filter((g) => asIdList(g.members).includes(user.id)).map((g) => g.id);
+}
+function upsertOidcGroups(doc: Doc, issuer: string, names: string[]) {
+	ensureGroups(doc);
+	for (const name of names) {
+		const key = `oidc:${issuer.slice(0, 60)}:${name.slice(0, 200)}`;
+		const existing = doc.groups.find((g) => g.source === "oidc" && g.externalId === key);
+		if (existing) continue;
+		if (doc.groups.length >= GROUP_CAP) break;
+		doc.groups.push({
+			id: crypto.randomUUID(),
+			name: name.slice(0, 60),
+			members: [],
+			role: "",
+			roleIds: [],
+			grants: [],
+			source: "oidc",
+			externalId: key
+		});
+	}
+}
+function applyOidcGroups(doc: Doc, user: StoredUser | null | undefined, issuer: string, names: string[]) {
+	if (!user || user.id === "admin") return;
+	upsertOidcGroups(doc, issuer, names);
+	ensureGroups(doc);
+	const keys = new Set(names.map((name) => `oidc:${issuer.slice(0, 60)}:${name.slice(0, 200)}`));
+	for (const g of doc.groups) {
+		if (g.source !== "oidc" || !g.externalId) continue;
 		const members = asIdList(g.members).filter((id) => id !== user.id);
 		if (keys.has(g.externalId)) members.push(user.id);
 		g.members = members;
@@ -2181,6 +2213,7 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 			});
 			const info = await fetchUserInfo(disc, tokens.accessToken);
 			const username = usernameFromClaims(info);
+			const groups = Array.isArray(info.groups) ? (info.groups as unknown[]).map((g) => String(g || "").trim()).filter(Boolean).slice(0, 100) : [];
 			ensureUsers(doc);
 			let user = doc.users.find((u) => u.username === username);
 			if (!user) {
@@ -2204,6 +2237,7 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 				loginFail(key);
 				throw new Error("errors.disabled");
 			}
+			applyOidcGroups(doc, user, disc.issuer, groups);
 			loginOk(key);
 			appendHistory(doc, user, {
 				type: "login",
@@ -2341,10 +2375,10 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 	ensureRoles(doc);
 	let target = data.id ? doc.groups.find((g) => g.id === data.id) : void 0;
 	if (data.id && !target) throw new Error("errors.userNotFound");
-	const roleIds = cleanRoleIds(doc, data.roleIds?.length ? data.roleIds : data.role ? [data.role] : target?.source === "ad" ? [] : ["lecteur"], { allowEmpty: target?.source === "ad" });
+	const roleIds = cleanRoleIds(doc, data.roleIds?.length ? data.roleIds : data.role ? [data.role] : target?.source === "ad" || target?.source === "oidc" ? [] : ["lecteur"], { allowEmpty: target?.source === "ad" || target?.source === "oidc" });
 	const name = data.name.trim().slice(0, 60);
 	if (!name) throw new Error("errors.nameRequired");
-	if (target?.source === "ad") {
+	if (target?.source === "ad" || target?.source === "oidc") {
 		target.roleIds = roleIds;
 		target.role = roleIds[0] || "";
 		if (data.grants) target.grants = asGrants(data.grants);
@@ -2368,7 +2402,7 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 		};
 		doc.groups.push(target);
 	}
-	if (target.source !== "ad") syncGroupMembers(doc, target.id, data.members ?? target.members);
+	if (target.source !== "ad" && target.source !== "oidc") syncGroupMembers(doc, target.id, data.members ?? target.members);
 	appendHistory(doc, actor, {
 		type: data.id ? "group.update" : "group.create",
 		label: target.name

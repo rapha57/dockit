@@ -5770,6 +5770,7 @@ function settingsSections() {
     ["debug", Bug],
     ["info", MousePointerClick],
     ["backup", Download],
+    ["reset", RotateCcw],
     ["about", BadgeInfo],
   ];
   return raw.map(([id, icon]) => ({
@@ -7023,9 +7024,7 @@ function AdminPanel({
             {" "}
             <InfoBarForm
               initial={settings}
-              busy={busy}
               onSave={(payload) => onSaveSettings(payload)}
-              onResetClicks={onResetClicks}
             />
           </EdgeFade>
         ) : tab === "themes" ? (
@@ -7044,14 +7043,66 @@ function AdminPanel({
               onImport={onImportPortal}
             />
           </EdgeFade>
-        ) : tab === "about" || tab === "reset" || !session?.canManageSettings ? (
+        ) : tab === "reset" && session?.canManageSettings ? (
+          <EdgeFade className="settings-pane">
+            <div className="settings-stack">
+              <div className="settings-card">
+                <p className="settings-kicker">{t("info.resetKicker")}</p>
+                <p className="settings-hint">{t("info.resetHint")}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="danger"
+                  className="am-create self-start"
+                  disabled={busy || !onResetClicks}
+                  onClick={async () => {
+                    if (!onResetClicks) return;
+                    if (
+                      !(await askConfirm({
+                        title: t("confirm.resetClicks"),
+                        body: t("info.resetConfirm"),
+                        okLabel: t("info.resetAction"),
+                      }))
+                    )
+                      return;
+                    onResetClicks();
+                  }}
+                >
+                  {t("info.resetAction")}
+                </Button>
+              </div>
+              <div className="settings-card">
+                <p className="settings-kicker">{t("sections.reset.label")}</p>
+                <p className="settings-hint">{t("settings.resetBody")}</p>
+                {session?.role === "admin" ? (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    className="am-create self-start"
+                    disabled={busy}
+                    onClick={async () => {
+                      if (
+                        !(await askConfirm({
+                          title: t("sections.reset.label"),
+                          body: t("settings.resetConfirm"),
+                          okLabel: t("sections.reset.label"),
+                        }))
+                      )
+                        return;
+                      onResetPortal();
+                    }}
+                  >
+                    {t("settings.resetAction")}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </EdgeFade>
+        ) : tab === "about" || !session?.canManageSettings ? (
           <EdgeFade className="settings-pane">
             {" "}
-            <AboutForm
-              busy={busy}
-              canReset={session?.role === "admin"}
-              onReset={onResetPortal}
-            />
+            <AboutForm />
           </EdgeFade>
         ) : (
           <div className="settings-pane is-fill">
@@ -7088,15 +7139,7 @@ function AdminPanel({
     </div>
   );
 }
-function AboutForm({
-  busy,
-  canReset,
-  onReset,
-}: {
-  busy: boolean;
-  canReset?: boolean;
-  onReset: () => void;
-}) {
+function AboutForm() {
   const [release, setRelease] = useState<{ kind: string; latest?: string; url?: string } | null>(
     null,
   );
@@ -7213,33 +7256,6 @@ function AboutForm({
           </dd>
         </dl>
       </div>
-      {canReset ? (
-        <div className="settings-card">
-          <p className="settings-kicker">{t("sections.reset.label")}</p>
-          <p className="settings-hint">{t("settings.resetBody")}</p>
-          <Button
-            type="button"
-            variant="danger"
-            size="sm"
-            className="am-create self-start"
-            disabled={busy || !onReset}
-            onClick={async () => {
-              if (!onReset) return;
-              if (
-                !(await askConfirm({
-                  title: t("sections.reset.label"),
-                  body: t("settings.resetConfirm"),
-                  okLabel: t("sections.reset.label"),
-                }))
-              )
-                return;
-              onReset();
-            }}
-          >
-            {t("settings.resetAction")}
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -8415,14 +8431,10 @@ function DebugPanel({
 }
 function InfoBarForm({
   initial,
-  busy,
   onSave,
-  onResetClicks,
 }: {
   initial: PortalSettings;
-  busy: boolean;
   onSave: (payload: SettingsPayload) => void;
-  onResetClicks: () => void;
 }) {
   const [infoStats, setInfoStats] = useState(initial.infoStats !== false);
   const [infoGeek, setInfoGeek] = useState(initial.infoGeek !== false);
@@ -8466,31 +8478,6 @@ function InfoBarForm({
           </label>
           {infoBar ? <p className="settings-hint">{t("info.geekHint")}</p> : null}
         </div>
-      </div>
-      <div className="settings-card">
-        <p className="settings-kicker">{t("info.resetKicker")}</p>
-        <p className="settings-hint">{t("info.resetHint")}</p>
-        <Button
-          type="button"
-          size="sm"
-          variant="danger"
-          className="am-create self-start"
-          disabled={busy || !onResetClicks}
-          onClick={async () => {
-            if (!onResetClicks) return;
-            if (
-              !(await askConfirm({
-                title: t("confirm.resetClicks"),
-                body: t("info.resetConfirm"),
-                okLabel: t("info.resetAction"),
-              }))
-            )
-              return;
-            onResetClicks();
-          }}
-        >
-          {t("info.resetAction")}
-        </Button>
       </div>
     </form>
   );

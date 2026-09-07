@@ -1682,7 +1682,7 @@ export function AccessGroups({
                 cells={[
                   <span key="n" className="am-row-title">
                     {rowDraft?.name || g.name || t("access.newGroup")}
-                    {g.source === "ad" ? <span className="am-dim"> · {t("access.sourceAd")}</span> : null}
+                    {g.source === "ad" || g.source === "oidc" ? <span className="am-dim"> · {g.source === "oidc" ? t("access.sourceOidc") : t("access.sourceAd")}</span> : null}
                   </span>,
                   <span key="c" className="am-dim">
                     {bits(
@@ -1729,7 +1729,7 @@ export function AccessGroups({
                                 patch({
                                   ...rowDraft,
                                   roleIds:
-                                    view.source === "ad" ? ids : ids.length ? ids : ["lecteur"],
+                                    view.source === "ad" || view.source === "oidc" ? ids : ids.length ? ids : ["lecteur"],
                                 })
                               }
                             />
