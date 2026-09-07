@@ -1173,7 +1173,7 @@ export function AccessUsers({
               <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle}>
                 {t("users.role")}
               </SortLabel>,
-              <SortLabel key="s" id="status" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+              <SortLabel key="s" id="status" sort={col.sort} onToggle={col.toggle}>
                 {t("access.colStatus")}
               </SortLabel>,
             ]}
@@ -1215,7 +1215,7 @@ export function AccessUsers({
                       (rowDraft?.roleIds || u.roleIds || []).map((id) => roleTitle(id, dir.roles)),
                     )}
                   </span>,
-                  <span key="s" className="am-row-end am-dim">
+                  <span key="s" className="am-dim">
                     <StatusText off={rowDraft ? rowDraft.disabled : u.disabled} />
                   </span>,
                 ]}
@@ -2036,7 +2036,7 @@ export function AccessRoles({
               <SortLabel key="h" id="holders" sort={col.sort} onToggle={col.toggle}>
                 {t("access.roleHolders")}
               </SortLabel>,
-              <SortLabel key="t" id="type" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+              <SortLabel key="t" id="type" sort={col.sort} onToggle={col.toggle}>
                 {t("access.colType")}
               </SortLabel>,
             ]}
@@ -2077,7 +2077,7 @@ export function AccessRoles({
                       r.phantom ? (rowDraft?.groupIds || []).length : r.groupCount || 0,
                     )}
                   </span>,
-                  <span key="t" className="am-row-end am-dim">
+                  <span key="t" className="am-dim">
                     {r.system ? t("access.system") : t("access.custom")}
                   </span>,
                 ]}

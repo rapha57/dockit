@@ -6108,7 +6108,7 @@ function HistoryPanel({
                   <SortLabel id="b" sort={col.sort} onToggle={col.toggle}>
                     {pane === "audit" ? t("audit.csvItem") : t("audit.csvPlace")}
                   </SortLabel>
-                  <SortLabel id="date" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                  <SortLabel id="date" sort={col.sort} onToggle={col.toggle}>
                     {t("audit.csvDate")}
                   </SortLabel>
                   {pane === "recovery" ? <span className="am-row-action" /> : null}
@@ -6136,7 +6136,7 @@ function HistoryPanel({
                               <span className="am-dim">
                                 {[row.label, row.path].filter(Boolean).join(" · ") || "—"}
                               </span>
-                              <span className="am-row-end am-dim">
+                              <span className="am-dim">
                                 {[formatHistoryWhen(row.at), row.actor].filter(Boolean).join(" · ")}
                               </span>
                             </div>
@@ -6161,7 +6161,7 @@ function HistoryPanel({
                                 {[row.path, historyCountLabel(row.count)].filter(Boolean).join(" · ") ||
                                   "—"}
                               </span>
-                              <span className="am-dim am-row-end">
+                              <span className="am-dim">
                                 {[formatHistoryWhen(row.at), row.actor].filter(Boolean).join(" · ")}
                               </span>
                               <span className="am-row-action">
@@ -6282,11 +6282,16 @@ function curationStatusLabel(check: CurationCheck): string {
     } catch {
       // keep full URL
     }
-    return `${check.httpStatus || ""} → ${short}`.trim();
+    return check.httpStatus ? `${check.httpStatus} → ${short}` : short;
   }
   if (check.status === "timeout") return t("curation.statusTimeout");
-  if (check.status === "error") return check.httpStatus ? String(check.httpStatus) : td(check.detail);
+  if (check.status === "error") return check.httpStatus ? String(check.httpStatus) : t("curation.statusError");
   return t("curation.statusUnknown");
+}
+function curationStatusTitle(check: CurationCheck): string | undefined {
+  if (check.status === "redirect") return check.finalUrl || undefined;
+  if (check.detail) return td(check.detail);
+  return undefined;
 }
 function CurationPanel({
   token,
@@ -6502,26 +6507,29 @@ function CurationPanel({
   function statusCell(check: CurationCheck | undefined, pending = false) {
     if (!check) {
       return (
-        <span className="am-status am-row-end text-subtle">
-          <Minus className="size-3.5" />
-          {pending ? t("curation.statusPending") : t("curation.statusUnknown")}
+        <span className="am-status text-subtle">
+          <Minus className="size-3.5 shrink-0" />
+          <span className="am-status-text">
+            {pending ? t("curation.statusPending") : t("curation.statusUnknown")}
+          </span>
         </span>
       );
     }
+    const title = curationStatusTitle(check);
     return (
-      <span className={`am-status am-row-end ${curationTone(check.status)}`}>
+      <span className={`am-status ${curationTone(check.status)}`} title={title}>
         {check.status === "valid" ? (
-          <Check className="size-3.5" />
+          <Check className="size-3.5 shrink-0" />
         ) : check.status === "redirect" ? (
-          <ArrowUpRight className="size-3.5" />
+          <ArrowUpRight className="size-3.5 shrink-0" />
         ) : check.status === "timeout" ? (
-          <Clock className="size-3.5" />
+          <Clock className="size-3.5 shrink-0" />
         ) : check.status === "error" ? (
-          <X className="size-3.5" />
+          <X className="size-3.5 shrink-0" />
         ) : (
-          <Minus className="size-3.5" />
+          <Minus className="size-3.5 shrink-0" />
         )}
-        {curationStatusLabel(check)}
+        <span className="am-status-text">{curationStatusLabel(check)}</span>
       </span>
     );
   }
@@ -6697,7 +6705,7 @@ function CurationPanel({
                   <SortLabel id="b" sort={col.sort} onToggle={col.toggle}>
                     {t("curation.colLink")}
                   </SortLabel>
-                  <SortLabel id="c" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+                  <SortLabel id="c" sort={col.sort} onToggle={col.toggle}>
                     {t("curation.colResult")}
                   </SortLabel>
                   <span className="am-row-action" />
@@ -6768,18 +6776,22 @@ function CurationPanel({
                             {group.links.length ? (
                               group.links.map((link) => (
                                 <div key={link.key} className="curation-sub-row">
-                                  <span className="curation-sub-label">{link.label || "—"}</span>
-                                  <span className="curation-sub-url" title={link.url}>
+                                  <div className="curation-sub-line">
+                                    <span className="curation-sub-label">{link.label || "—"}</span>
+                                    {statusCell(link.check, true)}
+                                  </div>
+                                  <p className="curation-sub-url" title={link.url}>
                                     {link.url || "—"}
-                                  </span>
-                                  {statusCell(link.check, true)}
+                                  </p>
                                 </div>
                               ))
                             ) : (
                               <div className="curation-sub-row">
-                                <span className="curation-sub-label">—</span>
-                                <span className="curation-sub-url">{t("curation.statusUnknown")}</span>
-                                {statusCell(undefined, false)}
+                                <div className="curation-sub-line">
+                                  <span className="curation-sub-label">—</span>
+                                  {statusCell(undefined, false)}
+                                </div>
+                                <p className="curation-sub-url">{t("curation.statusUnknown")}</p>
                               </div>
                             )}
                           </div>
@@ -9080,7 +9092,7 @@ function IdentitySourcesPanel({
           <span key="s" className={`am-status${r.on ? "" : " is-off"}`}>
             {r.on ? t("access.active") : t("access.disabled")}
           </span>,
-          <span key="d" className="am-row-end">
+          <span key="d">
             {isDefault ? <span className="am-badge">{t("access.idpDefault")}</span> : null}
           </span>,
         ]}

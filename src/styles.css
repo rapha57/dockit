@@ -3173,7 +3173,7 @@ html.dark .dockit-mark {
 }
 .am-list.is-curation .am-row-cells,
 .am-list-head.is-curation .am-row-cells {
-  grid-template-columns: minmax(0, 1.2fr) minmax(10rem, 1.5fr) minmax(7.5rem, 10rem) 1.85rem;
+  grid-template-columns: minmax(0, 1fr) minmax(4.5rem, 0.3fr) minmax(9rem, 1.7fr) 1.85rem;
   align-items: center;
   column-gap: 0.9rem;
 }
@@ -3181,23 +3181,30 @@ html.dark .dockit-mark {
   padding-block: 0.45rem;
 }
 .am-list.is-curation .am-expand {
-  padding-bottom: 0.85rem;
+  padding: 0.25rem 0 0.25rem 0;
 }
 .curation-sub {
   display: flex;
   flex-direction: column;
 }
 .curation-sub-row {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.5fr) minmax(7.5rem, 10rem);
-  align-items: center;
-  column-gap: 0.9rem;
-  padding: 0.3rem 0.45rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.1rem;
+  min-height: 2.6rem;
+  padding: 0.15rem 0.45rem 0.15rem 1.45rem;
   border-bottom: 1px solid color-mix(in oklab, var(--color-border) 45%, transparent);
   font-size: 0.8125rem;
 }
 .curation-sub-row:last-child {
   border-bottom: 0;
+}
+.curation-sub-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
 }
 .curation-sub-label {
   min-width: 0;
@@ -3332,13 +3339,21 @@ html.dark .dockit-mark {
   white-space: nowrap;
   overflow: hidden;
 }
-.am-list.is-curation .am-status {
+.am-list.is-curation .am-status,
+.curation-sub-row .am-status {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 0.3rem;
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+.am-status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .stats-panel {
