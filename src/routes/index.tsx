@@ -6330,6 +6330,7 @@ function CurationPanel({
   const [view, setView] = useState<CurationViewData | null>(null);
   const [ready, setReady] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [q, setQ] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [job, setJob] = useState<CurationJobView | null>(null);
   const [edit, setEdit] = useState<{ app: PortalApp; categoryId: string; categories: PortalCategory[] } | null>(
@@ -6462,8 +6463,20 @@ function CurationPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- checksOf reads view state
   }, [view]);
   const filteredGroups = useMemo(() => {
-    if (filter === "all") return groups;
-    return groups.filter((group) => {
+    const needle = q.trim().toLowerCase();
+    const base = needle
+      ? groups.filter(
+          (group) =>
+            group.title.toLowerCase().includes(needle) ||
+            group.place.toLowerCase().includes(needle) ||
+            group.links.some(
+              (link) =>
+                link.label.toLowerCase().includes(needle) || link.url.toLowerCase().includes(needle),
+            ),
+        )
+      : groups;
+    if (filter === "all") return base;
+    return base.filter((group) => {
       if (filter === "unknown") return !group.anyCheck;
       return group.links.some((link) => {
         const status = link.check?.status;
@@ -6473,7 +6486,7 @@ function CurationPanel({
         return false;
       });
     });
-  }, [groups, filter]);
+  }, [groups, filter, q]);
   async function runScan() {
     if (job?.running || !view || !view.queue.length) return;
     try {
@@ -6685,6 +6698,15 @@ function CurationPanel({
           <div className="settings-pane is-access">
             <div className="am-work">
               <div className="am-toolbar">
+                <label className="am-search">
+                  <Search className="size-3.5" aria-hidden />
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder={t("nav.search")}
+                    aria-label={t("nav.search")}
+                  />
+                </label>
                 <div className="am-filters" role="tablist" aria-label={t("curation.apps")}>
                   {(
                     [
@@ -8626,7 +8648,7 @@ function ThemeForm({
       <div className="settings-card">
         {" "}
         <p className="settings-kicker">{t("theme.colors")}</p>
-        <div className="theme-switch" role="tablist" aria-label={t("theme.colors")}>
+        <div className="am-filters" role="tablist" aria-label={t("theme.colors")}>
           <button
             type="button"
             role="tab"

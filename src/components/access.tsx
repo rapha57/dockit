@@ -342,15 +342,13 @@ function FilterBar({
   value,
   onChange,
   items,
-  pills,
 }: {
   value: string;
   onChange: (id: string) => void;
   items: FilterItem[];
-  pills?: boolean;
 }) {
   return (
-    <div className={`am-filters${pills ? " is-pills" : ""}`} role="tablist" aria-label={t("access.filterAll")}>
+    <div className="am-filters" role="tablist" aria-label={t("access.filterAll")}>
       {items.map((f) => (
         <button
           key={f.id}
@@ -807,7 +805,6 @@ function PermBlocks({
   return (
     <div className="am-perm-block">
       <FilterBar
-        pills
         value={pane}
         onChange={setPane}
         items={[

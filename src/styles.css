@@ -2463,30 +2463,6 @@ html.dark .btn-debug:hover {
   max-height: min(22rem, 40dvh);
   font-size: 0.8125rem;
 }
-.theme-switch {
-  display: inline-grid;
-  width: max-content;
-  grid-template-columns: auto auto;
-  gap: 0.15rem;
-  padding: 0.15rem;
-  border-radius: var(--radius-lg);
-  background: var(--color-elevated);
-}
-.theme-switch button {
-  height: 2rem;
-  padding: 0 0.85rem;
-  border-radius: var(--radius-md);
-  font-size: 0.8125rem;
-  color: var(--color-muted);
-}
-.theme-switch button.is-on {
-  background: var(--color-surface);
-  font-weight: 500;
-  color: var(--color-fg);
-}
-.theme-switch.is-3 {
-  grid-template-columns: 1fr 1fr 1fr;
-}
 .settings-nav {
   display: flex;
   gap: 0.15rem;
@@ -3568,32 +3544,6 @@ button.am-create,
   color: var(--color-fg);
   box-shadow: none;
   background: color-mix(in oklab, var(--color-fg) 6%, transparent);
-}
-.am-filters.is-pills {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.15rem;
-  padding: 0.15rem;
-  border-radius: 9px;
-  background: color-mix(in oklab, var(--color-fg) 4.5%, transparent);
-}
-.am-filters.is-pills button {
-  padding: 0.32rem 0.72rem;
-  border-radius: 7px;
-  color: var(--color-muted);
-}
-.am-filters.is-pills button:hover {
-  background: color-mix(in oklab, var(--color-fg) 4%, transparent);
-}
-.am-filters.is-pills button.is-on {
-  background: var(--color-surface);
-  color: var(--color-fg);
-  box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--color-border) 75%, transparent),
-    0 1px 2px color-mix(in oklab, var(--color-fg) 6%, transparent);
-}
-html.dark .am-filters.is-pills button.is-on {
-  background: var(--color-elevated);
 }
 .am-list-wrap {
   flex: 1;
