@@ -1,6 +1,15 @@
-// @ts-nocheck
 import { createFileRoute } from "@tanstack/react-router";
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
@@ -131,6 +140,7 @@ import {
 } from "@/lib/portal";
 import { auditCsv } from "@/lib/history";
 import { probePreview, probeTargets } from "@/lib/probe";
+import type { ProbeResult } from "@/lib/probe";
 import { checkLatestRelease } from "@/lib/release";
 import { safeAppHref } from "@/lib/safe-href";
 import { findUrlDuplicates } from "@/lib/dup-url";
@@ -161,6 +171,21 @@ import {
   tagInk,
   tagTone,
 } from "@/lib/tag-colors";
+import type {
+  CheckMode,
+  ClickStats,
+  CustomIcon,
+  Doc,
+  DocTab,
+  ItemKind,
+  PortalApp,
+  PortalCategory,
+  PortalSettings,
+  SessionInfo,
+  DirectoryUser,
+  UserRole,
+} from "@/lib/portal";
+import type { CategoryMoveImpact, Group, Role } from "@/lib/acl";
 export const Route = createFileRoute("/")({
   loader: async () => {
     const data = await getPortal({
@@ -171,18 +196,22 @@ export const Route = createFileRoute("/")({
   },
   component: Home,
 });
+type PortalData = Awaited<ReturnType<typeof getPortal>>;
+type MenuTab = PortalData["tabs"][number];
+type CatalogTab = PortalData["catalog"][number];
+type DirectoryEntry = PortalData["directory"][number];
 const TOKEN_KEY = "portal-edit-token";
 const SESSION_KEY = "portal-session";
 const PORTAL_VERSION = "2026.09.07.1";
 const EDIT_MODE_KEY = "portal-edit-mode";
 const OIDC_NEXT_KEY = "portal-oidc-next";
-function versionParts(raw) {
+function versionParts(raw: unknown) {
   return String(raw || "")
     .replace(/^v/i, "")
     .split(".")
     .map((n) => Number(n) || 0);
 }
-function isNewerVersion(latest, current) {
+function isNewerVersion(latest: unknown, current: unknown) {
   const a = versionParts(latest);
   const b = versionParts(current);
   const n = Math.max(a.length, b.length);
@@ -193,20 +222,20 @@ function isNewerVersion(latest, current) {
   return false;
 }
 let editArmed = false;
-function lockSelection(e) {
-  e?.preventDefault();
+function lockSelection(e?: { preventDefault?: () => void } | null) {
+  e?.preventDefault?.();
   try {
     window.getSelection()?.removeAllRanges();
   } catch {
     // ignore
   }
 }
-function setDragUi(on) {
+function setDragUi(on: boolean) {
   if (typeof document === "undefined") return;
   document.documentElement.classList.toggle("is-dragging", on);
   if (on) lockSelection();
 }
-function nudgeScroll(clientX, clientY, tabRow) {
+function nudgeScroll(clientX: number | undefined, clientY: number | undefined, tabRow?: HTMLElement | null) {
   const edge = 64;
   const speed = 28;
   const h = window.innerHeight;
@@ -215,6 +244,7 @@ function nudgeScroll(clientX, clientY, tabRow) {
     y = clientX;
     clientX = window.innerWidth / 2;
   }
+  if (y === undefined) return;
   if (y < edge) window.scrollBy(0, -Math.ceil((1 - y / edge) * speed));
   else if (y > h - edge) window.scrollBy(0, Math.ceil((1 - (h - y) / edge) * speed));
   if (!tabRow || typeof clientX !== "number") return;
@@ -227,8 +257,8 @@ function nudgeScroll(clientX, clientY, tabRow) {
     tabRow.scrollLeft += Math.ceil((1 - Math.max(0, r.right - clientX) / te) * speed);
 }
 function swallowGhostClick() {
-  const block = (ev) => {
-    if (ev.target?.closest("header")) return;
+  const block = (ev: MouseEvent) => {
+    if ((ev.target as HTMLElement | null)?.closest("header")) return;
     ev.preventDefault();
     ev.stopPropagation();
     window.removeEventListener("click", block, true);
@@ -236,14 +266,19 @@ function swallowGhostClick() {
   window.addEventListener("click", block, true);
   window.setTimeout(() => window.removeEventListener("click", block, true), 180);
 }
-function reindexApps(apps, categoryId) {
+function reindexApps(apps: PortalApp[], categoryId: string) {
   return apps.map((a, i) => ({
     ...a,
     categoryId,
     sortOrder: i + 1,
   }));
 }
-function placeCarriedApp(categories, app, destCatId, insertAt) {
+function placeCarriedApp(
+  categories: PortalCategory[],
+  app: PortalApp | null | undefined,
+  destCatId: string | null | undefined,
+  insertAt: number,
+) {
   if (!app || !destCatId) return null;
   const stripped = categories.map((c) => ({
     ...c,
@@ -264,8 +299,13 @@ function placeCarriedApp(categories, app, destCatId, insertAt) {
     };
   });
 }
-function placeApp(categories, appId, destCatId, insertAt) {
-  let moved;
+function placeApp(
+  categories: PortalCategory[],
+  appId: string,
+  destCatId: string | null | undefined,
+  insertAt: number,
+) {
+  let moved: PortalApp | undefined;
   const stripped = categories.map((c) => {
     const hit = c.apps.find((a) => a.id === appId);
     if (!hit) return c;
@@ -291,7 +331,7 @@ function placeApp(categories, appId, destCatId, insertAt) {
     };
   });
 }
-function placeCategory(categories, catId, insertAt) {
+function placeCategory(categories: PortalCategory[], catId: string, insertAt: number) {
   const from = categories.findIndex((c) => c.id === catId);
   if (from < 0) return null;
   const next = categories.filter((c) => c.id !== catId);
@@ -302,7 +342,11 @@ function placeCategory(categories, catId, insertAt) {
     sortOrder: i + 1,
   }));
 }
-function placeCarriedCategory(categories, cat, insertAt) {
+function placeCarriedCategory(
+  categories: PortalCategory[],
+  cat: PortalCategory | null | undefined,
+  insertAt: number,
+) {
   if (!cat) return null;
   const stripped = categories.filter((c) => c.id !== cat.id);
   const idx = Math.max(0, Math.min(insertAt, stripped.length));
@@ -313,7 +357,7 @@ function placeCarriedCategory(categories, cat, insertAt) {
     sortOrder: i + 1,
   }));
 }
-function placeTabs(tabs, tabId, insertAt) {
+function placeTabs<T extends { id: string; sortOrder: number }>(tabs: T[], tabId: string, insertAt: number) {
   const from = tabs.findIndex((t) => t.id === tabId);
   if (from < 0) return null;
   const next = tabs.filter((t) => t.id !== tabId);
@@ -324,17 +368,26 @@ function placeTabs(tabs, tabId, insertAt) {
     sortOrder: i + 1,
   }));
 }
-function pickVisibleTabIds(tabs, widths, activeId, avail, favW, plusW, moreW, gap) {
+function pickVisibleTabIds(
+  tabs: { id: string }[] | null | undefined,
+  widths: Map<string, number>,
+  activeId: string | null | undefined,
+  avail: number,
+  favW: number,
+  plusW: number,
+  moreW: number,
+  gap: number,
+) {
   const ids = (tabs || []).map((t) => t.id);
-  const wOf = (id) => widths.get(id) || 72;
-  function total(vis, showMore) {
+  const wOf = (id: string) => widths.get(id) || 72;
+  function total(vis: string[], showMore: boolean) {
     const n = 1 + vis.length + (showMore ? 1 : 0) + (plusW > 0 ? 1 : 0);
     let w = favW + (showMore ? moreW : 0) + plusW;
     for (const id of vis) w += wOf(id);
     return w + Math.max(0, n - 1) * gap;
   }
-  function pack(showMore) {
-    const vis = [];
+  function pack(showMore: boolean) {
+    const vis: string[] = [];
     for (const id of ids) {
       if (total([...vis, id], showMore) <= avail || id === activeId) vis.push(id);
     }
@@ -354,17 +407,17 @@ function pickVisibleTabIds(tabs, widths, activeId, avail, favW, plusW, moreW, ga
   }
   return hid;
 }
-function hoverInsertAt(ids, dragId, anchorId, after) {
+function hoverInsertAt(ids: string[], dragId: string, anchorId: string | null | undefined, after: boolean) {
   const rest = ids.filter((id) => id !== dragId);
-  const ai = rest.indexOf(anchorId);
+  const ai = rest.indexOf(anchorId ?? "");
   return (ai < 0 ? rest.length : ai) + (after ? 1 : 0);
 }
-function pointerAfter(e, el) {
+function pointerAfter(e: { clientX: number; clientY: number }, el: Element) {
   const r = el.getBoundingClientRect();
   if (r.height > r.width * 1.1) return e.clientY > r.top + r.height * 0.35;
   return e.clientX - r.left + (e.clientY - r.top) > (r.width + r.height) / 2;
 }
-function itemSpanClass(app) {
+function itemSpanClass(app: { colSpan: number; rowSpan: number }) {
   return `${app.colSpan === 3 ? "item-span-3" : app.colSpan === 2 ? "item-span-2" : ""} ${app.rowSpan === 3 ? "item-h-3" : app.rowSpan === 2 ? "item-h-2" : "item-h-1"}`.trim();
 }
 const RESIZE_EDGE = 8;
@@ -377,10 +430,10 @@ function gridColCount() {
   if (window.matchMedia("(min-width: 40rem)").matches) return 2;
   return 1;
 }
-function spanSize(n) {
+function spanSize(n: number): 1 | 2 | 3 {
   return n === 2 || n === 3 ? n : 1;
 }
-function nearestSpan(sizes, value, max) {
+function nearestSpan(sizes: number[], value: number, max: number) {
   let best = 1;
   let dist = Infinity;
   for (let n = 1; n <= max; n++) {
@@ -392,7 +445,16 @@ function nearestSpan(sizes, value, max) {
   }
   return best;
 }
-function liveResizeBox(start, edge, dx, dy, widths, heights, maxCols) {
+type ResizeBox = { left: number; top: number; width: number; height: number };
+function liveResizeBox(
+  start: ResizeBox,
+  edge: { x: number; y: number },
+  dx: number,
+  dy: number,
+  widths: number[],
+  heights: number[],
+  maxCols: number,
+) {
   const minW = widths[0];
   const maxW = widths[Math.max(0, Math.min(maxCols, 3) - 1)];
   const minH = heights[0];
@@ -420,17 +482,17 @@ function liveResizeBox(start, edge, dx, dy, widths, heights, maxCols) {
     height,
   };
 }
-function applyLiveBox(el, box) {
+function applyLiveBox(el: HTMLElement, box: ResizeBox) {
   el.style.left = `${Math.round(box.left)}px`;
   el.style.top = `${Math.round(box.top)}px`;
   el.style.width = `${Math.round(box.width)}px`;
   el.style.height = `${Math.round(box.height)}px`;
 }
-function itemTrackHeights(grid) {
+function itemTrackHeights(grid: HTMLElement | null) {
   const gap = grid ? parseFloat(getComputedStyle(grid).rowGap) || 16 : 16;
   return [1, 2, 3].map((n) => n * 48 + (n * 6 - 1) * gap);
 }
-function itemColWidths(grid, cols) {
+function itemColWidths(grid: HTMLElement, cols: number) {
   const w = grid.getBoundingClientRect().width;
   const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
   const colW = cols <= 1 ? w : (w - gap * (cols - 1)) / cols;
@@ -439,12 +501,13 @@ function itemColWidths(grid, cols) {
     return s * colW + Math.max(0, s - 1) * gap;
   });
 }
-function resizeCursor(edge) {
+type ResizeEdge = { x: number; y: number } | null;
+function resizeCursor(edge: ResizeEdge) {
   if (!edge) return "";
   if (edge.x && edge.y) return edge.x === edge.y ? "nwse-resize" : "nesw-resize";
   return edge.x ? "ew-resize" : "ns-resize";
 }
-function resizeEdgeAt(rect, x, y, maxCols) {
+function resizeEdgeAt(rect: { left: number; top: number; width: number; height: number }, x: number, y: number, maxCols: number): ResizeEdge {
   const left = x - rect.left;
   const top = y - rect.top;
   const onW = maxCols > 1 && left <= RESIZE_EDGE;
@@ -457,7 +520,7 @@ function resizeEdgeAt(rect, x, y, maxCols) {
     y: onS ? 1 : onN ? -1 : 0,
   };
 }
-function cardResizeEdge(card, clientX, clientY) {
+function cardResizeEdge(card: HTMLElement | null, clientX: number, clientY: number): ResizeEdge {
   if (!card) return null;
   const tools = card.querySelector(".card-corner");
   if (tools) {
@@ -479,7 +542,7 @@ function cardResizeEdge(card, clientX, clientY) {
   }
   return resizeEdgeAt(card.getBoundingClientRect(), clientX, clientY, gridColCount());
 }
-function hoverResizeCursor(card, clientX, clientY) {
+function hoverResizeCursor(card: HTMLElement, clientX: number, clientY: number) {
   const edge = cardResizeEdge(card, clientX, clientY);
   const cur = resizeCursor(edge);
   if ((card.dataset.resize || "") === cur) return;
@@ -491,26 +554,26 @@ function hoverResizeCursor(card, clientX, clientY) {
     card.style.cursor = "";
   }
 }
-function clearResizeCursor(card) {
+function clearResizeCursor(card: HTMLElement | null) {
   if (!card) return;
   delete card.dataset.resize;
   card.style.cursor = "";
 }
-function setResizeUi(on, cursor) {
+function setResizeUi(on: boolean, cursor?: string) {
   if (typeof document === "undefined") return;
   document.documentElement.classList.toggle("is-card-resizing", on);
   document.documentElement.style.cursor = on ? cursor || "nwse-resize" : "";
 }
-function allowsFavorite(app, settings) {
+function allowsFavorite(app: PortalApp, settings: PortalSettings | null | undefined) {
   const kind = app.kind || "app";
   if (kind === "note") return Boolean(settings?.favNotes);
   if (kind === "embed") return Boolean(settings?.favEmbeds);
   return true;
 }
-function itemMatches(app, needle, tags, downSet) {
+function itemMatches(app: PortalApp, needle: string, tags: string[], downSet: Set<string> | null | undefined) {
   if (downSet && !downSet.has(app.id)) return false;
   let extra = needle;
-  const fromHash = [];
+  const fromHash: string[] = [];
   if (extra.startsWith("#")) {
     const hashed = extra
       .slice(1)
@@ -531,27 +594,27 @@ function itemMatches(app, needle, tags, downSet) {
     .toLowerCase()
     .includes(extra);
 }
-function fold(s) {
+function fold(s: unknown) {
   return String(s)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 }
-function copyLabel(raw, fallback) {
+function copyLabel(raw: unknown, fallback?: string) {
   const text = String(raw || "").trim();
   const fb = fallback || t("copy.fallback");
   const base = (text || fb).replace(/\s*\((copie|copy)\)\s*$/i, "");
   return `${base} (${t("copy.suffix")})`.slice(0, 80);
 }
-function typingTarget(el) {
+function typingTarget(el: EventTarget | null) {
   if (!el || !(el instanceof Element)) return false;
   const tag = el.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  if (el.isContentEditable) return true;
+  if ((el as HTMLElement).isContentEditable) return true;
   return Boolean(el.closest("input, textarea, select, [contenteditable='true']"));
 }
-function collectTags(catalog, tagColors, alpha) {
-  const map = new Map();
+function collectTags(catalog: DocTab[] | null | undefined, tagColors: Record<string, string> | null | undefined, alpha: boolean) {
+  const map = new Map<string, { name: string; count: number }>();
   for (const tab of catalog ?? [])
     for (const cat of tab.categories)
       for (const app of cat.apps) {
@@ -579,32 +642,50 @@ function collectTags(catalog, tagColors, alpha) {
   if (alpha === false) return rows;
   return rows.sort((a, b) => a.name.localeCompare(b.name, localeTag(), { sensitivity: "base" }));
 }
-function orderedTags(names, alpha) {
+function orderedTags(names: string[] | null | undefined, alpha: boolean) {
   const list = Array.isArray(names) ? [...names] : [];
   if (alpha === false) return list;
   return list.sort((a, b) => String(a).localeCompare(String(b), localeTag(), { sensitivity: "base" }));
 }
-function lookupTagColor(name, colors) {
+function lookupTagColor(name: string, colors: Record<string, string> | null | undefined) {
   if (!colors) return void 0;
   if (colors[name]) return remapTagHex(colors[name]);
   const key = name.toLowerCase();
   for (const [k, v] of Object.entries(colors)) if (k.toLowerCase() === key) return remapTagHex(v);
 }
-function tagPaint(name, colors) {
+function tagPaint(name: string, colors: Record<string, string> | null | undefined) {
   const hex = lookupTagColor(name, colors) || defaultTagHex(name);
   return {
     tone: tagTone(name),
     style: {
       ["--tag-bg"]: hex,
       ["--tag-fg"]: tagInk(hex),
-    },
+    } as CSSProperties,
   };
 }
 const ITEM_GRID = "item-grid";
-function fmtCount(n) {
+function fmtCount(n: number) {
   return formatNumber(n);
 }
-function StatsBar({ stats, infoBar, geekTip, downCount, downOn, probeBlink, onDown, onStats }) {
+function StatsBar({
+  stats,
+  infoBar,
+  geekTip,
+  downCount,
+  downOn,
+  probeBlink,
+  onDown,
+  onStats,
+}: {
+  stats: ClickStats | null | undefined;
+  infoBar: boolean;
+  geekTip?: boolean;
+  downCount: number;
+  downOn: boolean;
+  probeBlink?: boolean;
+  onDown?: () => void;
+  onStats?: () => void;
+}) {
   const span = Number(stats?.spanDays) || 0;
   const fullCatalog = stats?.fullCatalog !== false;
   const metrics = infoBar && fullCatalog
@@ -612,14 +693,14 @@ function StatsBar({ stats, infoBar, geekTip, downCount, downOn, probeBlink, onDo
         {
           key: "today",
           label: t("info.day"),
-          value: stats.today,
+          value: stats?.today ?? 0,
           hint: t("info.today"),
         },
         span >= 1
           ? {
               key: "week",
               label: t("info.week"),
-              value: stats.week,
+              value: stats?.week ?? 0,
               hint: t("info.last7"),
             }
           : null,
@@ -627,7 +708,7 @@ function StatsBar({ stats, infoBar, geekTip, downCount, downOn, probeBlink, onDo
           ? {
               key: "month",
               label: t("info.month"),
-              value: stats.month,
+              value: stats?.month ?? 0,
               hint: t("info.last30"),
             }
           : null,
@@ -635,11 +716,11 @@ function StatsBar({ stats, infoBar, geekTip, downCount, downOn, probeBlink, onDo
           ? {
               key: "year",
               label: t("info.year"),
-              value: stats.year,
+              value: stats?.year ?? 0,
               hint: t("info.last12"),
             }
           : null,
-      ].filter(Boolean)
+      ].filter((m): m is { key: string; label: string; value: number; hint: string } => m !== null)
     : [];
   if (!metrics.length && downCount === 0 && !onStats) return null;
   return (
@@ -729,7 +810,7 @@ function readSessionInfo() {
     return null;
   }
 }
-async function pinSessCookie(token) {
+async function pinSessCookie(token: string | null | undefined) {
   if (!token || typeof fetch === "undefined") return;
   const res = await fetch("/__dockit/session", {
     method: "POST",
@@ -754,7 +835,7 @@ async function clearSessCookie() {
     // ignore
   }
 }
-function writeSessionInfo(session) {
+function writeSessionInfo(session: SessionInfo | null | undefined) {
   try {
     if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
     else sessionStorage.removeItem(SESSION_KEY);
@@ -762,7 +843,7 @@ function writeSessionInfo(session) {
     // ignore
   }
 }
-function writeEditMode(on) {
+function writeEditMode(on: boolean) {
   editArmed = on;
   try {
     if (on) sessionStorage.setItem(EDIT_MODE_KEY, "1");
@@ -771,7 +852,7 @@ function writeEditMode(on) {
     // ignore
   }
 }
-function sessionGone(err) {
+function sessionGone(err: unknown) {
   const msg = err instanceof Error ? err.message : String(err || "");
   if (msg !== "errors.sessionExpired" && !/session expir/i.test(msg)) return false;
   try {
@@ -781,13 +862,13 @@ function sessionGone(err) {
   }
   return true;
 }
-function prettyLogin(name) {
+function prettyLogin(name: unknown) {
   const s = String(name || "").trim();
   if (!s) return "";
   const lower = s.toLocaleLowerCase(localeTag());
   return lower.charAt(0).toLocaleUpperCase(localeTag()) + lower.slice(1);
 }
-function accountStatusLabel(loggedIn, role) {
+function accountStatusLabel(loggedIn: boolean, role: string | null | undefined) {
   if (!loggedIn) return t("account.guest");
   if (role === "editeur") return t("account.editor");
   if (role === "lecteur") return t("account.viewer");
@@ -811,13 +892,30 @@ function AccountMenu({
   onOpenFavs,
   onResetLocal,
   onLogout,
+}: {
+  loggedIn: boolean;
+  editMode: boolean;
+  canEdit: boolean;
+  canOpenSettings: boolean;
+  canManageUsers: boolean;
+  canHistory: boolean;
+  role: string;
+  openFavs: boolean;
+  onLogin: () => void;
+  onEdit: () => void;
+  onSettings: () => void;
+  onHistory: () => void;
+  onUsers: () => void;
+  onOpenFavs: (on: boolean) => void;
+  onResetLocal: () => void;
+  onLogout: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e) => {
-      if (!ref.current?.contains(e.target)) setOpen(false);
+    const onDoc = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", onDoc);
     return () => document.removeEventListener("pointerdown", onDoc);
@@ -976,25 +1074,40 @@ function AccountMenu({
     </div>
   );
 }
+type DragKind = "tab" | "cat" | "app";
+type DragState = { kind: DragKind; id: string } | null;
+type OverState =
+  | { kind: "tab"; insertAt: number }
+  | { kind: "cat"; insertAt: number }
+  | { kind: "app"; catId: string; insertAt: number }
+  | { kind: "tab-carry"; tabId: string }
+  | null;
+type DragFoldState = { sourceId: string | undefined; left: boolean; openId: string | null } | null;
+type TabHoverState = { tabId: string; at: number } | null;
+type CatHoverState = { catId: string; at: number } | null;
+type MoreHoverState = { at: number } | null;
+type CarryState = { app?: PortalApp; fromTabId: string; cat?: PortalCategory | null } | null;
+type ResizeLiveState = { origin: HTMLElement; placeholder: HTMLElement | null } | null;
+type ModalState = { kind: string; [key: string]: unknown };
 function Home() {
-  const initial = Route.useLoaderData();
-  const [data, setData] = useState(initial);
+  const initial: PortalData = Route.useLoaderData();
+  const [data, setData] = useState<PortalData>(initial);
   applyDisplayPrefs(data.settings);
   const [editMode, setEditMode] = useState(false);
   const [token, setToken] = useState("");
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState<SessionInfo | null>(null);
   const [hideDevBanner, setHideDevBanner] = useState(false);
   const [hideNoPassBanner, setHideNoPassBanner] = useState(false);
-  const [modal, setModal] = useState({
+  const [modal, setModal] = useState<ModalState>({
     kind: "none",
   });
   const adminTabRef = useRef("general");
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
-  const [tagFilter, setTagFilter] = useState([]);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [tagHi, setTagHi] = useState(0);
   const [downFilter, setDownFilter] = useState(false);
-  const [clickStats, setClickStats] = useState(
+  const [clickStats, setClickStats] = useState<ClickStats>(
     initial.clickStats || {
       all: 0,
       today: 0,
@@ -1007,19 +1120,19 @@ function Home() {
   );
   const [ui, setUi] = useState(DEFAULT_UI_PREFS);
   const [page, setPage] = useState("tab");
-  const [health, setHealth] = useState({});
+  const [health, setHealth] = useState<Record<string, ProbeResult>>({});
   const healthBusy = useRef(false);
-  const [drag, setDrag] = useState(null);
-  const [over, setOver] = useState(null);
-  const [dragFold, setDragFold] = useState(null);
-  const [tabOverflow, setTabOverflow] = useState([]);
+  const [drag, setDrag] = useState<DragState>(null);
+  const [over, setOver] = useState<OverState>(null);
+  const [dragFold, setDragFold] = useState<DragFoldState>(null);
+  const [tabOverflow, setTabOverflow] = useState<string[]>([]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [tabOverMore, setTabOverMore] = useState(false);
   const dragRef = useRef(drag);
   const overRef = useRef(over);
   const didDragRef = useRef(false);
   const dataRef = useRef(data);
-  const searchRef = useRef(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef(modal);
   const editModeRef = useRef(editMode);
   const sessionRef = useRef(session);
@@ -1029,25 +1142,25 @@ function Home() {
   const hotkeysRef = useRef({
     requestEdit: () => {},
     openNewCard: () => {},
-    focusSearch: () => {},
+    focusSearch: (_extra?: string) => {},
   });
-  const tabListRef = useRef(null);
-  const tabStripRef = useRef(null);
-  const tabMoreRef = useRef(null);
-  const morePanelRef = useRef(null);
-  const tabWidthRef = useRef(new Map());
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const tabStripRef = useRef<HTMLDivElement>(null);
+  const tabMoreRef = useRef<HTMLDivElement>(null);
+  const morePanelRef = useRef<HTMLDivElement>(null);
+  const tabWidthRef = useRef(new Map<string, number>());
   const moreOpenRef = useRef(false);
   const tabOverMoreRef = useRef(false);
-  const moreHoverRef = useRef(null);
+  const moreHoverRef = useRef<MoreHoverState>(null);
   const tabInsertRef = useRef(0);
   const activeTabRef = useRef(data.activeTabId);
-  const dragOriginRef = useRef(null);
-  const ghostRef = useRef(null);
-  const markerRef = useRef(null);
-  const carryRef = useRef(null);
-  const tabHoverRef = useRef(null);
-  const catHoverRef = useRef(null);
-  const dragFoldRef = useRef(null);
+  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const ghostRef = useRef<HTMLElement | null>(null);
+  const markerRef = useRef<HTMLElement | null>(null);
+  const carryRef = useRef<CarryState>(null);
+  const tabHoverRef = useRef<TabHoverState>(null);
+  const catHoverRef = useRef<CatHoverState>(null);
+  const dragFoldRef = useRef<DragFoldState>(null);
   const dragPtrRef = useRef({
     x: 0,
     y: 0,
@@ -1057,8 +1170,8 @@ function Home() {
     x: 0,
     y: 0,
   });
-  const unbindDragRef = useRef(null);
-  const resizeLiveRef = useRef(null);
+  const unbindDragRef = useRef<(() => void) | null>(null);
+  const resizeLiveRef = useRef<ResizeLiveState>(null);
   dragRef.current = drag;
   overRef.current = over;
   dataRef.current = data;
@@ -1108,13 +1221,13 @@ function Home() {
     stopDragScroll();
     setDragFold(null);
   }
-  function canEditTabId(tabId) {
+  function canEditTabId(tabId: string) {
     const sess = sessionRef.current;
     if (!sess) return false;
     if (sess.role === "admin") return true;
     return sess.tabPerms?.[tabId] === "edit";
   }
-  function hitMoreSlot(clientX, clientY) {
+  function hitMoreSlot(clientX: number, clientY: number) {
     const pad = 12;
     const panel = morePanelRef.current;
     const wrap = tabMoreRef.current;
@@ -1144,13 +1257,13 @@ function Home() {
     }
     return false;
   }
-  function hitTabCarry(clientX, clientY) {
+  function hitTabCarry(clientX: number, clientY: number): { tabId: string; blocked: boolean } | null {
     const stack = document.elementsFromPoint(clientX, clientY);
     for (const node of stack) {
       if (!(node instanceof HTMLElement)) continue;
       if (node === ghostRef.current) continue;
       const el = node.closest("[data-tab-id]");
-      const tabId = el?.dataset?.tabId;
+      const tabId = (el as HTMLElement | null)?.dataset?.tabId;
       if (!tabId) continue;
       if (!canEditTabId(tabId))
         return {
@@ -1164,7 +1277,7 @@ function Home() {
     }
     return null;
   }
-  function overForCarry(tabId) {
+  function overForCarry(tabId: string): OverState {
     const cur = dataRef.current;
     const cats =
       (cur.catalog ?? []).find((t) => t.id === tabId)?.categories ||
@@ -1182,7 +1295,7 @@ function Home() {
       insertAt: cat.apps.filter((a) => a.id !== appId).length,
     };
   }
-  function overForCarryCat(tabId) {
+  function overForCarryCat(tabId: string): OverState {
     const cur = dataRef.current;
     const cats =
       (cur.catalog ?? []).find((t) => t.id === tabId)?.categories ||
@@ -1198,10 +1311,10 @@ function Home() {
     markerRef.current?.remove();
     markerRef.current = null;
   }
-  function spawnGhost(from, e, rect) {
+  function spawnGhost(from: HTMLElement, e: { clientX: number; clientY: number }, rect?: DOMRect) {
     ghostRef.current?.remove();
     const r = rect || from.getBoundingClientRect();
-    const node = from.cloneNode(true);
+    const node = from.cloneNode(true) as HTMLElement;
     node.removeAttribute("data-app-id");
     node.removeAttribute("data-cat-id");
     node.removeAttribute("data-tab-id");
@@ -1222,13 +1335,13 @@ function Home() {
       y: e.clientY - r.top,
     };
   }
-  function moveGhost(x, y) {
+  function moveGhost(x: number, y: number) {
     const node = ghostRef.current;
     if (!node) return;
     node.style.left = `${x - ghostOff.current.x}px`;
     node.style.top = `${y - ghostOff.current.y}px`;
   }
-  function finishAppDrag(ev) {
+  function finishAppDrag(ev?: { clientX: number; clientY: number }) {
     const x = ev?.clientX ?? dragPtrRef.current.x;
     const y = ev?.clientY ?? dragPtrRef.current.y;
     const tabHit = hitTabCarry(x, y);
@@ -1261,9 +1374,9 @@ function Home() {
     if (didDragRef.current) swallowGhostClick();
     commitDrag();
   }
-  function bindTabDrag(tabId, origin) {
+  function bindTabDrag(tabId: string, origin: HTMLElement | null) {
     unbindDrag();
-    const move = (ev) => {
+    const move = (ev: PointerEvent) => {
       if (dragRef.current?.kind !== "tab" || dragRef.current.id !== tabId) return;
       const o = dragOriginRef.current;
       if ((o ? Math.hypot(ev.clientX - o.x, ev.clientY - o.y) : 0) > 10 && !didDragRef.current) {
@@ -1292,7 +1405,7 @@ function Home() {
       if (overBar) {
         const dragTab = dragRef.current;
         const stripTabs = tabListRef.current
-          ? [...tabListRef.current.querySelectorAll(".tab-item[data-tab-id]")].filter(
+          ? [...tabListRef.current.querySelectorAll<HTMLElement>(".tab-item[data-tab-id]")].filter(
               (el) => !el.classList.contains("is-overflow") && el.offsetWidth,
             )
           : [];
@@ -1301,7 +1414,7 @@ function Home() {
           dragTab?.kind === "tab" && last
             ? ev.clientX >= last.getBoundingClientRect().right + 8
             : false;
-        if (atEnd && tabOverflow.includes(dragTab.id)) {
+        if (atEnd && dragTab && tabOverflow.includes(dragTab.id)) {
           tabOverMoreRef.current = true;
           setTabOverMore(true);
         } else {
@@ -1349,7 +1462,12 @@ function Home() {
       window.removeEventListener("pointercancel", up);
     };
   }
-  function openMoveCat(category, fromTabId, destTabId, insertAt) {
+  function openMoveCat(
+    category: PortalCategory,
+    fromTabId: string | undefined,
+    destTabId: string,
+    insertAt: number | undefined,
+  ) {
     setBusy(true);
     previewMoveCategory({
       data: {
@@ -1358,7 +1476,7 @@ function Home() {
         destTabId,
       },
     })
-      .then((impact) =>
+      .then((impact: CategoryMoveImpact & { insertAt?: number }) =>
         setModal({
           kind: "move-cat",
           impact: {
@@ -1372,11 +1490,11 @@ function Home() {
       })
       .finally(() => setBusy(false));
   }
-  function bindCatDrag(catId, origin) {
+  function bindCatDrag(catId: string, origin: HTMLElement) {
     unbindDrag();
     const ghostRect = origin.getBoundingClientRect();
-    const ghostNode = origin.cloneNode(true);
-    const move = (ev) => {
+    const ghostNode = origin.cloneNode(true) as HTMLElement;
+    const move = (ev: PointerEvent) => {
       if (dragRef.current?.kind !== "cat" || dragRef.current.id !== catId) return;
       dragPtrRef.current = {
         x: ev.clientX,
@@ -1437,7 +1555,7 @@ function Home() {
             },
       );
     };
-    const up = (ev) => {
+    const up = (ev: PointerEvent) => {
       unbindDrag();
       killGhost();
       if (!didDragRef.current) {
@@ -1492,12 +1610,12 @@ function Home() {
       window.removeEventListener("pointercancel", up);
     };
   }
-  function bindAppDrag(appId, origin) {
+  function bindAppDrag(appId: string, origin: HTMLElement) {
     unbindDrag();
     const sourceCatId =
-      origin.closest("[data-cat-id]")?.dataset?.catId ||
+      origin.closest<HTMLElement>("[data-cat-id]")?.dataset?.catId ||
       dataRef.current.categories.find((c) => c.apps.some((a) => a.id === appId))?.id;
-    const move = (ev) => {
+    const move = (ev: PointerEvent) => {
       if (dragRef.current?.kind !== "app" || dragRef.current.id !== appId) return;
       dragPtrRef.current = {
         x: ev.clientX,
@@ -1581,17 +1699,17 @@ function Home() {
             left: false,
             openId: sourceCatId,
           };
-        let overCatId = null;
+        let overCatId: string | null = null;
         for (const node of document.elementsFromPoint(ev.clientX, ev.clientY)) {
           if (!(node instanceof HTMLElement)) continue;
           if (node === ghostRef.current || node === markerRef.current) continue;
-          const s = node.closest("[data-cat-id]");
+          const s = node.closest<HTMLElement>("[data-cat-id]");
           if (s?.dataset?.catId) {
             overCatId = s.dataset.catId;
             break;
           }
         }
-        const fold = dragFoldRef.current;
+        const fold = dragFoldRef.current!;
         if (!fold.left) {
           if (overCatId && overCatId !== sourceCatId) {
             const next = {
@@ -1633,7 +1751,7 @@ function Home() {
       if (cur?.kind === "app" && cur.catId === hit.catId && cur.insertAt === hit.insertAt) return;
       setOver(hit);
     };
-    const up = (ev) => finishAppDrag(ev);
+    const up = (ev: PointerEvent) => finishAppDrag(ev);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up, {
       once: true,
@@ -1647,10 +1765,10 @@ function Home() {
       window.removeEventListener("pointercancel", up);
     };
   }
-  function bindAppResize(app, origin, edge, ev) {
+  function bindAppResize(app: PortalApp, origin: HTMLElement, edge: { x: number; y: number }, ev: PointerEvent) {
     unbindDrag();
     endLiveResize();
-    const grid = origin.closest("[data-app-grid]");
+    const grid = origin.closest<HTMLElement>("[data-app-grid]");
     const maxCols = gridColCount();
     const startPtr = {
       x: ev.clientX,
@@ -1672,8 +1790,8 @@ function Home() {
     let box = {
       ...start,
     };
-    let liveCol = startCol;
-    let liveRow = startRow;
+    let liveCol: number = startCol;
+    let liveRow: number = startRow;
     const slot = document.createElement("div");
     slot.className = `resize-slot drop-slot ${itemSpanClass(app)}`;
     slot.setAttribute("data-resize-slot", "");
@@ -1696,13 +1814,13 @@ function Home() {
     } catch {
       // ignore
     }
-    const paintSlot = (col, row) => {
+    const paintSlot = (col: number, row: number) => {
       slot.className = `resize-slot drop-slot ${itemSpanClass({
         colSpan: col,
         rowSpan: row,
       })}`;
     };
-    const move = (e) => {
+    const move = (e: PointerEvent) => {
       e.preventDefault();
       box = liveResizeBox(
         start,
@@ -1728,7 +1846,7 @@ function Home() {
       endLiveResize();
       setResizeUi(false);
       if (col === startCol && row === startRow) return;
-      persistAppSpan(app, col, row);
+      persistAppSpan(app, col as 1 | 2 | 3, row as 1 | 2 | 3);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up, {
@@ -1748,7 +1866,7 @@ function Home() {
       }
     };
   }
-  function persistAppSpan(app, colSpan, rowSpan) {
+  function persistAppSpan(app: PortalApp, colSpan: 1 | 2 | 3, rowSpan: 1 | 2 | 3) {
     const current = dataRef.current;
     const categoryId =
       app.categoryId || current.categories.find((c) => c.apps.some((a) => a.id === app.id))?.id;
@@ -1891,7 +2009,7 @@ function Home() {
       }
       setResizeUi(false);
     };
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (
         e.key === "Escape" &&
         (dragRef.current ||
@@ -1914,7 +2032,7 @@ function Home() {
     };
   }, []);
   useEffect(() => {
-    const block = (e) => {
+    const block = (e: Event) => {
       if (dragRef.current || document.documentElement.classList.contains("is-card-resizing"))
         e.preventDefault();
     };
@@ -1969,7 +2087,7 @@ function Home() {
   function stayEditing() {
     if (editArmed) setEditMode(true);
   }
-  function requestAdmin(tab) {
+  function requestAdmin(tab: string) {
     adminTabRef.current = tab;
     const sess = sessionRef.current;
     if (sess) {
@@ -2090,12 +2208,12 @@ function Home() {
       document.removeEventListener("visibilitychange", onFocus);
     };
   }, [token, session?.exp]);
-  async function apply(fn, opts) {
+  async function apply(fn: () => Promise<PortalData>, opts?: { close?: boolean }) {
     setBusy(true);
     try {
       const next = await Promise.race([
         fn(),
-        new Promise((_, reject) => {
+        new Promise<never>((_, reject) => {
           window.setTimeout(() => reject(new Error("errors.timeout")), 12e3);
         }),
       ]);
@@ -2116,7 +2234,7 @@ function Home() {
     }
   }
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.isComposing || e.key === "Dead") return;
       if (modalRef.current?.kind && modalRef.current.kind !== "none") return;
       const mod = e.ctrlKey || e.metaKey;
@@ -2152,7 +2270,7 @@ function Home() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
-  function focusSearch(extra) {
+  function focusSearch(extra?: string) {
     const el = searchRef.current;
     if (!el) return;
     el.focus();
@@ -2203,7 +2321,7 @@ function Home() {
     openNewCard,
     focusSearch,
   };
-  function duplicateApp(app, categoryId) {
+  function duplicateApp(app: PortalApp, categoryId: string) {
     apply(async () => {
       const next = await createApp({
         data: {
@@ -2227,7 +2345,7 @@ function Home() {
       return next;
     });
   }
-  function duplicateCategory(cat, tabId) {
+  function duplicateCategory(cat: PortalCategory, tabId: string) {
     apply(async () => {
       const next = await createCategory({
         data: {
@@ -2244,7 +2362,7 @@ function Home() {
       return next;
     });
   }
-  function sortCategoryCards(cat) {
+  function sortCategoryCards(cat: PortalCategory) {
     if (!cat?.apps?.length) return;
     const nextDir = appsAlphaDir(cat.apps, data.settings.locale) === "az" ? "za" : "alpha";
     apply(async () => {
@@ -2261,7 +2379,7 @@ function Home() {
       close: false,
     });
   }
-  function catSortButton(cat) {
+  function catSortButton(cat: PortalCategory) {
     const za = appsAlphaDir(cat.apps, data.settings.locale) === "az";
     return (
       <button
@@ -2276,7 +2394,7 @@ function Home() {
       </button>
     );
   }
-  async function resetCategoryCards(cat) {
+  async function resetCategoryCards(cat: PortalCategory) {
     if (!cat?.apps?.length) return;
     if (
       !(await askConfirm({
@@ -2300,7 +2418,7 @@ function Home() {
       close: false,
     });
   }
-  function duplicateSpace(tab) {
+  function duplicateSpace(tab: MenuTab) {
     apply(async () => {
       const next = await duplicateTab({
         data: {
@@ -2312,10 +2430,10 @@ function Home() {
       return next;
     });
   }
-  function bumpClick(app) {
+  function bumpClick(app: PortalApp) {
     if ((app.kind || "app") !== "app") return;
     setData((cur) => {
-      const bump = (item) =>
+      const bump = (item: PortalApp) =>
         item.id === app.id
           ? {
               ...item,
@@ -2360,7 +2478,7 @@ function Home() {
       })
       .catch(() => void 0);
   }
-  async function recheckApp(app) {
+  async function recheckApp(app: PortalApp) {
     if (!app.check || app.check === "off") return;
     try {
       const row = (
@@ -2380,7 +2498,7 @@ function Home() {
       toast.error(te(err));
     }
   }
-  async function switchTab(tabId) {
+  async function switchTab(tabId: string) {
     if (tabId === dataRef.current.activeTabId) return;
     const current = dataRef.current;
     const entry = (current.catalog ?? []).find((t) => t.id === tabId);
@@ -2412,16 +2530,16 @@ function Home() {
       toast.error(te(err));
     }
   }
-  function goTab(tabId) {
+  function goTab(tabId: string) {
     setPage("tab");
     if (tabId !== dataRef.current.activeTabId) switchTab(tabId);
   }
-  function tabHasCards(tabId) {
+  function tabHasCards(tabId: string) {
     const row = (data.catalog ?? []).find((t) => t.id === tabId);
     const cats = row?.categories || (tabId === data.activeTabId ? data.categories : []);
     return (cats || []).some((c) => (c.apps || []).length);
   }
-  function toggleFav(id) {
+  function toggleFav(id: string) {
     setUi((cur) => {
       const favIds = cur.favIds.includes(id)
         ? cur.favIds.filter((x) => x !== id)
@@ -2432,7 +2550,7 @@ function Home() {
       });
     });
   }
-  function setOpenFavs(openFavs) {
+  function setOpenFavs(openFavs: boolean) {
     setUi((cur) =>
       writeUiPrefs({
         ...cur,
@@ -2440,7 +2558,7 @@ function Home() {
       }),
     );
   }
-  function toggleCollapsed(id) {
+  function toggleCollapsed(id: string) {
     setUi((cur) => {
       const collapsedCats = (cur.collapsedCats ?? []).includes(id)
         ? cur.collapsedCats.filter((x) => x !== id)
@@ -2465,7 +2583,7 @@ function Home() {
   }
   const collapsedSet = useMemo(() => new Set(ui.collapsedCats ?? []), [ui.collapsedCats]);
   const searching = query.trim().length > 0 || tagFilter.length > 0 || downFilter;
-  function isCatCollapsed(catId) {
+  function isCatCollapsed(catId: string) {
     if (searching) return false;
     if (drag?.kind === "app" && dragFold?.left) return catId !== dragFold.openId;
     return collapsedSet.has(catId);
@@ -2473,13 +2591,13 @@ function Home() {
   const onFavs = page === "favs" && !searching;
   const canEditActive =
     session?.role === "admin" || session?.tabPerms?.[data.activeTabId] === "edit";
-  const canEditTab = (tabId) => session?.role === "admin" || session?.tabPerms?.[tabId] === "edit";
+  const canEditTab = (tabId: string) => session?.role === "admin" || session?.tabPerms?.[tabId] === "edit";
   const canReorderTabs = Boolean(
     editMode && !searching && (session?.role === "admin" || session?.canCreateTabs),
   );
   const canDrag = editMode && !searching && page !== "favs" && canEditActive;
   const canResize = canDrag && data.settings.cardResize !== false;
-  function toggleTag(name) {
+  function toggleTag(name: string) {
     setTagFilter((cur) => {
       const key = name.toLowerCase();
       if (cur.some((t) => t.toLowerCase() === key))
@@ -2491,7 +2609,7 @@ function Home() {
       return [...cur, name];
     });
   }
-  function applyTagFromSearch(name) {
+  function applyTagFromSearch(name: string) {
     setTagFilter((cur) => {
       const key = name.toLowerCase();
       if (cur.some((t) => t.toLowerCase() === key)) return cur;
@@ -2505,8 +2623,8 @@ function Home() {
     setTagHi(0);
   }
   const downIds = useMemo(() => {
-    if (data.settings.healthChecks === false) return [];
-    const ids = [];
+    if (data.settings.healthChecks === false) return [] as string[];
+    const ids: string[] = [];
     for (const [id, row] of Object.entries(health)) if (row && row.ok === false) ids.push(id);
     return ids;
   }, [health, data.settings.healthChecks]);
@@ -2725,13 +2843,13 @@ function Home() {
       const gap = Number.parseFloat(getComputedStyle(strip).gap) || 0;
       const avail = strip.clientWidth;
       if (!avail) return;
-      const fav = strip.querySelector("[data-tab-slot=fav]");
+      const fav = strip.querySelector<HTMLElement>("[data-tab-slot=fav]");
       const favW = fav?.offsetWidth || 0;
-      const plus = strip.querySelector("[data-tab-slot=plus]");
+      const plus = strip.querySelector<HTMLElement>("[data-tab-slot=plus]");
       const plusW = plus?.offsetWidth || 0;
-      const moreEl = strip.querySelector("[data-tab-slot=more]");
+      const moreEl = strip.querySelector<HTMLElement>("[data-tab-slot=more]");
       const moreW = moreEl?.offsetWidth || 0;
-      for (const el of strip.querySelectorAll(".tab-item[data-tab-id]")) {
+      for (const el of strip.querySelectorAll<HTMLElement>(".tab-item[data-tab-id]")) {
         if (el.classList.contains("is-overflow")) continue;
         const id = el.dataset.tabId;
         if (id && el.offsetWidth) tabWidthRef.current.set(id, el.offsetWidth);
@@ -2778,13 +2896,16 @@ function Home() {
   }, [moreOpen]);
   useEffect(() => {
     if (!moreOpen) return;
-    const close = (e) => {
+    const close = (e: PointerEvent) => {
       if (dragRef.current?.kind === "tab") return;
-      if (tabMoreRef.current?.contains(e.target) || morePanelRef.current?.contains(e.target))
+      if (
+        tabMoreRef.current?.contains(e.target as Node) ||
+        morePanelRef.current?.contains(e.target as Node)
+      )
         return;
       setMoreOpen(false);
     };
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMoreOpen(false);
     };
     document.addEventListener("pointerdown", close);
@@ -2819,7 +2940,7 @@ function Home() {
     }
     return base;
   }, [filtered, canDrag, drag, over]);
-  function sameLayout(a, b) {
+  function sameLayout(a: PortalCategory[], b: PortalCategory[]) {
     return (
       JSON.stringify(
         a.map((c) => ({
@@ -2835,7 +2956,7 @@ function Home() {
       )
     );
   }
-  function persistMove(app, fromTabId, destTabId, nextCats) {
+  function persistMove(app: PortalApp, fromTabId: string, destTabId: string, nextCats: PortalCategory[]) {
     const current = dataRef.current;
     const snapshot = {
       categories: current.categories,
@@ -2889,7 +3010,7 @@ function Home() {
         stayEditing();
       });
   }
-  function persistTabs(nextTabs) {
+  function persistTabs(nextTabs: MenuTab[]) {
     const current = dataRef.current;
     if (nextTabs.map((t) => t.id).join() === current.tabs.map((t) => t.id).join()) return;
     const snapshot = current.tabs;
@@ -2923,7 +3044,7 @@ function Home() {
         stayEditing();
       });
   }
-  function persistLayout(nextCats) {
+  function persistLayout(nextCats: PortalCategory[]) {
     const current = dataRef.current;
     if (sameLayout(current.categories, nextCats)) return;
     const snapshot = current.categories;
@@ -3026,7 +3147,7 @@ function Home() {
       if (next) persistLayout(next);
     }
   }
-  function tabInsertAt(clientX, clientY, dragId, forceMore) {
+  function tabInsertAt(clientX: number, clientY: number, dragId: string, forceMore: boolean) {
     const ids = dataRef.current.tabs.map((t) => t.id).filter((id) => id !== dragId);
     const panel = morePanelRef.current;
     const useMore = forceMore || Boolean(panel);
@@ -3039,7 +3160,7 @@ function Home() {
           clientY >= box.top &&
           clientY <= box.bottom);
       if (inPanel) {
-        const nodes = [...panel.querySelectorAll("[data-tab-id]")];
+        const nodes = [...panel.querySelectorAll<HTMLElement>("[data-tab-id]")];
         let last = -1;
         for (const el of nodes) {
           const id = el.dataset.tabId;
@@ -3060,7 +3181,7 @@ function Home() {
     }
     const root = tabListRef.current;
     if (!root) return ids.length;
-    const nodes = [...root.querySelectorAll(".tab-item[data-tab-id]")].filter(
+    const nodes = [...root.querySelectorAll<HTMLElement>(".tab-item[data-tab-id]")].filter(
       (el) => !el.classList.contains("is-overflow") && el.offsetWidth,
     );
     let last = -1;
@@ -3074,7 +3195,7 @@ function Home() {
     }
     return last < 0 ? ids.length : last + 1;
   }
-  function endTabPointer(tabId, moved) {
+  function endTabPointer(tabId: string, moved: boolean) {
     tabOverMoreRef.current = false;
     setTabOverMore(false);
     if (!moved) {
@@ -3096,18 +3217,22 @@ function Home() {
     }, 50);
     if (next) persistTabs(next);
   }
-  function hitAppInsert(clientX, clientY, dragId) {
+  function hitAppInsert(
+    clientX: number,
+    clientY: number,
+    dragId: string,
+  ): { kind: "app"; catId: string; insertAt: number } | null {
     const stack = document.elementsFromPoint(clientX, clientY);
-    let card;
-    let section;
+    let card: HTMLElement | undefined;
+    let section: HTMLElement | undefined;
     let overSelf = false;
     for (const node of stack) {
       if (!(node instanceof HTMLElement)) continue;
       if (node === ghostRef.current || node === markerRef.current) continue;
-      const c = node.closest("[data-app-id]");
+      const c = node.closest<HTMLElement>("[data-app-id]");
       if (c?.dataset.appId === dragId) overSelf = true;
       else if (c?.dataset.appId && !card) card = c;
-      const s = node.closest("[data-cat-id]");
+      const s = node.closest<HTMLElement>("[data-cat-id]");
       if (s && !section) section = s;
     }
     if (overSelf) {
@@ -3119,7 +3244,7 @@ function Home() {
     const cat = dataRef.current.categories.find((c) => c.id === catId);
     if (!cat) return null;
     const destId = card?.dataset.appId;
-    if (destId && destId !== dragId) {
+    if (destId && destId !== dragId && card) {
       const after = pointerAfter(
         {
           clientX,
@@ -3144,8 +3269,8 @@ function Home() {
       insertAt: cat.apps.filter((a) => a.id !== dragId).length,
     };
   }
-  function hitCatInsert(clientY, dragId) {
-    const others = [...document.querySelectorAll("[data-cat-id]")].filter(
+  function hitCatInsert(clientY: number, dragId: string) {
+    const others = [...document.querySelectorAll<HTMLElement>("[data-cat-id]")].filter(
       (el) => el.dataset.catId && el.dataset.catId !== dragId,
     );
     for (let i = 0; i < others.length; i++) {
@@ -3163,7 +3288,7 @@ function Home() {
     library: data.customIcons ?? [],
     online: Boolean(data.settings.onlineIcons),
     navRichIcons: Boolean(data.settings.navRichIcons),
-    onLibrary: (customIcons) =>
+    onLibrary: (customIcons: CustomIcon[]) =>
       setData({
         ...data,
         customIcons,
@@ -3482,7 +3607,7 @@ function Home() {
                 }}
                 onPointerDown={(e) => {
                   if (!canReorderTabs) return;
-                  if (e.target.closest("[data-tab-action]")) return;
+                  if ((e.target as HTMLElement).closest("[data-tab-action]")) return;
                   lockSelection(e);
                   didDragRef.current = false;
                   dragOriginRef.current = {
@@ -3511,7 +3636,9 @@ function Home() {
                 <PortalIcon name={tab.icon} className="tab-ico" />
                 {tab.hideLabel ? null : <span className="tab-item-name">{tab.name}</span>}
                 {tab.restricted ? (
-                  <Lock className="tab-ico text-muted" aria-label={t("aria.restrictedTab")} title={t("aria.restrictedTab")} />
+                  <span title={t("aria.restrictedTab")}>
+                    <Lock className="tab-ico text-muted" aria-label={t("aria.restrictedTab")} />
+                  </span>
                 ) : null}
                 {editMode &&
                   tab.id === data.activeTabId &&
@@ -4963,6 +5090,36 @@ function FavStar({ on, onToggle }) {
     </button>
   );
 }
+type AppCardMenu = { x: number; y: number };
+type AppCardProps = {
+  app: PortalApp;
+  editMode: boolean;
+  canDrag?: boolean;
+  canResize?: boolean;
+  dragging?: boolean;
+  className?: string;
+  activeTags?: string[];
+  tagColors?: Record<string, string>;
+  tagsAlpha?: boolean;
+  health?: ProbeResult;
+  healthPending?: boolean;
+  showHealth?: boolean;
+  showClicks?: boolean;
+  favorite?: boolean;
+  onFavorite?: (() => void) | null;
+  onTag?: (name: string) => void;
+  onRecheck?: () => void;
+  onOpen?: () => void;
+  onPointerDown?: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerMove?: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp?: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerCancel?: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onEdit?: () => void;
+  onDuplicate?: () => void;
+  onDelete?: () => void;
+  dimMenu?: boolean;
+  ctxMenu?: boolean;
+};
 function AppCard({
   app,
   editMode,
@@ -4991,14 +5148,14 @@ function AppCard({
   onDelete,
   dimMenu,
   ctxMenu,
-}) {
+}: AppCardProps) {
   const extra = (app.kind || "app") === "app" ? (app.links ?? []) : [];
   const primaryHref = safeAppHref(app.url);
   const extraLinks = extra.filter((row) => safeAppHref(row.url));
   const ctxOn = ctxMenu !== false;
   const canCtx = extraLinks.length > 0 || (ctxOn && Boolean(primaryHref));
-  const [menu, setMenu] = useState(null);
-  const menuRef = useRef(null);
+  const [menu, setMenu] = useState<AppCardMenu | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!menu || !menuRef.current) return;
     const r = menuRef.current.getBoundingClientRect();
@@ -5011,7 +5168,7 @@ function AppCard({
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
     };
     document.documentElement.classList.add("card-ctx-open");
@@ -5141,7 +5298,7 @@ function AppCard({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                onEdit();
+                onEdit?.();
               }}
               onPointerDown={(e) => e.stopPropagation()}
             >
@@ -5156,7 +5313,7 @@ function AppCard({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                onDelete();
+                onDelete?.();
               }}
               onPointerDown={(e) => e.stopPropagation()}
             >
@@ -5236,7 +5393,7 @@ function AppCard({
     );
   const shell = `portal-card group relative flex h-full min-h-0 flex-col rounded-xl bg-surface p-4 ${className ?? ""} ${canDrag ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""} ${corner ? "has-corner" : ""} ${headless ? "is-headless" : ""} ${menu ? "is-ctx-open" : ""}`;
   const onCtx = canCtx
-    ? (e) => {
+    ? (e: ReactPointerEvent<HTMLDivElement> | ReactMouseEvent<HTMLDivElement>) => {
         e.preventDefault();
         e.stopPropagation();
         setMenu({
@@ -5245,9 +5402,9 @@ function AppCard({
         });
       }
     : void 0;
-  function copyHref(raw, e) {
-    e?.preventDefault();
-    e?.stopPropagation();
+  function copyHref(raw: string, e?: { preventDefault?: () => void; stopPropagation?: () => void } | null) {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
     const href = safeAppHref(raw);
     if (!href) return;
     const fallback = () => {
@@ -5265,7 +5422,7 @@ function AppCard({
         return false;
       }
     };
-    const done = (ok) => {
+    const done = (ok: boolean) => {
       setMenu(null);
       if (ok) toast.success(t("toast.copied"));
       else toast.error(t("toast.generic"));
@@ -5274,7 +5431,7 @@ function AppCard({
       navigator.clipboard.writeText(href).then(() => done(true)).catch(() => done(fallback()));
     } else done(fallback());
   }
-  function ctxRow(href, name, key) {
+  function ctxRow(href: string, name: string | undefined, key: string) {
     const safe = safeAppHref(href);
     if (!safe) return null;
     const label = String(name || "").trim() || t("annex.primary");

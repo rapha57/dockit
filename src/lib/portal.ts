@@ -205,7 +205,7 @@ export type ClickStats = {
   fullCatalog?: boolean;
 };
 
-type DocTab = PortalTab & { name: string; icon: string; categories: PortalCategory[] };
+export type DocTab = PortalTab & { name: string; icon: string; categories: PortalCategory[] };
 type StoredUser = User & { passHash?: string };
 export type Doc = Omit<AclDoc, "tabs" | "users" | "groups" | "roles" | "history"> & {
   settings: PortalSettings;
@@ -1292,8 +1292,8 @@ function publicTabs(doc: Doc, user: HydratedUser | null) {
 		icon: t.icon,
 		sortOrder: t.sortOrder,
 		restricted: Boolean(t.restricted),
-		viewers: [],
-		editors: [],
+		viewers: [] as string[],
+		editors: [] as string[],
 		hideLabel: Boolean(t.hideLabel)
 	}));
 }
@@ -1388,7 +1388,7 @@ function view(doc: Doc, tabId: string | undefined, user: HydratedUser | null) {
 		...c,
 		apps: [...c.apps].filter((a) => can(user, "view", { res: "card", id: a.id }, doc)).sort((a, b) => a.sortOrder - b.sortOrder)
 	}));
-	const stripAcl = (cats: PortalCategory[]) => sortCats(cats).map((c) => ({ ...c, viewers: [], editors: [] }));
+	const stripAcl = (cats: PortalCategory[]) => sortCats(cats).map((c) => ({ ...c, viewers: [] as string[], editors: [] as string[] }));
 	const visibleIds = new Set(tabs.map((t) => t.id));
 	const catalog = [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder).filter((t) => visibleIds.has(t.id)).map((t) => ({
 		id: t.id,
@@ -1396,8 +1396,8 @@ function view(doc: Doc, tabId: string | undefined, user: HydratedUser | null) {
 		icon: t.icon,
 		sortOrder: t.sortOrder,
 		restricted: Boolean(t.restricted),
-		viewers: [],
-		editors: [],
+		viewers: [] as string[],
+		editors: [] as string[],
 		hideLabel: Boolean(t.hideLabel),
 		categories: stripAcl(t.categories ?? [])
 	}));
