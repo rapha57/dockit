@@ -10,4 +10,5 @@ test-results/
 .DS_Store
 *.log
 data/portal.json
+data/curation.json
 data/assets/

@@ -20,6 +20,14 @@ import {
 	emptyTrash
 } from "./history";
 import { t, withLocale, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "./i18n";
+import {
+	curationScanAllowed,
+	pruneCurationChecks,
+	readCurationStore,
+	writeCurationStore,
+	type CurationCheck
+} from "./curation-runtime";
+export type { CurationCheck } from "./curation-runtime";
 import { adGroupKey, asDirectories, asLoginOrder, directoryReady, pickDirectory, syncLegacyLdap } from "./ldap-runtime";
 import { defaultTagHex, remapTagHex } from "./tag-colors";
 import {
@@ -76,6 +84,7 @@ export type SessionInfo = {
   canCreateTabs: boolean;
   canAudit: boolean;
   canRestore: boolean;
+  canCuration: boolean;
   canPurge: boolean;
   tabPerms: Record<string, TabPerm>;
   exp?: number;
@@ -703,6 +712,7 @@ type HydratedUser = StoredUser & {
 	canCreateTabs: boolean;
 	canAudit: boolean;
 	canRestore: boolean;
+	canCuration: boolean;
 	canPurge: boolean;
 	canManageSettings: boolean;
 	canManageUsers: boolean;
@@ -724,6 +734,7 @@ function hydrateUser(user: StoredUser | null | undefined, doc: Doc): HydratedUse
 	const canCreateTabs = owner || can(user, "spaces.create", portal, doc);
 	const canAudit = owner || can(user, "audit", portal, doc);
 	const canRestore = owner || can(user, "restore", portal, doc);
+	const canCuration = owner || can(user, "curation", portal, doc);
 	const canPurge = owner || can(user, "purge", portal, doc);
 	const canManageSettings = owner || can(user, "settings", portal, doc);
 	const canManageUsers = owner || can(user, "users.manage", portal, doc);
@@ -739,6 +750,7 @@ function hydrateUser(user: StoredUser | null | undefined, doc: Doc): HydratedUse
 		canCreateTabs,
 		canAudit,
 		canRestore,
+		canCuration,
 		canPurge,
 		canManageSettings,
 		canManageUsers,
@@ -886,6 +898,7 @@ function sessionInfo(user: StoredUser, doc: Doc): SessionInfo {
 		canCreateTabs: Boolean(u.canCreateTabs || owner),
 		canAudit: Boolean(u.canAudit || owner),
 		canRestore: Boolean(u.canRestore || owner),
+		canCuration: Boolean(u.canCuration || owner),
 		canPurge: Boolean(u.canPurge || owner),
 		tabPerms,
 		exp: latestSessionExp(u.id)
@@ -3193,6 +3206,173 @@ async function requireEditorSession(token: string) {
 	if (!user._canEdit && !isOwnerUser(user)) throw new Error("errors.insufficient");
 	return user;
 }
+
+export type CurationLink = { key: string; label: string; url: string };
+export type CurationItem = {
+	cardId: string;
+	tabId: string;
+	categoryId: string;
+	title: string;
+	tabName: string;
+	categoryName: string;
+	icon: string;
+	kind: ItemKind;
+	testable: boolean;
+	links: CurationLink[];
+};
+export type CurationScanRef = { cardId: string; key: string; url: string };
+export type CurationView = {
+	items: CurationItem[];
+	queue: CurationScanRef[];
+	checks: Record<string, Record<string, CurationCheck>>;
+	lastRunAt: number;
+};
+export type CurationScanResult = { cardId: string; key: string; check: CurationCheck };
+
+const CURATION_MAX_LINKS = 400;
+
+function curationLinksOf(app: PortalApp): CurationLink[] {
+	const links: CurationLink[] = [];
+	const main = app.kind === "note" ? "" : safeAppHref(app.url);
+	if (main) links.push({ key: "main", label: "", url: main });
+	const extra = Array.isArray(app.links) ? app.links : [];
+	for (let i = 0; i < extra.length && links.length < 5; i++) {
+		const url = safeAppHref(extra[i]?.url);
+		if (url) links.push({ key: `l${i}`, label: String(extra[i]?.title || "").slice(0, 40), url });
+	}
+	return links;
+}
+
+function curationItemsOf(doc: Doc, user: HydratedUser | null): CurationItem[] {
+	const items: CurationItem[] = [];
+	for (const tab of [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder)) {
+		if (!tabCanSee(tab, user, doc)) continue;
+		for (const cat of [...tab.categories].sort((a, b) => a.sortOrder - b.sortOrder)) {
+			if (!catCanSee(cat, user, doc)) continue;
+			for (const app of cat.apps) {
+				if (!can(user, "view", { res: "card", id: app.id }, doc)) continue;
+				const links = curationLinksOf(app);
+				items.push({
+					cardId: app.id,
+					tabId: tab.id,
+					categoryId: cat.id,
+					title: app.title || tt(doc, "empty.untitled"),
+					tabName: tab.name || "",
+					categoryName: cat.name || "",
+					icon: app.icon || "Link",
+					kind: app.kind || "app",
+					testable: links.length > 0,
+					links
+				});
+				if (items.length >= 800) return items;
+			}
+		}
+	}
+	return items;
+}
+
+function curationQueueOf(items: CurationItem[]): CurationScanRef[] {
+	const queue: CurationScanRef[] = [];
+	for (const item of items) for (const link of item.links) queue.push({ cardId: item.cardId, key: link.key, url: link.url });
+	return queue.slice(0, CURATION_MAX_LINKS);
+}
+
+function allCardIds(doc: Doc): Set<string> {
+	const ids = new Set<string>();
+	for (const tab of doc.tabs) for (const cat of tab.categories) for (const app of cat.apps) ids.add(app.id);
+	return ids;
+}
+
+function curationCheckOf(url: string, trace: import("./probe-runtime").HttpTrace, ms: number): CurationCheck {
+	const check: CurationCheck = { status: "error", checkedAt: Date.now(), responseTimeMs: ms, url };
+	if (trace.redirects.length) {
+		check.status = "redirect";
+		check.httpStatus = trace.redirects[0].status;
+		check.finalUrl = trace.finalUrl;
+		return check;
+	}
+	if (trace.status >= 200 && trace.status < 300) {
+		check.status = "valid";
+		check.httpStatus = trace.status;
+		return check;
+	}
+	if (trace.status >= 300 && trace.status < 400) {
+		check.status = "redirect";
+		check.httpStatus = trace.status;
+		check.finalUrl = trace.finalUrl;
+		return check;
+	}
+	if (trace.detail === "probe.timeout") {
+		check.status = "timeout";
+		return check;
+	}
+	check.detail = trace.detail;
+	return check;
+}
+
+export const getCuration = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField
+})).handler(async ({ data, request }: any) => withLock(async () => {
+	const doc = await readDocUnlocked();
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
+	const store = await readCurationStore();
+	if (pruneCurationChecks(store, allCardIds(doc))) await writeCurationStore(store);
+	const items = curationItemsOf(doc, user);
+	const visible = new Set(items.map((i) => i.cardId));
+	const checks: Record<string, Record<string, CurationCheck>> = {};
+	for (const [cardId, links] of Object.entries(store.checks)) {
+		if (visible.has(cardId)) checks[cardId] = links;
+	}
+	return { items, queue: curationQueueOf(items), checks, lastRunAt: store.updatedAt };
+}));
+
+export const curationScan = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	items: z.array(z.object({
+		cardId: z.string().min(1).max(80),
+		key: z.string().min(1).max(8)
+	})).min(1).max(8)
+})).handler(async ({ data, request }: any) => withLock(async () => {
+	const { probeHttpTrace } = await import("./probe-runtime");
+	if (!curationScanAllowed(request)) throw new Error("errors.tooManyProbes");
+	const doc = await readDocUnlocked();
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
+	const tlsVerify = Boolean(doc.settings.probeTlsVerify);
+	const store = await readCurationStore();
+	const targets: { cardId: string; key: string; url: string }[] = [];
+	for (const ref of data.items) {
+		let found: ReturnType<typeof appOf>;
+		try {
+			found = appOf(doc, ref.cardId);
+		} catch {
+			continue;
+		}
+		const { tab, cat, app } = found;
+		if (!tabCanSee(tab, user, doc) || !catCanSee(cat, user, doc)) continue;
+		if (!can(user, "view", { res: "card", id: app.id }, doc)) continue;
+		const link = curationLinksOf(app).find((row) => row.key === ref.key);
+		if (link) targets.push({ cardId: app.id, key: ref.key, url: link.url });
+	}
+	const results = await Promise.all(
+		targets.map(async (target) => {
+			const started = Date.now();
+			const trace = await probeHttpTrace(target.url, tlsVerify);
+			return { cardId: target.cardId, key: target.key, check: curationCheckOf(target.url, trace, Math.max(0, Date.now() - started)) };
+		})
+	);
+	for (const row of results) {
+		const card = store.checks[row.cardId] || (store.checks[row.cardId] = {});
+		card[row.key] = row.check;
+	}
+	if (results.length) {
+		store.updatedAt = Date.now();
+		pruneCurationChecks(store, allCardIds(doc));
+		await writeCurationStore(store);
+	}
+	return { results, lastRunAt: store.updatedAt };
+}));
 
 export const probeTargets = createServerFn({ method: "POST" }).validator(z.object({
 	token: z.string().optional(),

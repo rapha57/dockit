@@ -84,7 +84,8 @@ export const PORTAL_ACTIONS = [
 	"audit",
 	"restore",
 	"purge",
-	"spaces.create"
+	"spaces.create",
+	"curation"
 ];
 export const NODE_ACTIONS = ["view", "open", "edit", "create", "delete", "move"];
 export const TREE_ACTIONS: Record<string, string[]> = {
@@ -184,7 +185,7 @@ export function defaultRoles(): Role[] {
 			description: "",
 			system: true,
 			grants: [
-				{ res: "portal", id: "*", allow: ["users.manage", "groups.manage", "roles.manage", "settings", "audit", "restore"] },
+				{ res: "portal", id: "*", allow: ["users.manage", "groups.manage", "roles.manage", "settings", "audit", "restore", "curation"] },
 				{ res: "tab", id: "*", allow: ["view", "open"] }
 			]
 		},
@@ -194,7 +195,7 @@ export function defaultRoles(): Role[] {
 			description: "",
 			system: true,
 			grants: [
-				{ res: "portal", id: "*", allow: ["restore"] },
+				{ res: "portal", id: "*", allow: ["restore", "curation"] },
 				{ res: "tab", id: "*", allow: ["view", "open", "edit", "create", "delete", "move"], scope: "public" }
 			]
 		},

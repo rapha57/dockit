@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -19,6 +20,7 @@ import {
   ArrowDownAZ,
   ArrowUpZA,
   ArrowRightLeft,
+  ArrowUpRight,
   AppWindow,
   BadgeInfo,
   BarChart3,
@@ -27,6 +29,7 @@ import {
   Copy,
   ChevronDown,
   CircleUser,
+  Clock,
   Download,
   ExternalLink,
   FileText,
@@ -36,10 +39,12 @@ import {
   LayoutGrid,
   Link,
   History,
+  ListChecks,
   Lock,
   LogIn,
   LogOut,
   Menu,
+  Minus,
   MoreHorizontal,
   MousePointerClick,
   Palette,
@@ -61,6 +66,7 @@ import {
   Users,
   X,
   ScrollText,
+  ScanSearch,
   Server,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -101,12 +107,14 @@ import {
   createApp,
   createCategory,
   createTab,
+  curationScan,
   deleteApp,
   deleteCategory,
   deleteTab,
   duplicateTab,
   exportAudit,
   exportPortal,
+  getCuration,
   getPortal,
   grabSiteFavicon,
   importPortal,
@@ -176,6 +184,7 @@ import {
 import type {
   CheckMode,
   ClickStats,
+  CurationCheck,
   CustomIcon,
   DocTab,
   ItemKind,
@@ -882,12 +891,14 @@ function AccountMenu({
   canOpenSettings,
   canManageUsers,
   canHistory,
+  canCuration,
   role,
   openFavs,
   onLogin,
   onEdit,
   onSettings,
   onHistory,
+  onCuration,
   onUsers,
   onOpenFavs,
   onResetLocal,
@@ -899,12 +910,14 @@ function AccountMenu({
   canOpenSettings: boolean;
   canManageUsers: boolean;
   canHistory: boolean;
+  canCuration: boolean;
   role: string;
   openFavs: boolean;
   onLogin: () => void;
   onEdit: () => void;
   onSettings: () => void;
   onHistory: () => void;
+  onCuration: () => void;
   onUsers: () => void;
   onOpenFavs: (on: boolean) => void;
   onResetLocal: () => void;
@@ -924,6 +937,7 @@ function AccountMenu({
   const showSettings = loggedIn && canOpenSettings;
   const showHistory = loggedIn && canHistory;
   const showUsers = loggedIn && canManageUsers;
+  const showCuration = loggedIn && canCuration;
   const status = accountStatusLabel(loggedIn, role);
   const localPrefs = (
     <>
@@ -1051,7 +1065,21 @@ function AccountMenu({
               {t("history.title")}
             </button>
           ) : null}
-          {loggedIn && (showEdit || showSettings || showHistory || showUsers) ? (
+          {showCuration ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onCuration();
+              }}
+            >
+              {" "}
+              <ScanSearch className="size-4 shrink-0" />
+              {t("curation.title")}
+            </button>
+          ) : null}
+          {loggedIn && (showEdit || showSettings || showHistory || showUsers || showCuration) ? (
             <div className="menu-sep" />
           ) : null}
           {loggedIn ? (
@@ -2149,6 +2177,23 @@ function Home() {
       kind: "users",
     });
   }
+  function requestCuration() {
+    const sess = sessionRef.current || readSessionInfo();
+    if (!sess) {
+      setModal({
+        kind: "lock",
+        next: "curation",
+      });
+      return;
+    }
+    if (!sess.canCuration) {
+      toast.error(t("toast.readonly"));
+      return;
+    }
+    setModal({
+      kind: "curation",
+    });
+  }
   function clearAuth() {
     void clearSessCookie();
     try {
@@ -2232,7 +2277,7 @@ function Home() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- poller keyed on token/expiry on purpose; reads latest via refs
   }, [token, session?.exp]);
-  async function apply(fn: () => Promise<PortalData>, opts?: { close?: boolean }) {
+  async function apply(fn: () => Promise<PortalData>, opts?: { close?: boolean; onDone?: () => void }) {
     setBusy(true);
     try {
       const next = await Promise.race([
@@ -2250,6 +2295,7 @@ function Home() {
         setModal({
           kind: "none",
         });
+      opts?.onDone?.();
     } catch (err) {
       if (sessionGone(err)) return;
       toast.error(te(err));
@@ -3540,7 +3586,9 @@ function Home() {
               onSettings={() => requestAdmin("general")}
               canManageUsers={Boolean(session?.canManageUsers)}
               canHistory={Boolean(session?.canAudit || session?.canRestore)}
+              canCuration={Boolean(session?.canCuration)}
               onHistory={() => requestHistory()}
+              onCuration={() => requestCuration()}
               onUsers={() => requestUsers()}
               onOpenFavs={setOpenFavs}
               onResetLocal={resetLocalPrefs}
@@ -4485,6 +4533,7 @@ function Home() {
             modal.kind === "stats" ||
             modal.kind === "app" ||
             modal.kind === "history" ||
+            modal.kind === "curation" ||
             modal.kind === "users" ||
             modal.kind === "tab" ||
             modal.kind === "category"
@@ -4581,6 +4630,10 @@ function Home() {
                   else if (modal.next === "users" && res.session?.canManageUsers)
                     setModal({
                       kind: "users",
+                    });
+                  else if (modal.next === "curation" && res.session?.canCuration)
+                    setModal({
+                      kind: "curation",
                     });
                   else if (modal.next === "edit" && res.session?.canEdit) {
                     enterEdit();
@@ -4692,6 +4745,33 @@ function Home() {
                 if (next.session) {
                   setSession(next.session);
                   writeSessionInfo(next.session);
+                }
+              }}
+            />
+          )}
+          {modal.kind === "curation" && (
+            <CurationPanel
+              token={token}
+              tabPerms={session?.tabPerms || {}}
+              onClose={() =>
+                setModal({
+                  kind: "none",
+                })
+              }
+              onEditCard={(cardId) => {
+                for (const tb of data.catalog) {
+                  for (const cat of tb.categories) {
+                    const app = cat.apps.find((a) => a.id === cardId);
+                    if (app) {
+                      setModal({
+                        kind: "app",
+                        categoryId: cat.id,
+                        app,
+                        from: "curation",
+                      });
+                      return;
+                    }
+                  }
                 }
               }}
             />
@@ -4923,7 +5003,13 @@ function Home() {
           )}
           {modal.kind === "app" && (
             <AppForm
-              categories={data.categories}
+              categories={
+                modal.app && !data.categories.some((c) => c.id === (modal.app as PortalApp).categoryId)
+                  ? (data.catalog.find((tb) =>
+                      tb.categories.some((c) => c.id === (modal.app as PortalApp).categoryId),
+                    )?.categories ?? data.categories)
+                  : data.categories
+              }
               categoryId={(modal.categoryId as string) || ""}
               catalog={data.catalog}
               initial={(modal.app as PortalApp | null) ?? null}
@@ -4933,26 +5019,33 @@ function Home() {
               knownTags={allTags.map((t) => t.name)}
               tagColors={data.settings.tagColors}
               onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
+                setModal(modal.from === "curation" ? { kind: "curation" } : { kind: "none" })
               }
               onSave={(payload) =>
-                apply(() =>
-                  modal.app
-                    ? updateApp({
-                        data: {
-                          token,
-                          id: (modal.app as PortalApp).id,
-                          ...payload,
-                        },
-                      })
-                    : createApp({
-                        data: {
-                          token,
-                          ...payload,
-                        },
-                      }),
+                apply(
+                  () =>
+                    modal.app
+                      ? updateApp({
+                          data: {
+                            token,
+                            id: (modal.app as PortalApp).id,
+                            ...payload,
+                          },
+                        })
+                      : createApp({
+                          data: {
+                            token,
+                            ...payload,
+                          },
+                        }),
+                  modal.from === "curation"
+                    ? {
+                        onDone: () =>
+                          setModal({
+                            kind: "curation",
+                          }),
+                      }
+                    : undefined,
                 )
               }
             />
@@ -6164,6 +6257,582 @@ type TagsPayload = {
   remove?: string[];
   colors?: Record<string, string>;
 };
+type CurationViewData = Awaited<ReturnType<typeof getCuration>>;
+type CurationScanRow = {
+  cardId: string;
+  key: string;
+  title: string;
+  place: string;
+  label: string;
+  url: string;
+  check: CurationCheck;
+};
+type CurationScanState = {
+  running: boolean;
+  done: number;
+  total: number;
+  current: string;
+  rows: CurationScanRow[];
+  lastRunAt: number;
+};
+let curationScanState: CurationScanState = {
+  running: false,
+  done: 0,
+  total: 0,
+  current: "",
+  rows: [],
+  lastRunAt: 0,
+};
+const curationScanSubs = new Set<() => void>();
+let curationScanRun = 0;
+function patchCurationScan(patch: Partial<CurationScanState>) {
+  curationScanState = { ...curationScanState, ...patch };
+  for (const fn of curationScanSubs) fn();
+}
+function useCurationScan(): CurationScanState {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      curationScanSubs.add(onStoreChange);
+      return () => curationScanSubs.delete(onStoreChange);
+    },
+    () => curationScanState,
+  );
+}
+async function startCurationScan(token: string, queue: CurationViewData["queue"], items: CurationViewData["items"]) {
+  const run = ++curationScanRun;
+  patchCurationScan({
+    running: true,
+    done: 0,
+    total: queue.length,
+    current: "",
+    rows: [],
+    lastRunAt: curationScanState.lastRunAt,
+  });
+  let lastRunAt = curationScanState.lastRunAt;
+  for (let i = 0; i < queue.length; i += 4) {
+    if (curationScanRun !== run) break;
+    const slice = queue.slice(i, i + 4);
+    const first = slice[0];
+    const item = items.find((row) => row.cardId === first.cardId);
+    const link = item?.links.find((row) => row.key === first.key);
+    patchCurationScan({
+      current: item
+        ? t("curation.checkingItem", { title: item.title, link: link?.label || link?.url || "" })
+        : "",
+    });
+    try {
+      const res = await curationScan({
+        data: { token, items: slice.map(({ cardId, key }) => ({ cardId, key })) },
+      });
+      if (curationScanRun !== run) break;
+      lastRunAt = res.lastRunAt;
+      patchCurationScan({
+        done: Math.min(i + slice.length, queue.length),
+        rows: [
+          ...curationScanState.rows,
+          ...res.results.map((row) => {
+            const meta = items.find((it) => it.cardId === row.cardId);
+            const linkMeta = meta?.links.find((l) => l.key === row.key);
+            return {
+              cardId: row.cardId,
+              key: row.key,
+              title: meta?.title || row.cardId,
+              place: [meta?.tabName, meta?.categoryName].filter(Boolean).join(" · "),
+              label: linkMeta?.label || "",
+              url: linkMeta?.url || row.check.url,
+              check: row.check,
+            };
+          }),
+        ],
+      });
+    } catch (err) {
+      if (sessionGone(err)) break;
+      toast.error(te(err));
+      break;
+    }
+  }
+  if (curationScanRun === run) {
+    patchCurationScan({ running: false, current: "", lastRunAt });
+  }
+}
+function curationTone(status: CurationCheck["status"]): string {
+  if (status === "valid") return "text-ok";
+  if (status === "redirect") return "text-muted";
+  if (status === "error" || status === "timeout") return "text-danger";
+  return "text-subtle";
+}
+function curationStatusLabel(check: CurationCheck): string {
+  if (check.status === "valid") return String(check.httpStatus || "200");
+  if (check.status === "redirect") {
+    const target = check.finalUrl || "";
+    let short = target;
+    try {
+      const from = new URL(check.url);
+      const to = new URL(target);
+      short = to.host === from.host ? `${to.pathname}${to.search}` : target;
+    } catch {
+      // keep full URL
+    }
+    return `${check.httpStatus || ""} → ${short}`.trim();
+  }
+  if (check.status === "timeout") return t("curation.statusTimeout");
+  if (check.status === "error") return check.httpStatus ? String(check.httpStatus) : td(check.detail);
+  return t("curation.statusUnknown");
+}
+function CurationPanel({
+  token,
+  tabPerms,
+  onClose,
+  onEditCard,
+}: {
+  token: string;
+  tabPerms: Record<string, "view" | "edit">;
+  onClose: () => void;
+  onEditCard: (cardId: string) => void;
+}) {
+  const [pane, setPane] = useState<"results" | "apps">("results");
+  const [view, setView] = useState<CurationViewData | null>(null);
+  const [ready, setReady] = useState(false);
+  const [filter, setFilter] = useState("all");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const scan = useCurationScan();
+  const live = useMemo(() => {
+    const map: Record<string, Record<string, CurationCheck>> = {};
+    for (const row of scan.rows) {
+      map[row.cardId] = { ...map[row.cardId], [row.key]: row.check };
+    }
+    return map;
+  }, [scan.rows]);
+  useEffect(() => {
+    getCuration({ data: { token } })
+      .then((res) => {
+        setView(res);
+        if (!curationScanState.running && !curationScanState.rows.length) {
+          patchCurationScan({
+            rows: res.queue
+              .map((ref) => {
+                const meta = res.items.find((it) => it.cardId === ref.cardId);
+                const linkMeta = meta?.links.find((l) => l.key === ref.key);
+                const check = res.checks?.[ref.cardId]?.[ref.key];
+                if (!check || (linkMeta && check.url !== linkMeta.url)) return null;
+                return {
+                  cardId: ref.cardId,
+                  key: ref.key,
+                  title: meta?.title || ref.cardId,
+                  place: [meta?.tabName, meta?.categoryName].filter(Boolean).join(" · "),
+                  label: linkMeta?.label || "",
+                  url: linkMeta?.url || check.url,
+                  check,
+                };
+              })
+              .filter((row) => row !== null),
+          });
+        }
+        setReady(true);
+      })
+      .catch((err) => {
+        setReady(true);
+        if (sessionGone(err)) return;
+        toast.error(te(err));
+      });
+  }, [token]);
+  function checksOf(cardId: string): Record<string, CurationCheck> | undefined {
+    const base = view?.checks?.[cardId];
+    const over = live[cardId];
+    if (!base) return over;
+    if (!over) return base;
+    return { ...base, ...over };
+  }
+  const counts = useMemo(() => {
+    let valid = 0;
+    let redirect = 0;
+    let error = 0;
+    let timeout = 0;
+    let pending = 0;
+    for (const ref of view?.queue || []) {
+      const raw = checksOf(ref.cardId)?.[ref.key];
+      const check = raw && raw.url === ref.url ? raw : undefined;
+      if (!check) {
+        pending++;
+        continue;
+      }
+      if (check.status === "valid") valid++;
+      else if (check.status === "redirect") redirect++;
+      else if (check.status === "timeout") timeout++;
+      else error++;
+    }
+    const checked = valid + redirect + error + timeout;
+    return { valid, redirect, error, timeout, checked, pending, total: checked + pending };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- checksOf reads view/live state
+  }, [view, live]);
+  const groups = useMemo(() => {
+    const prio: Record<CurationCheck["status"], number> = { error: 4, timeout: 3, redirect: 2, valid: 1, unknown: 0 };
+    const out: {
+      cardId: string;
+      tabId: string;
+      title: string;
+      place: string;
+      links: { key: string; label: string; url: string; check?: CurationCheck }[];
+      worst?: CurationCheck;
+      anyCheck: boolean;
+    }[] = [];
+    for (const item of view?.items || []) {
+      const checks = checksOf(item.cardId);
+      const links = item.links.map((link) => {
+        const raw = checks?.[link.key];
+        return { key: link.key, label: link.label, url: link.url, check: raw && raw.url === link.url ? raw : undefined };
+      });
+      let worst: CurationCheck | undefined;
+      for (const link of links) {
+        if (!link.check) continue;
+        if (!worst || prio[link.check.status] > prio[worst.status]) worst = link.check;
+      }
+      out.push({
+        cardId: item.cardId,
+        tabId: item.tabId,
+        title: item.title,
+        place: [item.tabName, item.categoryName].filter(Boolean).join(" · "),
+        links,
+        worst,
+        anyCheck: links.some((l) => l.check),
+      });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- checksOf reads view/live state
+  }, [view, live]);
+  const filteredGroups = useMemo(() => {
+    if (filter === "all") return groups;
+    return groups.filter((group) => {
+      if (filter === "unknown") return !group.anyCheck;
+      return group.links.some((link) => {
+        const status = link.check?.status;
+        if (filter === "valid") return status === "valid";
+        if (filter === "redirect") return status === "redirect";
+        if (filter === "error") return status === "error" || status === "timeout";
+        return false;
+      });
+    });
+  }, [groups, filter]);
+  function runScan() {
+    if (scan.running || !view || !view.queue.length) return;
+    void startCurationScan(token, view.queue, view.items);
+  }
+  const total = counts.total;
+  const done = scan.rows.length;
+  const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  const lastRunAt = Math.max(view?.lastRunAt || 0, scan.lastRunAt);
+  const statusLine = scan.running
+    ? t("curation.running")
+    : lastRunAt
+      ? t("curation.lastRun", { when: formatWhen(lastRunAt) })
+      : t("curation.neverRun");
+  const currentPane =
+    pane === "results"
+      ? { label: t("curation.results"), lead: t("curation.resultsLead") }
+      : { label: t("curation.apps"), lead: t("curation.appsLead") };
+  function statusCell(check: CurationCheck | undefined, pending = false) {
+    if (!check) {
+      return (
+        <span className="am-status am-row-end text-subtle">
+          <Minus className="size-3.5" />
+          {pending ? t("curation.statusPending") : t("curation.statusUnknown")}
+        </span>
+      );
+    }
+    return (
+      <span className={`am-status am-row-end ${curationTone(check.status)}`}>
+        {check.status === "valid" ? (
+          <Check className="size-3.5" />
+        ) : check.status === "redirect" ? (
+          <ArrowUpRight className="size-3.5" />
+        ) : check.status === "timeout" ? (
+          <Clock className="size-3.5" />
+        ) : check.status === "error" ? (
+          <X className="size-3.5" />
+        ) : (
+          <Minus className="size-3.5" />
+        )}
+        {curationStatusLabel(check)}
+      </span>
+    );
+  }
+  function linkCell(label: string, url: string) {
+    if (!url) return <span className="am-row-link">—</span>;
+    return (
+      <span className="am-row-link" title={url}>
+        {label ? `${label} · ` : ""}
+        {url}
+      </span>
+    );
+  }
+  return (
+    <div className="settings-frame is-wide is-access">
+      <nav className="settings-nav" aria-label={t("curation.sectionsAria")}>
+        <p className="menu-title">{t("curation.title")}</p>
+        <button
+          type="button"
+          className={`settings-nav-item ${pane === "results" ? "is-on" : ""}`}
+          onClick={() => setPane("results")}
+        >
+          <ListChecks className="size-4 shrink-0" />
+          {t("curation.results")}
+        </button>
+        <button
+          type="button"
+          className={`settings-nav-item ${pane === "apps" ? "is-on" : ""}`}
+          onClick={() => setPane("apps")}
+        >
+          <LayoutGrid className="size-4 shrink-0" />
+          {t("curation.apps")}
+        </button>
+      </nav>
+      <div className="settings-body">
+        <div className="settings-head">
+          <div className="settings-head-copy">
+            <h3 className="dialog-title">{currentPane.label}</h3>
+            <p className="settings-lead">{currentPane.lead}</p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label={t("actions.close")}
+            title={t("actions.close")}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+        {pane === "results" ? (
+          <div className="settings-pane is-access">
+            <div className="am-work">
+              {total ? (
+                <div className="curation-progress">
+                  <div className="curation-progress-row">
+                    <span className="curation-progress-title">{statusLine}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-muted">
+                      {formatNumber(done)} / {formatNumber(total)}
+                    </span>
+                  </div>
+                  <div
+                    className="h-1.5 w-full overflow-hidden rounded-full bg-elevated"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={total}
+                    aria-valuenow={done}
+                  >
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="curation-counts">
+                    <span className="inline-flex items-center gap-1 text-ok">
+                      <Check className="size-3.5" />
+                      {t("curation.countValid", { n: formatNumber(counts.valid) })}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-muted">
+                      <ArrowUpRight className="size-3.5" />
+                      {t("curation.countRedirect", { n: formatNumber(counts.redirect) })}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-danger">
+                      <X className="size-3.5" />
+                      {t("curation.countError", { n: formatNumber(counts.error) })}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-danger">
+                      <Clock className="size-3.5" />
+                      {t("curation.countTimeout", { n: formatNumber(counts.timeout) })}
+                    </span>
+                    {counts.pending ? (
+                      <span>{t("curation.countPending", { n: formatNumber(counts.pending) })}</span>
+                    ) : null}
+                  </div>
+                  {scan.current ? (
+                    <p className="curation-progress-current">
+                      {t("curation.lastItem")} {scan.current}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {scan.rows.length ? (
+                <>
+                  <div className="am-list-head is-curation">
+                    <div className="am-row-cells">
+                      <span>{t("curation.colCard")}</span>
+                      <span>{t("curation.colLink")}</span>
+                      <span className="am-row-end">{t("curation.colResult")}</span>
+                      <span className="am-row-action" />
+                    </div>
+                  </div>
+                  <EdgeFade className="am-list-wrap">
+                    <div className="am-list is-curation" role="list">
+                      {scan.rows.map((row) => (
+                        <div key={`${row.cardId}:${row.key}`} className="am-row is-static" role="listitem">
+                          <div className="am-row-head">
+                            <div className="am-row-cells">
+                              <span className="am-row-title">
+                                {row.title}
+                                {row.place ? (
+                                  <span className="ml-1.5 text-xs font-normal text-subtle">{row.place}</span>
+                                ) : null}
+                              </span>
+                              {linkCell(row.label, row.url)}
+                              {statusCell(row.check)}
+                              <span className="am-row-action" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </EdgeFade>
+                </>
+              ) : (
+                <EdgeFade className="am-list-wrap">
+                  {!ready ? (
+                    <div className="am-list" aria-busy="true" aria-label={t("curation.loading")}>
+                      <Skeleton className="h-9 w-full" />
+                      <Skeleton className="h-9 w-full" />
+                      <Skeleton className="h-9 w-full" />
+                      <Skeleton className="h-9 w-full" />
+                    </div>
+                  ) : (
+                    <EmptyState compact icon={ScanSearch} text={t("curation.noResults")} />
+                  )}
+                </EdgeFade>
+              )}
+              <div className="curation-run">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="am-create shrink-0"
+                  disabled={scan.running || !ready || !total}
+                  onClick={runScan}
+                >
+                  <ScanSearch className="size-4" />
+                  {t("curation.run")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="settings-pane is-access">
+            <div className="am-work">
+              <div className="am-toolbar">
+                <div className="am-filters" role="tablist" aria-label={t("curation.apps")}>
+                  {(
+                    [
+                      ["all", t("access.filterAll")],
+                      ["valid", t("curation.filterOk")],
+                      ["redirect", t("curation.filterRedirect")],
+                      ["error", t("curation.filterError")],
+                      ["unknown", t("curation.filterUnknown")],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={filter === id}
+                      className={filter === id ? "is-on" : ""}
+                      onClick={() => setFilter(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="am-list-head is-curation">
+                <div className="am-row-cells">
+                  <span>{t("curation.colCard")}</span>
+                  <span>{t("curation.colLink")}</span>
+                  <span className="am-row-end">{t("curation.colResult")}</span>
+                  <span className="am-row-action" />
+                </div>
+              </div>
+              <EdgeFade className="am-list-wrap">
+                {!ready ? (
+                  <div className="am-list" aria-busy="true" aria-label={t("curation.loading")}>
+                    <Skeleton className="h-9 w-full" />
+                    <Skeleton className="h-9 w-full" />
+                    <Skeleton className="h-9 w-full" />
+                    <Skeleton className="h-9 w-full" />
+                  </div>
+                ) : !filteredGroups.length ? (
+                  <EmptyState
+                    compact
+                    icon={LayoutGrid}
+                    text={view?.items.length ? t("curation.emptyFilter") : t("curation.empty")}
+                  />
+                ) : (
+                  <div className="am-list is-curation" role="list">
+                    {filteredGroups.map((group) => {
+                      const canEdit = tabPerms[group.tabId] === "edit";
+                      const expanded = openId === group.cardId;
+                      return (
+                        <ExpandRow
+                          key={group.cardId}
+                          id={group.cardId}
+                          expanded={expanded}
+                          onToggle={() => setOpenId(expanded ? null : group.cardId)}
+                          cells={
+                            <>
+                              <span className="am-row-title">
+                                {group.title}
+                                {group.place ? (
+                                  <span className="ml-1.5 text-xs font-normal text-subtle">{group.place}</span>
+                                ) : null}
+                              </span>
+                              <span className="am-row-link">
+                                {group.links.length ? tp("curation.linkCount", group.links.length) : "—"}
+                              </span>
+                              {statusCell(group.worst, !group.links.length)}
+                              <span className="am-row-action">
+                                <button
+                                  type="button"
+                                  className="card-tool"
+                                  disabled={!canEdit}
+                                  title={t("curation.editCard")}
+                                  aria-label={t("curation.editCard")}
+                                  onClick={() => onEditCard(group.cardId)}
+                                >
+                                  <Pencil className="size-3.5" />
+                                </button>
+                              </span>
+                            </>
+                          }
+                        >
+                          <div className="curation-sub">
+                            {group.links.length ? (
+                              group.links.map((link) => (
+                                <div key={link.key} className="curation-sub-row">
+                                  <span className="curation-sub-label">{link.label || "—"}</span>
+                                  <span className="curation-sub-url" title={link.url}>
+                                    {link.url || "—"}
+                                  </span>
+                                  {statusCell(link.check, true)}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="curation-sub-row">
+                                <span className="curation-sub-label">—</span>
+                                <span className="curation-sub-url">{t("curation.statusUnknown")}</span>
+                                {statusCell(undefined, false)}
+                              </div>
+                            )}
+                          </div>
+                        </ExpandRow>
+                      );
+                    })}
+                  </div>
+                )}
+              </EdgeFade>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 function AdminPanel({
   tab,
   settings,

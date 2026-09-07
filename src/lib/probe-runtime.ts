@@ -142,6 +142,57 @@ function requestOnce(
   });
 }
 
+export type HttpTraceHop = { status: number; location: string };
+
+export type HttpTrace = {
+	status: number;
+	finalUrl: string;
+	redirects: HttpTraceHop[];
+	detail: string;
+};
+
+/**
+ * Curation-only HTTP trace: same request engine as probeHttp (timeouts,
+ * SSRF guards, redirect cap), but keeps the redirect chain instead of
+ * swallowing it. Reachability behavior is untouched.
+ */
+export async function probeHttpTrace(rawUrl: string, tlsVerify = false): Promise<HttpTrace> {
+	try {
+		let url = httpUrl(rawUrl);
+		await assertProbeTarget(url.hostname);
+		const redirects: HttpTraceHop[] = [];
+		let method: "HEAD" | "GET" = "HEAD";
+		let status = 0;
+		let detail = "";
+		for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+			const res = await requestOnce(url, method, tlsVerify);
+			if (res.status === 405 || res.status === 501) {
+				method = "GET";
+				continue;
+			}
+			if (res.status >= 300 && res.status < 400 && res.location) {
+				try {
+					const next = httpUrl(new URL(res.location, url).href);
+					await assertProbeTarget(next.hostname);
+					redirects.push({ status: res.status, location: next.href });
+					url = next;
+					continue;
+				} catch {
+					status = res.status;
+					detail = `HTTP ${res.status}`;
+					return { status, finalUrl: url.href, redirects, detail };
+				}
+			}
+			status = res.status;
+			detail = status > 0 ? `HTTP ${status}` : "probe.noHttp";
+			return { status, finalUrl: url.href, redirects, detail };
+		}
+		return { status, finalUrl: url.href, redirects, detail: detail || "probe.noHttp" };
+	} catch (err) {
+		return { status: 0, finalUrl: String(rawUrl || ""), redirects: [], detail: describeNetError(err) };
+	}
+}
+
 export async function probeHttp(id: string, rawUrl: string, tlsVerify = false): Promise<ProbeResult> {
   const started = now();
   try {

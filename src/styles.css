@@ -3171,6 +3171,127 @@ html.dark .dockit-mark {
   flex: 1 1 0%;
   min-width: 0;
 }
+.am-list.is-curation .am-row-cells,
+.am-list-head.is-curation .am-row-cells {
+  grid-template-columns: minmax(0, 1.2fr) minmax(10rem, 1.5fr) minmax(7.5rem, 10rem) 1.85rem;
+  align-items: center;
+  column-gap: 0.9rem;
+}
+.am-list.is-curation .am-row-head {
+  padding-block: 0.45rem;
+}
+.am-list.is-curation .am-expand {
+  padding-bottom: 0.85rem;
+}
+.curation-sub {
+  display: flex;
+  flex-direction: column;
+}
+.curation-sub-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.5fr) minmax(7.5rem, 10rem);
+  align-items: center;
+  column-gap: 0.9rem;
+  padding: 0.3rem 0.45rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-border) 45%, transparent);
+  font-size: 0.8125rem;
+}
+.curation-sub-row:last-child {
+  border-bottom: 0;
+}
+.curation-sub-label {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.curation-sub-url {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-subtle);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.curation-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in oklab, var(--color-border) 80%, transparent);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--color-elevated) 40%, transparent);
+}
+.curation-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.curation-progress-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.curation-progress-current {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-subtle);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.curation-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+.curation-run {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  padding: 0.9rem 0.2rem 0.25rem;
+  border-top: 1px solid color-mix(in oklab, var(--color-border) 72%, transparent);
+}
+.curation-run .am-create {
+  height: 2.25rem;
+  padding-inline: 1.1rem;
+}
+.am-list.is-curation .am-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  align-self: center;
+  overflow: visible;
+}
+.am-list.is-curation .am-row-link {
+  color: var(--color-subtle);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.am-list.is-curation .am-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .stats-panel {
   width: min(36rem, 100%);
   padding: 1.35rem 1.5rem 1.5rem;
@@ -3284,6 +3405,30 @@ button.am-create,
   border-radius: 8px;
   font-size: 0.75rem;
   font-weight: 550;
+}
+@layer components {
+  button.am-create,
+  .am-create {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border: 1px solid color-mix(in oklab, var(--color-border) 90%, transparent);
+    background: transparent;
+    color: var(--color-fg);
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease;
+  }
+  button.am-create:hover:not(:disabled),
+  .am-create:hover:not(:disabled) {
+    background: var(--color-elevated);
+  }
+  button.am-create:disabled,
+  .am-create:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
 }
 .am-create:focus-visible {
   outline: none;
