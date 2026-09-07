@@ -2,7 +2,9 @@
 
 import { useEffect } from "react";
 import type { ErrorComponentProps } from "@tanstack/react-router";
-import { TriangleAlert } from "lucide-react";
+import { TriangleAlert, SearchX } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { t } from "@/lib/i18n";
 
 const RELOAD_KEY = "portal-chunk-reload";
 
@@ -48,6 +50,21 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
       >
         Recharger
       </button>
+    </main>
+  );
+}
+
+export function AppNotFoundComponent() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-bg px-6 text-center text-fg">
+      <span className="text-subtle" aria-hidden="true">
+        <SearchX className="size-10" strokeWidth={2} />
+      </span>
+      <h1 className="text-lg font-semibold">{t("notFound.title")}</h1>
+      <p className="max-w-md text-sm break-words text-muted">{t("notFound.lead")}</p>
+      <Button className="mt-2" onClick={() => window.location.assign("/")}>
+        {t("notFound.back")}
+      </Button>
     </main>
   );
 }

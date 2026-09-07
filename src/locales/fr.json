@@ -1154,5 +1154,10 @@
     "FileText": "Note",
     "AppWindow": "Fenêtre",
     "Link": "Lien"
+  },
+  "notFound": {
+    "title": "Page introuvable",
+    "lead": "Cette adresse ne correspond à aucun espace ni aucune carte du portail.",
+    "back": "Retour au portail"
   }
 }

@@ -1154,5 +1154,10 @@
     "FileText": "Note",
     "AppWindow": "Window",
     "Link": "Link"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "lead": "This address does not match any space or card of the portal.",
+    "back": "Back to the portal"
   }
 }
