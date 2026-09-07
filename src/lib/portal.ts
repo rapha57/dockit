@@ -829,7 +829,7 @@ function requireCreateTab(doc: Doc, token: string): HydratedUser {
 	if (isOwnerUser(user) || user.canCreateTabs) return user;
 	throw new Error("errors.noManageSpaces");
 }
-function publicUser(u: StoredUser, doc: AclDoc) {
+function publicUser(u: StoredUser, _doc: AclDoc) {
 	const roleIds = roleIdsOf(u);
 	return {
 		kind: "user" as const,
@@ -844,7 +844,7 @@ function publicUser(u: StoredUser, doc: AclDoc) {
 		groupIds: asIdList(u.groupIds)
 	};
 }
-function publicGroup(g: Group, doc: AclDoc) {
+function publicGroup(g: Group, _doc: AclDoc) {
 	const roleIds = roleIdsOf(g);
 	return {
 		kind: "group" as const,

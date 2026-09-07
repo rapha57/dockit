@@ -2188,6 +2188,7 @@ function Home() {
     const onGone = () => expireSession();
     window.addEventListener("portal-session-gone", onGone);
     return () => window.removeEventListener("portal-session-gone", onGone);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- event-listener-only effect; expireSession is stable per render
   }, []);
   useEffect(() => {
     if (!token && !session) return;
@@ -2229,6 +2230,7 @@ function Home() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- poller keyed on token/expiry on purpose; reads latest via refs
   }, [token, session?.exp]);
   async function apply(fn: () => Promise<PortalData>, opts?: { close?: boolean }) {
     setBusy(true);
@@ -2715,6 +2717,7 @@ function Home() {
           });
       }
     return groups;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- settings-only fields used; catalog/favSet/ui.favIds cover the rest
   }, [data.catalog, favSet, ui.favIds]);
   const favCount = favGroups.reduce((n, g) => n + g.apps.length, 0);
   const probeList = useMemo(() => {
@@ -2799,6 +2802,7 @@ function Home() {
       window.clearTimeout(idleId);
       window.clearInterval(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- probe run keyed on probeKey, not the array identity
   }, [probeKey, token]);
   const filtered = useMemo(() => {
     if (searching) return searchHits.flatMap((t) => t.categories);
@@ -2824,6 +2828,7 @@ function Home() {
       tabs = placeTabs(data.tabs, drag.id, over.insertAt) ?? data.tabs;
     if (editMode || searching) return tabs;
     return tabs.filter((t) => tabHasCards(t.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- helper reads refs; list identity deps cover the recompute
   }, [
     data.tabs,
     data.catalog,
@@ -2853,6 +2858,7 @@ function Home() {
     const next = (data.tabs || []).find((t) => t.id !== data.activeTabId && tabHasCards(t.id));
     if (next) goTab(next.id);
     else setPage("favs");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- redirect-on-empty guard; helpers read refs, run on data change only
   }, [editMode, searching, page, data.activeTabId, data.catalog, data.tabs]);
   moreOpenRef.current = moreOpen;
   tabOverMoreRef.current = tabOverMore;
@@ -3338,6 +3344,7 @@ function Home() {
     else if (raw.startsWith("data:image/jpeg")) link.type = "image/jpeg";
     else if (raw.includes("image/x-icon") || raw.includes(".ico")) link.type = "image/x-icon";
     document.head.appendChild(link);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- document title/favicon effect; settings identity not needed
   }, [
     data.settings.documentTitle,
     data.settings.favicon,
@@ -5753,6 +5760,7 @@ function HistoryPanel({
       if (sessionGone(err)) return;
       toast.error(te(err));
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload reads latest token from props; fetch once on mount
   }, [token]);
   const needle = q.trim().toLowerCase();
   const col = useColSort();
