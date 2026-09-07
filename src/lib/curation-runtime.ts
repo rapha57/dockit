@@ -160,6 +160,7 @@ export async function startCurationJob(opts: {
 	const known = new Set(opts.known);
 	const store = await readCurationStore();
 	const { probeHttpTrace } = await import("./probe-runtime");
+	const dnsCache = new Map<string, string>();
 	for (let i = 0; i < opts.targets.length; i += JOB_BATCH) {
 		if (curationJobRun !== run) break;
 		if (Date.now() - curationJob.startedAt > JOB_MAX_MS) break;
@@ -169,7 +170,7 @@ export async function startCurationJob(opts: {
 		const results = await Promise.all(
 			slice.map(async (target) => {
 				const started = Date.now();
-				const trace = await probeHttpTrace(target.url, opts.tlsVerify);
+				const trace = await probeHttpTrace(target.url, opts.tlsVerify, dnsCache);
 				return {
 					target,
 					check: curationCheckOf(target.url, trace, Math.max(0, Date.now() - started))

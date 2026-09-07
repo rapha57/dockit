@@ -96,11 +96,17 @@ function isBlockedProbeHost(host: string, ip = ""): boolean {
   return false;
 }
 
-async function assertProbeTarget(hostname: string): Promise<string> {
+async function assertProbeTarget(hostname: string, dnsCache?: Map<string, string>): Promise<string> {
   const host = hostname.replace(/^\[/, "").replace(/\]$/, "");
+  const hit = dnsCache?.get(host);
+  if (hit !== undefined) {
+    if (isBlockedProbeHost(host, hit)) throw new Error("errors.probeForbidden");
+    return hit;
+  }
   const looked = await lookup(host, { all: false });
   const ip = looked.address;
   if (isBlockedProbeHost(host, ip)) throw new Error("errors.probeForbidden");
+  dnsCache?.set(host, ip);
   return ip;
 }
 
@@ -156,10 +162,10 @@ export type HttpTrace = {
  * SSRF guards, redirect cap), but keeps the redirect chain instead of
  * swallowing it. Reachability behavior is untouched.
  */
-export async function probeHttpTrace(rawUrl: string, tlsVerify = false): Promise<HttpTrace> {
+export async function probeHttpTrace(rawUrl: string, tlsVerify = false, dnsCache?: Map<string, string>): Promise<HttpTrace> {
 	try {
 		let url = httpUrl(rawUrl);
-		await assertProbeTarget(url.hostname);
+		await assertProbeTarget(url.hostname, dnsCache);
 		const redirects: HttpTraceHop[] = [];
 		let method: "HEAD" | "GET" = "HEAD";
 		let status = 0;
@@ -173,7 +179,7 @@ export async function probeHttpTrace(rawUrl: string, tlsVerify = false): Promise
 			if (res.status >= 300 && res.status < 400 && res.location) {
 				try {
 					const next = httpUrl(new URL(res.location, url).href);
-					await assertProbeTarget(next.hostname);
+					await assertProbeTarget(next.hostname, dnsCache);
 					redirects.push({ status: res.status, location: next.href });
 					url = next;
 					continue;

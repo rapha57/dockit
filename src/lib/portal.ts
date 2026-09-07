@@ -2315,8 +2315,8 @@ export const deleteUser = createServerFn({ method: "POST" }).validator(z.object(
 	const actor = requireAccountManager(doc, tok(data, request));
 	const target = doc.users.find((u) => u.id === data.id);
 	if (!target) throw new Error("errors.userNotFound");
-	if (target.role === "admin" || target.id === "admin") throw new Error("errors.cannotDeleteAdmin");
-	if (actor.role !== "admin" && target.role === "admin") throw new Error("errors.insufficient");
+	if (target.id === "admin") throw new Error("errors.cannotDeleteAdmin");
+	if (!isOwnerUser(actor) && (isOwnerUser(target) || roleIdsOf(target).includes("admin") || target.role === "admin")) throw new Error("errors.cannotDeleteAdmin");
 	stripUserAccess(doc, target.id);
 	syncUserGroups(doc, target.id, []);
 	doc.users = doc.users.filter((u) => u.id !== data.id);

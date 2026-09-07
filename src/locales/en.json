@@ -222,7 +222,7 @@
     "colResult": "Result",
     "statusValid": "OK",
     "statusRedirect": "Redirect",
-    "statusError": "Network / DNS / TLS error, host unreachable.",
+    "statusError": "Host unreachable",
     "statusTimeout": "Timeout",
     "statusPending": "Not checked",
     "statusUnknown": "Not checkable",

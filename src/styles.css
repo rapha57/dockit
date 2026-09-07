@@ -1021,7 +1021,7 @@ html.dark .tag-chip {
   flex-shrink: 0;
   padding: 0;
   border: 1px solid color-mix(in oklab, var(--tag-fg, var(--color-border)) 18%, var(--tag-bg, var(--color-border)));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--tag-bg, var(--color-elevated));
   cursor: pointer;
 }
@@ -2998,7 +2998,7 @@ html.dark .dockit-mark {
 .theme-swatch,
 .tag-color-pick {
   --swatch-size: 2.75rem;
-  --swatch-radius: var(--radius-lg);
+  --swatch-radius: var(--radius-md);
   box-sizing: border-box;
   width: var(--swatch-size);
   height: var(--swatch-size);
@@ -3349,6 +3349,13 @@ html.dark .dockit-mark {
   white-space: nowrap;
   min-width: 0;
   overflow: hidden;
+}
+.curation-split {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .am-status-text {
   min-width: 0;
@@ -3772,7 +3779,6 @@ html.dark .am-filters.is-pills button.is-on {
 }
 .am-row-head {
   font-size: 0.8125rem;
-  border-radius: 8px;
   transition: background-color 140ms ease;
 }
 .am-row-title {

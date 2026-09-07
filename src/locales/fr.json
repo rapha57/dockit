@@ -222,7 +222,7 @@
     "colResult": "Résultat",
     "statusValid": "OK",
     "statusRedirect": "Redirection",
-    "statusError": "Erreur réseau / DNS / TLS, hôte injoignable.",
+    "statusError": "Hôte injoignable",
     "statusTimeout": "Délai dépassé",
     "statusPending": "Non vérifié",
     "statusUnknown": "Non vérifiable",

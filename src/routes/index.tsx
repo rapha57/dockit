@@ -6423,6 +6423,8 @@ function CurationPanel({
       links: { key: string; label: string; url: string; check?: CurationCheck }[];
       worst?: CurationCheck;
       anyCheck: boolean;
+      counts: { valid: number; redirect: number; error: number; timeout: number };
+      mixed: boolean;
     }[] = [];
     for (const item of view?.items || []) {
       const checks = checksOf(item.cardId);
@@ -6430,6 +6432,14 @@ function CurationPanel({
         const raw = checks?.[link.key];
         return { key: link.key, label: link.label, url: link.url, check: raw && raw.url === link.url ? raw : undefined };
       });
+      const counts = { valid: 0, redirect: 0, error: 0, timeout: 0 };
+      for (const link of links) {
+        if (!link.check || link.check.status === "unknown") continue;
+        counts[link.check.status] += 1;
+      }
+      const states = [counts.valid > 0, counts.redirect > 0, counts.error > 0, counts.timeout > 0].filter(
+        (on) => on,
+      ).length;
       let worst: CurationCheck | undefined;
       for (const link of links) {
         if (!link.check) continue;
@@ -6444,6 +6454,8 @@ function CurationPanel({
         links,
         worst,
         anyCheck: links.some((l) => l.check),
+        counts,
+        mixed: links.length > 1 && states > 1,
       });
     }
     return out;
@@ -6754,7 +6766,38 @@ function CurationPanel({
                                 ) : null}
                               </span>
                               <span className="am-row-link">
-                                {group.links.length ? tp("curation.linkCount", group.links.length) : "—"}
+                                {group.mixed ? (
+                                  <span className="curation-split">
+                                    {group.counts.valid ? (
+                                      <span className="inline-flex items-center gap-1 text-ok">
+                                        <Check className="size-3" />
+                                        {formatNumber(group.counts.valid)}
+                                      </span>
+                                    ) : null}
+                                    {group.counts.redirect ? (
+                                      <span className="inline-flex items-center gap-1 text-muted">
+                                        <ArrowUpRight className="size-3" />
+                                        {formatNumber(group.counts.redirect)}
+                                      </span>
+                                    ) : null}
+                                    {group.counts.error ? (
+                                      <span className="inline-flex items-center gap-1 text-danger">
+                                        <X className="size-3" />
+                                        {formatNumber(group.counts.error)}
+                                      </span>
+                                    ) : null}
+                                    {group.counts.timeout ? (
+                                      <span className="inline-flex items-center gap-1 text-danger">
+                                        <Clock className="size-3" />
+                                        {formatNumber(group.counts.timeout)}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                ) : group.links.length ? (
+                                  tp("curation.linkCount", group.links.length)
+                                ) : (
+                                  "—"
+                                )}
                               </span>
                               {statusCell(group.worst, !group.links.length)}
                               <span className="am-row-action">
@@ -11300,7 +11343,7 @@ function TagManager({
         {tags.length === 0 ? (
           <p className="settings-hint">{t("tags.empty")}</p>
         ) : (
-          <>
+          <div className="am-work">
             <div className="am-list-head is-tags">
               <div className="am-row-cells">
                 <SortLabel id="name" sort={col.sort} onToggle={col.toggle}>
@@ -11370,15 +11413,15 @@ function TagManager({
                       </div>
                     </div>
                   );
-                })}
-              </div>
-            </EdgeFade>
-          </>
-        )}
-      </div>
-    </form>
-  );
-}
+                 })}
+               </div>
+             </EdgeFade>
+           </div>
+         )}
+       </div>
+     </form>
+   );
+ }
 function FormActions({
   busy,
   onCancel,
