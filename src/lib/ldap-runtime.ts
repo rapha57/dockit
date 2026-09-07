@@ -318,6 +318,22 @@ export async function ldapAuthenticate(s: any, username: unknown, password: unkn
 
 export type LdapGroupHit = { id: string; dn: string; name: string; key: string };
 
+export async function ldapUserGroups(dir: any, username: unknown): Promise<string[] | null> {
+	const d = asDirectory(dir);
+	if (!d || !directoryReady(d)) throw new Error("errors.ldapOff");
+	const sam = escapeFilter(String(username || "").trim());
+	if (!sam) return null;
+	const bindDn = String(d.bindDn || "").trim();
+	if (!bindDn) throw new Error("errors.ldapBaseDn");
+	return await withClient(d, async (client) => {
+		await client.bind(bindDn, String(d.bindPassword || ""));
+		const entry = await searchUserEntry(client, d, sam);
+		if (!entry) return null;
+		const memberOf = entry.memberOf;
+		return Array.isArray(memberOf) ? memberOf.map(String) : typeof memberOf === "string" ? [String(memberOf)] : null;
+	});
+}
+
 export async function ldapSearchGroups(dir: any, query: unknown): Promise<LdapGroupHit[]> {
 	const d = asDirectory(dir);
 	if (!d || !directoryReady(d)) throw new Error("errors.ldapOff");

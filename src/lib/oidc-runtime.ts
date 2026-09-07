@@ -47,8 +47,12 @@ async function fetchJson(url: string, init: RequestInit = {}) {
 	const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
 	try {
 		const res = await fetch(url, { ...init, signal: ac.signal, redirect: "error" });
-		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		if (!res.ok) throw new Error(`errors.oidcFail|HTTP ${res.status}`);
 		return await res.json();
+	} catch (err) {
+		if (err instanceof Error && err.name === "AbortError") throw new Error("errors.oidcTimeout");
+		if (err instanceof TypeError || err instanceof SyntaxError) throw new Error("errors.oidcFail");
+		throw err;
 	} finally {
 		clearTimeout(timer);
 	}

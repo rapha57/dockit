@@ -183,12 +183,15 @@ export type PortalSettings = {
   probeAuthOnly: boolean;
   sessionHttpOnly: boolean;
   devAdminNoPassword: boolean;
+  proxyAuthEnabled: boolean;
+  proxyAuthHeader: string;
   oidcEnabled: boolean;
   oidcIssuer: string;
   oidcClientId: string;
   oidcClientSecret: string;
   oidcLabel: string;
   oidcAutoCreate: boolean;
+  oidcAutoRedirect: boolean;
   ldapEnabled: boolean;
   ldapHost: string;
   ldapPort: number;
@@ -470,12 +473,15 @@ function defaultSettings(): PortalSettings {
 		probeAuthOnly: false,
 		sessionHttpOnly: false,
 		devAdminNoPassword: false,
+		proxyAuthEnabled: false,
+		proxyAuthHeader: "X-Remote-User",
 		oidcEnabled: false,
 		oidcIssuer: "",
 		oidcClientId: "",
 		oidcClientSecret: "",
 		oidcLabel: "SSO",
 		oidcAutoCreate: false,
+		oidcAutoRedirect: false,
 		ldapEnabled: false,
 		ldapHost: "",
 		ldapPort: 636,
@@ -1176,6 +1182,11 @@ function asStore(raw: any): Doc | null {
 			oidcClientSecret: String(doc.settings.oidcClientSecret || "").slice(0, 200),
 			oidcLabel: String(doc.settings.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
 			oidcAutoCreate: Boolean(doc.settings.oidcAutoCreate),
+			oidcAutoRedirect: Boolean(doc.settings.oidcAutoRedirect),
+			proxyAuthEnabled: Boolean(doc.settings.proxyAuthEnabled),
+			proxyAuthHeader: /^[A-Za-z0-9-]+$/.test(String(doc.settings.proxyAuthHeader || "").trim())
+				? String(doc.settings.proxyAuthHeader).trim()
+				: "X-Remote-User",
 			...syncLegacyLdap(asDirectories(doc.settings)),
 			ldapDirectories: asDirectories(doc.settings),
 			loginOrder: asLoginOrder(doc.settings.loginOrder, asDirectories(doc.settings)),
@@ -1382,6 +1393,8 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 		favicon: toClientAsset(s.favicon),
 		oidcEnabled: Boolean(s.oidcEnabled) && Boolean(s.oidcIssuer) && Boolean(s.oidcClientId),
 		oidcLabel: String(s.oidcLabel || "SSO").slice(0, 40) || "SSO",
+		oidcAutoRedirect: Boolean(s.oidcAutoRedirect),
+		proxyAuthEnabled: Boolean(s.proxyAuthEnabled),
 		oidcHasSecret: Boolean(s.oidcClientSecret),
 		ldapEnabled: realms.length > 0,
 		ldapDomain: realms[0]?.label || "",
@@ -1401,6 +1414,8 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 		delete out.oidcIssuer;
 		delete out.oidcClientId;
 		delete out.oidcAutoCreate;
+		delete out.oidcAutoRedirect;
+		delete out.proxyAuthHeader;
 		delete out.oidcHasSecret;
 		delete out.ldapHost;
 		delete out.ldapPort;
@@ -1818,6 +1833,8 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	probeAuthOnly: z.boolean().optional(),
 	sessionHttpOnly: z.boolean().optional(),
 	devAdminNoPassword: z.boolean().optional(),
+	proxyAuthEnabled: z.boolean().optional(),
+	proxyAuthHeader: z.string().max(64).optional(),
 	locale: z.enum(["en", "fr"]).optional(),
 	dateFormat: z.enum(["ymd", "yyyy", "dmy", "mdy", "iso"]).optional(),
 	timeFormat: z.enum(["24h", "12h"]).optional(),
@@ -1854,6 +1871,10 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		probeAuthOnly: typeof data.probeAuthOnly === "boolean" ? data.probeAuthOnly : Boolean(doc.settings.probeAuthOnly),
 		sessionHttpOnly: typeof data.sessionHttpOnly === "boolean" ? data.sessionHttpOnly : Boolean(doc.settings.sessionHttpOnly),
 		devAdminNoPassword: typeof data.devAdminNoPassword === "boolean" ? data.devAdminNoPassword : Boolean(doc.settings.devAdminNoPassword),
+		proxyAuthEnabled: typeof data.proxyAuthEnabled === "boolean" ? data.proxyAuthEnabled : Boolean(doc.settings.proxyAuthEnabled),
+		proxyAuthHeader: /^[A-Za-z0-9-]+$/.test(String(data.proxyAuthHeader || "").trim())
+			? String(data.proxyAuthHeader).trim()
+			: doc.settings.proxyAuthHeader || "X-Remote-User",
 		dateFormat: DATE_FORMATS.includes(data.dateFormat) ? data.dateFormat : DATE_FORMATS.includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd",
 		timeFormat: data.timeFormat === "12h" || data.timeFormat === "24h" ? data.timeFormat : asTimeFormat(doc.settings.timeFormat),
 		timezone: typeof data.timezone === "string" ? asTimeZone(data.timezone) : asTimeZone(doc.settings.timezone),
@@ -2001,6 +2022,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 	oidcClientSecret: z.string().max(200).optional(),
 	oidcLabel: z.string().max(40).optional(),
 	oidcAutoCreate: z.boolean().optional(),
+	oidcAutoRedirect: z.boolean().optional(),
 	tabId: z.string().optional()
 })).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
@@ -2022,7 +2044,8 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 		oidcClientId: clientId.slice(0, 120),
 		oidcClientSecret: secret,
 		oidcLabel: String(data.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
-		oidcAutoCreate: Boolean(data.oidcAutoCreate)
+		oidcAutoCreate: Boolean(data.oidcAutoCreate),
+		oidcAutoRedirect: Boolean(data.oidcAutoRedirect)
 	};
 	appendHistory(doc, user, {
 		type: "oidc.update",
@@ -2252,6 +2275,64 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 			loginFail(key);
 			throw err instanceof Error ? err : new Error("errors.oidcFail");
 		}
+	});
+});
+export const proxyLogin = createServerFn({ method: "POST" }).validator(z.object({})).handler(async (ctx) => {
+	const doc = await readDoc();
+	const s = doc.settings;
+	if (!s.proxyAuthEnabled || !trustProxy()) throw new Error("errors.proxyOff");
+	const headerName = s.proxyAuthHeader || "X-Remote-User";
+	const headers = (ctx as any).request?.headers;
+	const raw = headers && typeof headers.get === "function" ? String(headers.get(headerName) || "").trim() : "";
+	const username = raw.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 40);
+	if (!username) throw new Error("errors.proxyOff");
+	const key = clientKey("proxy", (ctx as any).request);
+	if (loginBlocked(key)) throw new Error("errors.tooManyTries");
+	return mutate(async (doc) => {
+		ensureUsers(doc);
+		let user = doc.users.find((u) => u.username === username);
+		if (!user) {
+			if (!s.ldapAutoCreate) throw new Error("errors.proxyUnknownUser");
+			user = {
+				id: crypto.randomUUID(),
+				username,
+				passHash: await hashPassword(randomBytes(24).toString("hex")),
+				role: "lecteur",
+				roleIds: ["lecteur"],
+				grants: [],
+				source: "proxy"
+			};
+			doc.users.push(user);
+			appendHistory(doc, user, {
+				type: "user.create",
+				label: username
+			});
+		}
+		if (user.disabled) {
+			loginFail(key);
+			throw new Error("errors.disabled");
+		}
+		const dirs = asDirectories(s).filter(directoryReady).filter((d) => String(d.bindDn || "").trim());
+		for (const dir of dirs) {
+			try {
+				const { ldapUserGroups } = await import("./ldap-runtime");
+				const memberOf = await ldapUserGroups(dir, username);
+				applyAdMembership(doc, user, dir.id, memberOf);
+				break;
+			} catch {
+				// try next directory
+			}
+		}
+		loginOk(key);
+		appendHistory(doc, user, {
+			type: "login",
+			label: user.username
+		});
+		return {
+			token: issueToken(user.id),
+			session: await sessionFor(user, doc),
+			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly)
+		};
 	});
 });
 const grantField = z.object({

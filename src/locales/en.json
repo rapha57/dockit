@@ -69,7 +69,8 @@
     "enterAdmin": "Enter as admin",
     "cancel": "Cancel",
     "submit": "Sign in",
-    "timeout": "Timed out, try again."
+    "timeout": "Timed out, try again.",
+    "ssoRedirect": "Redirecting to SSO…"
   },
   "nav": {
     "favorites": "Favorites",
@@ -548,7 +549,10 @@
     "noReply": "No response",
     "passwordRequired": "Password required",
     "passwordShort": "Password too short ({n} characters min.)",
-    "passwordWeak": "Password too weak"
+    "passwordWeak": "Password too weak",
+    "proxyOff": "Proxy authentication is not active",
+    "proxyUnknownUser": "Unknown account. An admin must grant access.",
+    "oidcTimeout": "Identity provider did not respond in time"
   },
   "audit": {
     "card.create": "Card created",
@@ -715,7 +719,8 @@
     "autoCreate": "Create a viewer account if it does not exist",
     "redirect": "Redirect URI to register with the issuer:",
     "boxService": "Service",
-    "boxClient": "Client"
+    "boxClient": "Client",
+    "autoRedirect": "Automatic SSO redirect"
   },
   "ldap": {
     "enable": "Enable Active Directory",
@@ -790,7 +795,11 @@
     "httpOnlyHint": "The token is no longer readable from JavaScript. Takes effect at the next sign-in.",
     "noPassword": "Passwordless admin sign-in",
     "noPasswordHintDev": "The sign-in button is highlighted and opens an owner session (empty or admin, any password). Ignored outside npm run dev.",
-    "noPasswordHintProd": "Available only in development mode (npm run dev)."
+    "noPasswordHintProd": "Available only in development mode (npm run dev).",
+    "proxyAuth": "Proxy authentication",
+    "proxyAuthOn": "Trust the identity header from the reverse proxy",
+    "proxyAuthHint": "Silently signs users in from the identity header. Requires PORTAL_TRUST_PROXY=1 and the portal reachable only through the proxy. Roles come from the directory groups.",
+    "proxyAuthHeader": "Identity header"
   },
   "debug": {
     "intro": "Checks computed on this instance. Nothing is sent outside.",
@@ -823,7 +832,8 @@
     "tlsTitle": "TLS probes not verified",
     "tlsDetail": "Self-signed certificates pass. Normal on an internal network.",
     "publicTitle": "Public probes",
-    "publicDetail": "A visitor can trigger a check on a visible card."
+    "publicDetail": "A visitor can trigger a check on a visible card.",
+    "checks": "Checks"
   },
   "theme": {
     "colors": "Colors",

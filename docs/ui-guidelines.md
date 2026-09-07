@@ -56,6 +56,7 @@ When this file and the code disagree, the code wins — update this file.
 | Class / variant | Height | Use |
 | --- | --- | --- |
 | `Button` (all sizes: default, sm, icon, icon-sm) | **36px** (`h-9`) | Primary actions, dialog footers, header icons |
+| `search-box` (header search) | **36px** (2.25rem) | Header search, hosts tag filter chips |
 | `am-create` | **32px** (2rem) | Toolbar secondary actions (Access/History/Tags, « New », « Export ») |
 | `am-text-btn` | **32px** | Text links under fields (Save key, delete link) |
 | `card-tool` | **1.85rem**, icon `size-3.5` (14px) | Row actions everywhere: cards, categories, tags, history restore |
@@ -75,6 +76,10 @@ When this file and the code disagree, the code wins — update this file.
 **Canonical.** `src/components/ui/input.tsx` (`inputClass`), `ui/select.tsx` (adds custom chevron via data-URI, `appearance-none`), `ui/textarea.tsx`. Icon inside a field: `.field-ico-wrap` wrapper. Size constants in forms: `FIELD_SM` (= `h-9`) in `index.tsx`, `.am-field` in Access.
 
 **Field wrapper.** `Field` (`src/components/field.tsx`): optional `Label`, control, `hint` (`.theme-css-meta`), `error` (`.theme-css-meta.is-warn`). Label-less controls use `.settings-label` / first-span styling.
+
+**Dependent controls.** When a checkbox gates another control — checkbox **or field** — the child gets `is-child` (`.settings-toggles label.is-child` / `.settings-field.is-child` → margin-left 1.6rem): the child starts at the parent's TEXT, forming a tree. Parent disabled → child also gets `is-disabled` (opacity, inputs disabled). Applies to every gated control whatever its type (Info stats under Info bar, probe blink under per-card probes, LDAP TLS verify under TLS, OIDC auto-redirect under OIDC, proxy-auth header under the proxy toggle).
+
+**Field labels.** `Label` (`src/components/ui/label.tsx`): **0.8125rem (13px), font-medium, `text-muted`** — same size as toggle labels, one step under the 11px kickers, never competing with the field value. Applies everywhere via the shared primitive (Settings, card forms, OIDC/LDAP forms).
 
 **Do.** Use `Field` for any labeled control; `Select` (not raw `<select>`); keep every field 36px.
 **Don't.** Inline icon inside the field via absolute positioning outside `.field-ico-wrap`; mix raw `<input class="field-input">` in new code when the primitive exists.
@@ -274,7 +279,7 @@ am-work
 1. **Dead `ui/` primitives**: `alert.tsx`, `badge.tsx`, `switch.tsx`, `checkbox.tsx`, `separator.tsx` have zero consumers; `ui/dialog.tsx` is an unused re-export shim of `ConfirmDialog`. → *Decision needed: delete or adopt.*
 2. **`Button` variants `sm`/`icon-sm`** are identical to `default`/`icon` (all `h-9`/`size-9`). Redundant, kept for API stability.
 3. **`danger` vs `destructive`** Button variants are identical classes — duplication, not a distinction.
-4. **`Button` + `className="am-create"`** (e.g. ExtraLinksField) mixes the 36px primitive with the 32px class — heights compete in the cascade. Canonical is a plain `<button className="am-create">`. → *Decision needed.*
+4. **`Button` + `className="am-create"`** — resolved: plain `<button className="am-create">` is canonical for toolbar/secondary actions (32px); `Button` (36px) is for primary/dialog actions only. `Empty trash`-style destructive actions may use `Button variant="danger" + am-create` (32px soft-danger).
 5. **Select chevron** color is baked into the data-URI (`%236b7280`), not token-driven — does not follow theme ink.
 6. **`settings-card`** is transparent/borderless (divider-separated) despite the name — the "card" look comes from the pane, don't add borders.
 

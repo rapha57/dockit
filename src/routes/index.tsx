@@ -127,6 +127,7 @@ import {
   reorderApps,
   reorderCategories,
   reorderTabs,
+  proxyLogin,
   recordClick,
   resetClicks,
   resetPortal,
@@ -2109,8 +2110,58 @@ function Home() {
     writeEditMode(false);
     setEditMode(false);
   }
+  async function tryProxyAuth() {
+    try {
+      if (sessionStorage.getItem("proxy-auth-tried")) return;
+      sessionStorage.setItem("proxy-auth-tried", "1");
+    } catch {
+      return;
+    }
+    try {
+      const res = await proxyLogin({ data: {} });
+      setToken(res.token);
+      setSession(res.session);
+      writeSessionInfo(res.session);
+      try {
+        sessionStorage.removeItem("proxy-auth-tried");
+      } catch {
+        // ignore
+      }
+      const next = await getPortal({
+        data: { token: res.token, tabId: data.activeTabId },
+      });
+      setData(next);
+    } catch {
+      // no header / disabled — the lock screen remains
+    }
+  }
+  const proxyAuthHint = Boolean(data.settings.proxyAuthEnabled);
+  useEffect(() => {
+    if (!proxyAuthHint) return;
+    if (tokenRef.current || sessionRef.current || readToken()) return;
+    void tryProxyAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- silent SSO attempt once per tab on mount
+  }, [proxyAuthHint]);
   function requestLogin() {
     if (sessionRef.current || tokenRef.current || readToken()) return;
+    if (proxyAuthHint) {
+      let tried = false;
+      try {
+        tried = !sessionStorage.getItem("proxy-auth-tried");
+      } catch {
+        tried = false;
+      }
+      if (tried) {
+        void tryProxyAuth().then(() => {
+          if (sessionRef.current || tokenRef.current) return;
+          setModal({
+            kind: "lock",
+            next: "session",
+          });
+        });
+        return;
+      }
+    }
     setModal({
       kind: "lock",
       next: "session",
@@ -4551,6 +4602,7 @@ function Home() {
             <LockForm
               busy={busy}
               oidcEnabled={Boolean(data.settings.oidcEnabled)}
+              oidcAutoRedirect={Boolean(data.settings.oidcAutoRedirect)}
               oidcLabel={data.settings.oidcLabel || "SSO"}
               ldapEnabled={Boolean(data.settings.ldapEnabled)}
               ldapDomain={data.settings.ldapDomain || ""}
@@ -7010,14 +7062,19 @@ function AdminPanel({
             {" "}
             <SecurityForm
               initial={settings}
-              isDev={Boolean(runtime?.isDev)}
               onSave={(payload) => onSaveSettings(payload)}
             />
           </EdgeFade>
         ) : tab === "debug" ? (
           <EdgeFade className="settings-pane">
             {" "}
-            <DebugPanel settings={settings} runtime={runtime} session={session} />
+            <DebugPanel
+              settings={settings}
+              runtime={runtime}
+              session={session}
+              busy={busy}
+              onSave={(payload) => onSaveSettings(payload)}
+            />
           </EdgeFade>
         ) : tab === "info" ? (
           <EdgeFade className="settings-pane">
@@ -7273,6 +7330,7 @@ function OidcForm({
   const [oidcClientSecret, setOidcClientSecret] = useState("");
   const [oidcLabel, setOidcLabel] = useState(initial.oidcLabel || "SSO");
   const [oidcAutoCreate, setOidcAutoCreate] = useState(Boolean(initial.oidcAutoCreate));
+  const [oidcAutoRedirect, setOidcAutoRedirect] = useState(Boolean(initial.oidcAutoRedirect));
   const redirectUri =
     typeof window !== "undefined" ? `${window.location.origin}/oidc/callback` : "/oidc/callback";
   return (
@@ -7288,6 +7346,7 @@ function OidcForm({
           oidcClientSecret,
           oidcLabel: oidcLabel.trim() || "SSO",
           oidcAutoCreate,
+          oidcAutoRedirect,
         });
       }}
     >
@@ -7314,6 +7373,16 @@ function OidcForm({
               onChange={(e) => setOidcAutoCreate(e.target.checked)}
             />
             {t("oidc.autoCreate")}
+          </label>{" "}
+          <label className="is-child">
+            {" "}
+            <input
+              type="checkbox"
+              checked={oidcAutoRedirect}
+              disabled={!oidcEnabled}
+              onChange={(e) => setOidcAutoRedirect(e.target.checked)}
+            />
+            {t("oidc.autoRedirect")}
           </label>
         </div>{" "}
         <Field label={t("oidc.buttonLabel")}>
@@ -7426,6 +7495,8 @@ type SettingsPayload = {
   timeFormat: "24h" | "12h";
   timezone: string;
   numberFormat: "auto" | "space-comma" | "comma-dot" | "dot-comma" | "apostrophe-comma";
+  proxyAuthEnabled?: boolean;
+  proxyAuthHeader?: string;
   probeBlink: boolean;
   annexFade: boolean;
   catCounts: boolean;
@@ -8189,7 +8260,7 @@ function ReachabilityForm({
             {t("reach.httpIcmp")}
           </label>
           <p className="settings-hint">{t("reach.perCard")}</p>
-          <label className={infoBar && healthChecks ? "" : "is-disabled"}>
+          <label className={`is-child ${infoBar && healthChecks ? "" : "is-disabled"}`}>
             <input
               type="checkbox"
               checked={probeBlink}
@@ -8207,17 +8278,16 @@ function ReachabilityForm({
 }
 function SecurityForm({
   initial,
-  isDev,
   onSave,
 }: {
   initial: PortalSettings;
-  isDev: boolean;
   onSave: (payload: SettingsPayload) => void;
 }) {
   const [probeTlsVerify, setProbeTlsVerify] = useState(Boolean(initial.probeTlsVerify));
   const [probeAuthOnly, setProbeAuthOnly] = useState(Boolean(initial.probeAuthOnly));
   const [sessionHttpOnly, setSessionHttpOnly] = useState(Boolean(initial.sessionHttpOnly));
-  const [devAdminNoPassword, setDevAdminNoPassword] = useState(Boolean(initial.devAdminNoPassword));
+  const [proxyAuthEnabled, setProxyAuthEnabled] = useState(Boolean(initial.proxyAuthEnabled));
+  const [proxyAuthHeader, setProxyAuthHeader] = useState(initial.proxyAuthHeader || "X-Remote-User");
   return (
     <form
       id="settings-form"
@@ -8229,7 +8299,8 @@ function SecurityForm({
           probeTlsVerify,
           probeAuthOnly,
           sessionHttpOnly,
-          devAdminNoPassword: isDev && devAdminNoPassword,
+          proxyAuthEnabled,
+          proxyAuthHeader: proxyAuthHeader.trim().slice(0, 64),
         });
       }}
     >
@@ -8273,23 +8344,33 @@ function SecurityForm({
           <p className="settings-hint">{t("sec.httpOnlyHint")}</p>
         </div>
       </div>{" "}
+
       <div className="settings-card">
         {" "}
-        <p className="settings-kicker">{t("sec.dev")}</p>
+        <p className="settings-kicker">{t("sec.proxyAuth")}</p>
         <div className="settings-toggles">
-          <label className={isDev ? "" : "is-disabled"}>
+          <label>
             <input
               type="checkbox"
-              checked={isDev && devAdminNoPassword}
-              disabled={!isDev}
-              onChange={(e) => setDevAdminNoPassword(e.target.checked)}
+              checked={proxyAuthEnabled}
+              onChange={(e) => setProxyAuthEnabled(e.target.checked)}
             />
-            {t("sec.noPassword")}
+            {t("sec.proxyAuthOn")}
           </label>
-          <p className="settings-hint">
-            {isDev ? t("sec.noPasswordHintDev") : t("sec.noPasswordHintProd")}
-          </p>
+          <p className="settings-hint">{t("sec.proxyAuthHint")}</p>
         </div>
+        <Field
+          className={`is-child ${proxyAuthEnabled ? "" : "is-disabled"}`}
+          label={t("sec.proxyAuthHeader")}
+        >
+          {" "}
+          <Input
+            value={proxyAuthHeader}
+            disabled={!proxyAuthEnabled}
+            placeholder="X-Remote-User"
+            onChange={(e) => setProxyAuthHeader(e.target.value)}
+          />
+        </Field>
       </div>
     </form>
   );
@@ -8298,10 +8379,14 @@ function DebugPanel({
   settings,
   runtime,
   session,
+  busy,
+  onSave,
 }: {
   settings: PortalSettings;
   runtime?: PortalData["runtime"];
   session: SessionInfo | null;
+  busy: boolean;
+  onSave: (payload: SettingsPayload) => void;
 }) {
   const s = settings || ({} as PortalSettings);
   const r =
@@ -8406,8 +8491,10 @@ function DebugPanel({
   return (
     <div className="settings-stack">
       {" "}
-      <p className="settings-hint">{t("debug.intro")}</p>
-      {rows.map((row) => (
+      <div className="settings-card">
+        <p className="settings-kicker">{t("debug.checks")}</p>
+        <p className="settings-hint">{t("debug.intro")}</p>
+        {rows.map((row) => (
         <div key={row.title} className={`debug-row is-${row.level}`}>
           {" "}
           <span className="debug-level">
@@ -8425,7 +8512,28 @@ function DebugPanel({
             <p className="settings-hint">{row.detail}</p>
           </div>
         </div>
-      ))}
+        ))}
+      </div>
+
+      <div className="settings-card">
+        <p className="settings-kicker">{t("sec.dev")}</p>
+        <div className="settings-toggles">
+          <label className={runtime?.isDev ? "" : "is-disabled"}>
+            <input
+              type="checkbox"
+              checked={Boolean(s.devAdminNoPassword)}
+              disabled={!runtime?.isDev || busy}
+              onChange={(e) =>
+                onSave({ ...settingsBase(s), devAdminNoPassword: e.target.checked })
+              }
+            />
+            {t("sec.noPassword")}
+          </label>
+          <p className="settings-hint">
+            {runtime?.isDev ? t("sec.noPasswordHintDev") : t("sec.noPasswordHintProd")}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -8457,7 +8565,7 @@ function InfoBarForm({
         {" "}
         <p className="settings-kicker">{t("stats.title")}</p>
         <div className="settings-toggles">
-          <label className={infoBar ? "" : "is-disabled"}>
+          <label className={`is-child ${infoBar ? "" : "is-disabled"}`}>
             <input
               type="checkbox"
               checked={infoStats}
@@ -8467,7 +8575,7 @@ function InfoBarForm({
             {t("info.statsIcon")}
           </label>
           <p className="settings-hint">{infoBar ? t("info.statsHint") : t("info.statsHintHidden")}</p>
-          <label className={infoBar ? "" : "is-disabled"}>
+          <label className={`is-child ${infoBar ? "" : "is-disabled"}`}>
             <input
               type="checkbox"
               checked={infoGeek}
@@ -8676,7 +8784,9 @@ function ThemeForm({
             />
           ))}
         </div>
-        <p className="theme-css-meta">
+        <div className="theme-css-meta">
+          {" "}
+          <span />
           <button
             type="button"
             className="settings-link"
@@ -8684,7 +8794,7 @@ function ThemeForm({
           >
             {t("theme.resetColors")}
           </button>
-        </p>
+        </div>
       </div>{" "}
       <div className="settings-card">
         {" "}
@@ -8719,6 +8829,7 @@ function ThemeForm({
 function LockForm({
   busy,
   oidcEnabled,
+  oidcAutoRedirect,
   oidcLabel,
   ldapEnabled,
   ldapDomain,
@@ -8731,6 +8842,7 @@ function LockForm({
 }: {
   busy: boolean;
   oidcEnabled: boolean;
+  oidcAutoRedirect?: boolean;
   oidcLabel: string;
   ldapEnabled: boolean;
   ldapDomain: string;
@@ -8754,6 +8866,24 @@ function LockForm({
         ]
       : [];
   const showDomain = realms.length > 0;
+  const [ssoTried, setSsoTried] = useState(false);
+  useEffect(() => {
+    if (!oidcEnabled || !oidcAutoRedirect || ssoTried || !onOidc) return;
+    let last = 0;
+    try {
+      last = Number(sessionStorage.getItem("oidc-auto") || 0);
+    } catch {
+      // ignore
+    }
+    if (Date.now() - last < 30000) return;
+    try {
+      sessionStorage.setItem("oidc-auto", String(Date.now()));
+    } catch {
+      // ignore
+    }
+    setSsoTried(true);
+    onOidc();
+  }, [oidcEnabled, oidcAutoRedirect, ssoTried, onOidc]);
   const domainOptions = [];
   for (const id of Array.isArray(loginOrder) && loginOrder.length
     ? loginOrder
@@ -8849,7 +8979,7 @@ function LockForm({
       </div>
       {oidcEnabled ? (
         <>
-          <p className="settings-hint">{t("lock.or")}</p>
+          <div className="lock-or">{t("lock.or")}</div>
           <Button
             type="button"
             variant="secondary"
@@ -8857,8 +8987,10 @@ function LockForm({
             disabled={busy}
             onClick={() => void onOidc?.()}
           >
+            <Globe className="size-4" />
             {oidcLabel || "SSO"}
           </Button>
+          {ssoTried ? <p className="settings-hint">{t("lock.ssoRedirect")}</p> : null}
         </>
       ) : null}
     </form>
@@ -9339,7 +9471,7 @@ function LdapDirFields({ d, patch }: { d: LdapDirRow; patch: (next: Partial<Ldap
           />
           {t("ldap.tls")}
         </label>
-        <label className={tlsOn ? "" : "is-disabled"}>
+        <label className={`is-child ${tlsOn ? "" : "is-disabled"}`}>
           <input
             type="checkbox"
             checked={d.tlsVerify !== false}
@@ -9448,6 +9580,7 @@ type OidcPayload = {
   oidcClientSecret?: string;
   oidcLabel?: string;
   oidcAutoCreate?: boolean;
+  oidcAutoRedirect?: boolean;
 };
 type LdapDirectoryPayload = {
   id: string;

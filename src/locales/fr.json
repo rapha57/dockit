@@ -69,7 +69,8 @@
     "enterAdmin": "Entrer en admin",
     "cancel": "Annuler",
     "submit": "Connexion",
-    "timeout": "Délai dépassé, réessayer."
+    "timeout": "Délai dépassé, réessayer.",
+    "ssoRedirect": "Redirection SSO…"
   },
   "nav": {
     "favorites": "Favoris",
@@ -548,7 +549,10 @@
     "noReply": "Pas de réponse",
     "passwordRequired": "Mot de passe requis",
     "passwordShort": "Mot de passe trop court ({n} caractères min.)",
-    "passwordWeak": "Mot de passe trop faible"
+    "passwordWeak": "Mot de passe trop faible",
+    "proxyOff": "L'authentification proxy n'est pas active",
+    "proxyUnknownUser": "Unknown account. An admin must grant access.",
+    "oidcTimeout": "Le fournisseur d’identité ne répond pas"
   },
   "audit": {
     "card.create": "Carte créée",
@@ -715,7 +719,8 @@
     "autoCreate": "Créer un compte lecteur s’il n’existe pas",
     "redirect": "URI de redirection à déclarer chez l’émetteur :",
     "boxService": "Service",
-    "boxClient": "Client"
+    "boxClient": "Client",
+    "autoRedirect": "Redirection SSO automatique"
   },
   "ldap": {
     "enable": "Activer Active Directory",
@@ -790,7 +795,11 @@
     "httpOnlyHint": "Le jeton n’est plus lisible en JavaScript. Prend effet à la prochaine connexion.",
     "noPassword": "Connexion admin sans mot de passe",
     "noPasswordHintDev": "Le bouton Connexion est mis en couleur et ouvre une session propriétaire (vide ou admin, n’importe quel mot de passe). Ignoré hors npm run dev.",
-    "noPasswordHintProd": "Disponible uniquement en mode développement (npm run dev)."
+    "noPasswordHintProd": "Disponible uniquement en mode développement (npm run dev).",
+    "proxyAuth": "Authentification proxy",
+    "proxyAuthOn": "Faire confiance à l'en-tête d'identité du reverse proxy",
+    "proxyAuthHint": "Connecte les utilisateurs silencieusement depuis l'en-tête d'identité. Nécessite PORTAL_TRUST_PROXY=1 et un portail accessible uniquement via le proxy. Les rôles viennent des groupes de l'annuaire.",
+    "proxyAuthHeader": "En-tête d'identité"
   },
   "debug": {
     "intro": "Contrôles calculés sur cette instance. Rien n’est envoyé à l’extérieur.",
@@ -823,7 +832,8 @@
     "tlsTitle": "Sondes TLS non vérifiées",
     "tlsDetail": "Les certificats auto-signés passent. Normal en interne.",
     "publicTitle": "Sondes publiques",
-    "publicDetail": "Un visiteur peut déclencher un check sur une carte visible."
+    "publicDetail": "Un visiteur peut déclencher un check sur une carte visible.",
+    "checks": "Vérifications"
   },
   "theme": {
     "colors": "Couleurs",
