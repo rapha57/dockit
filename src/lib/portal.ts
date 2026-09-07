@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { randomBytes, scryptSync } from "node:crypto";
@@ -38,11 +37,19 @@ import {
 	roleIdsOf,
 	roleSummary,
 	setRoleHolders,
-	stripRole
+	stripRole,
+	type AclDoc,
+	type GrantInput,
+	type Group,
+	type Role,
+	type Tab,
+	type User
 } from "./acl";
+import type { HistoryEvent } from "./history";
+import type { Directory } from "./ldap-runtime";
 
-function tt(doc, key, vars) {
-	return withLocale(doc.settings?.locale, () => t(key, vars));
+function tt(doc: Doc | null | undefined, key: string, vars?: Record<string, unknown>) {
+	return withLocale(doc?.settings?.locale, () => t(key, vars));
 }
 
 export type UserRole = "admin" | "editeur" | "lecteur";
@@ -57,13 +64,22 @@ export type PortalUser = {
 };
 
 export type SessionInfo = {
-  username: string;
-  role: UserRole;
+  username?: string;
+  role?: string;
+  roleId?: string;
+  roleIds: string[];
   canEdit: boolean;
   canManageUsers: boolean;
+  canManageGroups: boolean;
+  canManageRoles: boolean;
   canManageSettings: boolean;
   canCreateTabs: boolean;
+  canAudit: boolean;
+  canRestore: boolean;
+  canPurge: boolean;
   tabPerms: Record<string, TabPerm>;
+  exp?: number;
+  mustChangePassword?: boolean;
 };
 
 export type DirectoryUser = {
@@ -130,6 +146,7 @@ export type PortalSettings = {
   locale: "en" | "fr";
   dateFormat: "ymd" | "yyyy" | "dmy" | "mdy" | "iso";
   timeFormat: "24h" | "12h";
+  numberFormat?: import("./i18n").NumberFormat;
   timezone: string;
   favicon: string;
   favsHideLabel: boolean;
@@ -168,20 +185,7 @@ export type PortalSettings = {
   ldapUserFilter: string;
   ldapDomain: string;
   ldapAutoCreate: boolean;
-  ldapDirectories: Array<{
-    id: string;
-    enabled: boolean;
-    host: string;
-    port: number;
-    tls: boolean;
-    tlsVerify: boolean;
-    bindDn: string;
-    bindPassword: string;
-    baseDn: string;
-    userFilter: string;
-    domain: string;
-    autoCreate: boolean;
-  }>;
+  ldapDirectories: Directory[];
   loginOrder: string[];
 };
 
@@ -201,9 +205,25 @@ export type ClickStats = {
   fullCatalog?: boolean;
 };
 
+type DocTab = PortalTab & { name: string; icon: string; categories: PortalCategory[] };
+type StoredUser = User & { passHash?: string };
+export type Doc = Omit<AclDoc, "tabs" | "users" | "groups" | "roles" | "history"> & {
+  settings: PortalSettings;
+  customIcons: CustomIcon[];
+  lastTabId?: string;
+  clickDays: Record<string, number>;
+  users: StoredUser[];
+  groups: Group[];
+  roles: Role[];
+  history: HistoryEvent[];
+  tabs: DocTab[];
+};
+
 const SESSION_MS = 432e5;
-const sessions = /* @__PURE__ */ new Map();
-const oidcPending = /* @__PURE__ */ new Map();
+type SessionRow = { userId: string; exp: number };
+const sessions = /* @__PURE__ */ new Map<string, SessionRow>();
+type OidcPendingRow = { redirectUri: string; verifier: string; nonce: string; exp: number };
+const oidcPending = /* @__PURE__ */ new Map<string, OidcPendingRow>();
 const OIDC_PENDING_MS = 5 * 60 * 1000;
 function envUser() {
 	return (process.env.PORTAL_EDIT_USER || "admin").trim().toLowerCase() || "admin";
@@ -211,34 +231,35 @@ function envUser() {
 function envPassword() {
 	return (process.env.PORTAL_EDIT_PASSWORD || "admin").trim() || "admin";
 }
-function hashPasswordSync(password) {
+function hashPasswordSync(password: string) {
 	const salt = randomBytes(16).toString("hex");
 	return `${salt}:${scryptSync(password, salt, 32).toString("hex")}`;
 }
-async function hashPassword(password) {
+async function hashPassword(password: string) {
 	const { randomBytes: bytes, scrypt } = await import("node:crypto");
 	const { promisify } = await import("node:util");
 	const salt = bytes(16).toString("hex");
-	const buf = await promisify(scrypt)(password, salt, 32);
+	const buf = (await promisify(scrypt)(password, salt, 32)) as Buffer;
 	return `${salt}:${Buffer.from(buf).toString("hex")}`;
 }
-async function verifyPassword(password, stored) {
+async function verifyPassword(password: string, stored: string | undefined) {
 	const [salt, hash] = String(stored || "").split(":");
 	if (!salt || !hash) return false;
 	const { scrypt, timingSafeEqual: same } = await import("node:crypto");
 	const { promisify } = await import("node:util");
-	const next = Buffer.from(await promisify(scrypt)(password, salt, 32));
+	const next = Buffer.from((await promisify(scrypt)(password, salt, 32)) as Buffer);
 	const prev = Buffer.from(hash, "hex");
 	if (next.length !== prev.length) return false;
 	return same(next, prev);
 }
-const loginFails = /* @__PURE__ */ new Map();
+type LoginFailRow = { n: number; until: number };
+const loginFails = /* @__PURE__ */ new Map<string, LoginFailRow>();
 const LOGIN_MAX = 5;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-function clientKey(username, request) {
+function clientKey(username: unknown, request: any) {
 	return `${clientIp(request)}:${String(username || "").toLowerCase()}`;
 }
-function requireStrongPassword(raw) {
+function requireStrongPassword(raw: string) {
 	const err = passwordPolicyError(raw);
 	if (err) throw new Error(err);
 }
@@ -246,7 +267,7 @@ let defaultAdminCache = {
 	hash: "",
 	value: false
 };
-async function isDefaultAdminPassword(doc) {
+async function isDefaultAdminPassword(doc: Doc) {
 	const admin = ensureUsers(doc).find((u) => u.role === "admin");
 	if (!admin?.passHash) return true;
 	if (defaultAdminCache.hash === admin.passHash) return defaultAdminCache.value;
@@ -258,13 +279,13 @@ async function isDefaultAdminPassword(doc) {
 	};
 	return defaultAdminCache.value;
 }
-async function sessionFor(user, doc) {
+async function sessionFor(user: StoredUser, doc: Doc) {
 	const u = hydrateUser(user, doc);
-	const info = sessionInfo(u, doc);
+	const info = sessionInfo(u as StoredUser, doc);
 	if (user.id === "admin") info.mustChangePassword = await isDefaultAdminPassword(doc);
 	return info;
 }
-function loginBlocked(key) {
+function loginBlocked(key: string) {
 	const row = loginFails.get(key);
 	if (!row) return false;
 	if (Date.now() > row.until) {
@@ -273,7 +294,7 @@ function loginBlocked(key) {
 	}
 	return row.n >= LOGIN_MAX;
 }
-function loginFail(key) {
+function loginFail(key: string) {
 	const now = Date.now();
 	const row = loginFails.get(key) || {
 		n: 0,
@@ -283,10 +304,10 @@ function loginFail(key) {
 	row.until = now + LOGIN_WINDOW_MS;
 	loginFails.set(key, row);
 }
-function loginOk(key) {
+function loginOk(key: string) {
 	loginFails.delete(key);
 }
-function issueToken(userId) {
+function issueToken(userId: string) {
 	const token = randomBytes(24).toString("hex");
 	sessions.set(token, {
 		userId,
@@ -295,34 +316,34 @@ function issueToken(userId) {
 	return token;
 }
 const tokenField = z.string().min(1);
-function tok(data, request) {
+function tok(data: any, request: any) {
 	return parseSessCookie(typeof request?.headers?.get === "function" ? request.headers.get("cookie") : "") || String(data?.token || "");
 }
-export function sessionAlive(token) {
+export function sessionAlive(token: string | null | undefined) {
 	if (!token) return false;
 	const row = sessions.get(token);
 	return Boolean(row && row.exp >= Date.now());
 }
-function asKind(v) {
+function asKind(v: unknown): ItemKind {
 	return v === "note" || v === "embed" ? v : "app";
 }
-function asCheck(v) {
+function asCheck(v: unknown): CheckMode {
 	return v === "http" || v === "icmp" ? v : "off";
 }
-function asCheckHost(v) {
+function asCheckHost(v: unknown) {
 	return String(v ?? "").trim().slice(0, 253);
 }
-function asSpan(v) {
+function asSpan(v: unknown): 1 | 2 | 3 {
 	const n = Number(v);
 	return n === 2 || n === 3 ? n : 1;
 }
-function cardSortKey(app) {
+function cardSortKey(app: any) {
 	const title = String(app?.title || "").trim();
 	if (title) return title;
 	if (asKind(app?.kind) === "note") return String(app?.description || "").replace(/\s+/g, " ").trim().slice(0, 80);
 	return "";
 }
-export function sortAppsAlpha(apps, locale, dir) {
+export function sortAppsAlpha(apps: PortalApp[] | null | undefined, locale: unknown, dir: unknown) {
 	const tag = locale === "fr" ? "fr" : "en";
 	const signed = dir === "za" ? -1 : 1;
 	return [...(apps || [])].sort((a, b) => {
@@ -336,17 +357,17 @@ export function sortAppsAlpha(apps, locale, dir) {
 		});
 	});
 }
-export function appsAlphaDir(apps, locale) {
+export function appsAlphaDir(apps: PortalApp[] | null | undefined, locale: unknown) {
 	if (!apps || apps.length < 2) return null;
 	const ids = apps.map((a) => a.id).join("\n");
 	if (sortAppsAlpha(apps, locale, "az").map((a) => a.id).join("\n") === ids) return "az";
 	if (sortAppsAlpha(apps, locale, "za").map((a) => a.id).join("\n") === ids) return "za";
 	return null;
 }
-function asTags(v) {
+function asTags(v: unknown): string[] {
 	if (!Array.isArray(v)) return [];
-	const out = [];
-	const seen = /* @__PURE__ */ new Set();
+	const out: string[] = [];
+	const seen = /* @__PURE__ */ new Set<string>();
 	for (const raw of v) {
 		const tag = String(raw ?? "").trim().slice(0, 32);
 		if (!tag) continue;
@@ -358,13 +379,13 @@ function asTags(v) {
 	}
 	return out;
 }
-function asExtraLinks(raw) {
+function asExtraLinks(raw: unknown): { title: string; url: string }[] {
 	if (!Array.isArray(raw)) return [];
-	const out = [];
-	const seen = /* @__PURE__ */ new Set();
+	const out: { title: string; url: string }[] = [];
+	const seen = /* @__PURE__ */ new Set<string>();
 	for (const row of raw) {
-		const title = String(row?.title ?? "").trim().slice(0, 40);
-		const url = safeAppHref(row?.url);
+		const title = String((row as any)?.title ?? "").trim().slice(0, 40);
+		const url = safeAppHref((row as any)?.url);
 		if (!title || !url) continue;
 		const key = url.toLowerCase();
 		if (seen.has(key)) continue;
@@ -377,7 +398,7 @@ function asExtraLinks(raw) {
 	}
 	return out;
 }
-function normalizeItem(a, categoryId, sortOrder) {
+function normalizeItem(a: any, categoryId: string, sortOrder: number): PortalApp {
 	const kind = asKind(a.kind);
 	return {
 		id: a.id || crypto.randomUUID(),
@@ -398,7 +419,7 @@ function normalizeItem(a, categoryId, sortOrder) {
 		links: kind === "app" ? asExtraLinks(a.links) : []
 	};
 }
-function defaultSettings() {
+function defaultSettings(): PortalSettings {
 	return {
 		title: "Dockit",
 		subtitle: "Pin your URLs",
@@ -455,7 +476,7 @@ function defaultSettings() {
 		timezone: ""
 	};
 }
-function blankTabs() {
+function blankTabs(): { lastTabId: string; tabs: DocTab[] } {
 	const tabId = crypto.randomUUID();
 	const catId = crypto.randomUUID();
 	return {
@@ -482,7 +503,7 @@ function blankTabs() {
 		}]
 	};
 }
-function defaultStore() {
+function defaultStore(): Doc {
 	const blank = blankTabs();
 	return {
 		settings: defaultSettings(),
@@ -496,9 +517,9 @@ function defaultStore() {
 		tabs: blank.tabs
 	};
 }
-function assignTagColors(doc, tags, extras) {
+function assignTagColors(doc: Doc, tags: unknown, extras: unknown) {
 	const colors = { ...asTagColors(doc.settings.tagColors) };
-	const extra = extras && typeof extras === "object" && !Array.isArray(extras) ? extras : {};
+	const extra = extras && typeof extras === "object" && !Array.isArray(extras) ? (extras as Record<string, unknown>) : {};
 	for (const raw of Array.isArray(tags) ? tags : []) {
 		const tag = String(raw || "").trim().slice(0, 32);
 		if (!tag) continue;
@@ -509,9 +530,9 @@ function assignTagColors(doc, tags, extras) {
 	}
 	doc.settings.tagColors = colors;
 }
-function pruneUnusedTags(doc) {
+function pruneUnusedTags(doc: Doc) {
 	if (!doc.settings.pruneOrphanTags) return;
-	const used = new Set();
+	const used = new Set<string>();
 	eachItem(doc, (app) => {
 		if ((app.kind || "app") !== "app") return;
 		for (const tag of app.tags || []) used.add(String(tag).toLowerCase());
@@ -522,9 +543,9 @@ function pruneUnusedTags(doc) {
 	}
 	doc.settings.tagColors = colors;
 }
-function asTagColors(raw) {
+function asTagColors(raw: unknown): Record<string, string> {
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-	const out = {};
+	const out: Record<string, string> = {};
 	for (const [key, value] of Object.entries(raw)) {
 		const name = String(key || "").trim().slice(0, 32);
 		const hex = remapTagHex(String(value || "").trim().toLowerCase());
@@ -534,9 +555,9 @@ function asTagColors(raw) {
 	}
 	return out;
 }
-function asClickDays(raw) {
+function asClickDays(raw: unknown): Record<string, number> {
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-	const out = {};
+	const out: Record<string, number> = {};
 	for (const [key, value] of Object.entries(raw)) {
 		if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
 		const n = Math.max(0, Math.floor(Number(value) || 0));
@@ -546,9 +567,9 @@ function asClickDays(raw) {
 	}
 	return out;
 }
-function asUsers(raw) {
+function asUsers(raw: unknown): StoredUser[] {
 	if (!Array.isArray(raw)) return [];
-	return raw.map((u) => {
+	return raw.map((u: any) => {
 		const row = u;
 		const id = String(row.id || crypto.randomUUID());
 		let roleIds = roleIdsOf(row).map((r) => String(r).slice(0, 80));
@@ -570,10 +591,10 @@ function asUsers(raw) {
 		};
 	}).filter((u) => u.username);
 }
-function asIdList(raw) {
+function asIdList(raw: unknown): string[] {
 	if (!Array.isArray(raw)) return [];
-	const out = [];
-	const seen = /* @__PURE__ */ new Set();
+	const out: string[] = [];
+	const seen = /* @__PURE__ */ new Set<string>();
 	for (const value of raw) {
 		const id = String(value || "").trim();
 		if (!id || seen.has(id)) continue;
@@ -583,9 +604,9 @@ function asIdList(raw) {
 	return out;
 }
 const GROUP_CAP = 160;
-function asGroups(raw) {
+function asGroups(raw: unknown): Group[] {
 	if (!Array.isArray(raw)) return [];
-	return raw.slice(0, GROUP_CAP).map((g) => {
+	return raw.slice(0, GROUP_CAP).map((g: any) => {
 		const source = g?.source === "ad" ? "ad" : "local";
 		let roleIds = roleIdsOf(g).map((r) => String(r).slice(0, 80)).filter((r) => r !== "owner");
 		if (!roleIds.length && source !== "ad") roleIds = ["lecteur"];
@@ -601,17 +622,17 @@ function asGroups(raw) {
 		};
 	}).filter((g) => g.name);
 }
-function ensureGroups(doc) {
+function ensureGroups(doc: Doc) {
 	if (!Array.isArray(doc.groups)) doc.groups = [];
 	doc.groups = asGroups(doc.groups);
 	return doc.groups;
 }
-function asRoles(raw) {
+function asRoles(raw: unknown): Role[] {
 	if (!Array.isArray(raw)) return [];
-	return raw.slice(0, 40).map((r) => {
+	return raw.slice(0, 40).map((r: any) => {
 		const id = String(r?.id || crypto.randomUUID()).slice(0, 80);
 		const system = isSystemRole(id);
-		let grants = grantsFromLegacyRole(r);
+		let grants: GrantInput[] = grantsFromLegacyRole(r);
 		if (id === "owner") grants = [{ res: "portal", id: "*", allow: ["*"] }];
 		return {
 			id,
@@ -622,8 +643,8 @@ function asRoles(raw) {
 		};
 	}).filter((r) => r.name);
 }
-function ensureRoles(doc) {
-	const byId = new Map();
+function ensureRoles(doc: Doc) {
+	const byId = new Map<string, Role>();
 	for (const r of asRoles(doc.roles)) byId.set(r.id, r);
 	for (const s of defaultRoles()) {
 		const cur = byId.get(s.id);
@@ -639,7 +660,7 @@ function ensureRoles(doc) {
 	absorbResourceAcl(doc);
 	return doc.roles;
 }
-function normalizeTabAccess(tab) {
+function normalizeTabAccess(tab: any) {
 	const editors = asIdList(tab.editors);
 	const viewers = asIdList(tab.viewers);
 	for (const id of editors) if (!viewers.includes(id)) viewers.push(id);
@@ -650,7 +671,7 @@ function normalizeTabAccess(tab) {
 		hideLabel: Boolean(tab.hideLabel)
 	};
 }
-function normalizeCatAccess(cat) {
+function normalizeCatAccess(cat: any) {
 	const editors = asIdList(cat.editors);
 	const viewers = asIdList(cat.viewers);
 	for (const id of editors) if (!viewers.includes(id)) viewers.push(id);
@@ -660,27 +681,42 @@ function normalizeCatAccess(cat) {
 		editors
 	};
 }
-function tabCanSee(tab, user, doc) {
+function tabCanSee(tab: Tab | DocTab | null | undefined, user: User | null | undefined, doc: AclDoc) {
 	if (!tab) return false;
 	return can(user, "view", { res: "tab", id: tab.id }, doc);
 }
-function tabCanEdit(tab, user, doc) {
+function tabCanEdit(tab: Tab | DocTab | null | undefined, user: User | null | undefined, doc: AclDoc) {
 	if (!tab || !user) return false;
 	return can(user, "edit", { res: "tab", id: tab.id }, doc);
 }
-function catCanSee(cat, user, doc) {
+function catCanSee(cat: PortalCategory | null | undefined, user: User | null | undefined, doc: AclDoc) {
 	if (!cat) return false;
 	return can(user, "view", { res: "cat", id: cat.id }, doc);
 }
-function hydrateUser(user, doc) {
+type HydratedUser = StoredUser & {
+	roleId?: string;
+	roleIds: string[];
+	canCreateTabs: boolean;
+	canAudit: boolean;
+	canRestore: boolean;
+	canPurge: boolean;
+	canManageSettings: boolean;
+	canManageUsers: boolean;
+	canManageGroups: boolean;
+	canManageRoles: boolean;
+	groupIds: string[];
+	_ids: string[];
+	_canEdit: boolean;
+};
+function hydrateUser(user: StoredUser | null | undefined, doc: Doc): HydratedUser | null | undefined {
 	if (!user) return user;
-	if (user._ids) return user;
+	if ((user as HydratedUser)._ids) return user as HydratedUser;
 	ensureRoles(doc);
 	ensureGroups(doc);
 	const groups = groupsOf(user, doc);
 	const ids = [user.id, ...groups.map((g) => g.id)];
 	const owner = isOwnerUser(user);
-	const portal = { res: "portal" };
+	const portal = { res: "portal" as const };
 	const canCreateTabs = owner || can(user, "spaces.create", portal, doc);
 	const canAudit = owner || can(user, "audit", portal, doc);
 	const canRestore = owner || can(user, "restore", portal, doc);
@@ -709,7 +745,7 @@ function hydrateUser(user, doc) {
 		_canEdit: anyEdit
 	};
 }
-function historyVisible(doc, user, ev) {
+function historyVisible(doc: Doc, user: HydratedUser | null | undefined, ev: HistoryEvent) {
 	if (!user) return false;
 	if (user.role === "admin" || user.canAudit) return true;
 	if (!user.canRestore) return false;
@@ -721,7 +757,7 @@ function historyVisible(doc, user, ev) {
 	const live = doc.tabs.find((t) => t.id === tabMeta.id);
 	return tabCanEdit(live || tabMeta, user, doc);
 }
-function ensureUsers(doc) {
+function ensureUsers(doc: Doc) {
 	if (!Array.isArray(doc.users)) doc.users = [];
 	let admin = doc.users.find((u) => u.id === "admin");
 	if (!admin) {
@@ -740,12 +776,12 @@ function ensureUsers(doc) {
 	if (!admin.passHash) admin.passHash = hashPasswordSync(envPassword());
 	return doc.users;
 }
-function tabAccess(tab, user, doc) {
+function tabAccess(tab: DocTab, user: User | null | undefined, doc: AclDoc): TabPerm | null {
 	if (!tabCanSee(tab, user, doc)) return null;
 	if (tabCanEdit(tab, user, doc)) return "edit";
 	return "view";
 }
-function readSession(token) {
+function readSession(token: string) {
 	const row = sessions.get(token);
 	if (!row || row.exp < Date.now()) {
 		if (row) sessions.delete(token);
@@ -753,7 +789,7 @@ function readSession(token) {
 	}
 	return row;
 }
-function requireUser(doc, token) {
+function requireUser(doc: Doc, token: string): HydratedUser {
 	ensureUsers(doc);
 	ensureGroups(doc);
 	ensureRoles(doc);
@@ -761,9 +797,9 @@ function requireUser(doc, token) {
 	const user = doc.users.find((u) => u.id === sess.userId);
 	if (!user) throw new Error("errors.userNotFound");
 	if (user.disabled) throw new Error("errors.disabled");
-	return hydrateUser(user, doc);
+	return hydrateUser(user, doc)!;
 }
-function requireEdit(doc, token, tabId) {
+function requireEdit(doc: Doc, token: string, tabId?: string): HydratedUser {
 	const user = requireUser(doc, token);
 	if (isOwnerUser(user)) return user;
 	if (tabId) {
@@ -774,25 +810,25 @@ function requireEdit(doc, token, tabId) {
 	if (user.canCreateTabs || user._canEdit || doc.tabs.some((t) => tabCanEdit(t, user, doc))) return user;
 	throw new Error("errors.readonly");
 }
-function requireAdmin(doc, token) {
+function requireAdmin(doc: Doc, token: string): HydratedUser {
 	const user = requireUser(doc, token);
 	if (!isOwnerUser(user) && !user.canManageSettings) throw new Error("errors.adminOnly");
 	return user;
 }
-function requireAccountManager(doc, token) {
+function requireAccountManager(doc: Doc, token: string): HydratedUser {
 	const user = requireUser(doc, token);
 	if (!isOwnerUser(user) && !user.canManageUsers && !user.canManageGroups && !user.canManageRoles) throw new Error("errors.insufficient");
 	return user;
 }
-function requireCreateTab(doc, token) {
+function requireCreateTab(doc: Doc, token: string): HydratedUser {
 	const user = requireUser(doc, token);
 	if (isOwnerUser(user) || user.canCreateTabs) return user;
 	throw new Error("errors.noManageSpaces");
 }
-function publicUser(u, doc) {
+function publicUser(u: StoredUser, doc: AclDoc) {
 	const roleIds = roleIdsOf(u);
 	return {
-		kind: "user",
+		kind: "user" as const,
 		id: u.id,
 		username: u.username,
 		name: u.username,
@@ -804,10 +840,10 @@ function publicUser(u, doc) {
 		groupIds: asIdList(u.groupIds)
 	};
 }
-function publicGroup(g, doc) {
+function publicGroup(g: Group, doc: AclDoc) {
 	const roleIds = roleIdsOf(g);
 	return {
-		kind: "group",
+		kind: "group" as const,
 		id: g.id,
 		name: g.name,
 		role: roleIds[0] || g.role || "lecteur",
@@ -818,16 +854,16 @@ function publicGroup(g, doc) {
 		members: asIdList(g.members)
 	};
 }
-function latestSessionExp(userId) {
+function latestSessionExp(userId: string) {
 	let exp = 0;
 	for (const row of sessions.values()) {
 		if (row.userId === userId && row.exp > exp) exp = row.exp;
 	}
 	return exp || undefined;
 }
-function sessionInfo(user, doc) {
-	const u = hydrateUser(user, doc);
-	const tabPerms = {};
+function sessionInfo(user: StoredUser, doc: Doc): SessionInfo {
+	const u = hydrateUser(user, doc)!;
+	const tabPerms: Record<string, TabPerm> = {};
 	for (const tab of doc.tabs) {
 		const perm = tabAccess(tab, u, doc);
 		if (perm) tabPerms[tab.id] = perm;
@@ -851,14 +887,14 @@ function sessionInfo(user, doc) {
 		exp: latestSessionExp(u.id)
 	};
 }
-function directoryOf(doc) {
+function directoryOf(doc: Doc) {
 	return ensureUsers(doc).filter((u) => u.id !== "admin").map((u) => ({
 		id: u.id,
 		username: u.username,
 		role: roleIdsOf(u)[0] || u.role
 	}));
 }
-function syncGroupMembers(doc, groupId, memberIds) {
+function syncGroupMembers(doc: Doc, groupId: string, memberIds: unknown) {
 	ensureGroups(doc);
 	const g = doc.groups.find((row) => row.id === groupId);
 	if (!g) return;
@@ -871,7 +907,7 @@ function syncGroupMembers(doc, groupId, memberIds) {
 		if (!has) u.groupIds = u.groupIds.filter((id) => id !== groupId);
 	}
 }
-function upsertAdGroups(doc, dir, listed) {
+function upsertAdGroups(doc: Doc, _dir: unknown, listed: { key?: string; name?: string; dn?: string; id?: string }[] | null | undefined) {
 	ensureGroups(doc);
 	for (const row of listed || []) {
 		if (!row?.key || !row?.name) continue;
@@ -893,7 +929,7 @@ function upsertAdGroups(doc, dir, listed) {
 		});
 	}
 }
-function applyAdMembership(doc, user, dirId, memberOf) {
+function applyAdMembership(doc: Doc, user: StoredUser | null | undefined, dirId: string, memberOf: string[] | null) {
 	if (!user || user.id === "admin" || memberOf == null) return;
 	ensureGroups(doc);
 	const prefix = `${dirId}:`;
@@ -906,7 +942,7 @@ function applyAdMembership(doc, user, dirId, memberOf) {
 	}
 	user.groupIds = doc.groups.filter((g) => asIdList(g.members).includes(user.id)).map((g) => g.id);
 }
-function syncUserGroups(doc, userId, groupIds) {
+function syncUserGroups(doc: Doc, userId: string, groupIds: unknown) {
 	ensureGroups(doc);
 	const user = doc.users.find((u) => u.id === userId);
 	if (!user || user.role === "admin") return;
@@ -919,7 +955,7 @@ function syncUserGroups(doc, userId, groupIds) {
 		if (!has) g.members = g.members.filter((id) => id !== userId);
 	}
 }
-function publicRole(r, doc) {
+function publicRole(r: Role, doc: Doc) {
 	ensureUsers(doc);
 	ensureGroups(doc);
 	const counts = roleSummary(r, doc);
@@ -934,7 +970,7 @@ function publicRole(r, doc) {
 		grantCount: counts.grantCount
 	};
 }
-function directoryPayload(doc, actor) {
+function directoryPayload(doc: Doc, actor: User) {
 	ensureUsers(doc);
 	ensureGroups(doc);
 	ensureRoles(doc);
@@ -947,7 +983,7 @@ function directoryPayload(doc, actor) {
 		directory: directoryOf(doc)
 	};
 }
-function stripUserAccess(doc, userId) {
+function stripUserAccess(doc: Doc, userId: string) {
 	for (const tab of doc.tabs) {
 		tab.editors = (tab.editors || []).filter((id) => id !== userId);
 		tab.viewers = (tab.viewers || []).filter((id) => id !== userId);
@@ -957,12 +993,12 @@ function stripUserAccess(doc, userId) {
 		}
 	}
 }
-async function emit(doc, user, tabId) {
-	const out = view(doc, tabId, user);
+async function emit(doc: Doc, user: StoredUser | HydratedUser | null | undefined, tabId?: string) {
+	const out = view(doc, tabId, user as HydratedUser | null);
 	if (out.session && user?.id === "admin") out.session.mustChangePassword = await isDefaultAdminPassword(doc);
 	return out;
 }
-function dayKey(d = /* @__PURE__ */ new Date(), tz) {
+function dayKey(d = /* @__PURE__ */ new Date(), tz?: unknown) {
 	return new Intl.DateTimeFormat("en-CA", {
 		timeZone: asTimeZone(tz) || "UTC",
 		year: "numeric",
@@ -970,7 +1006,7 @@ function dayKey(d = /* @__PURE__ */ new Date(), tz) {
 		day: "2-digit"
 	}).format(d);
 }
-function seesFullCatalog(doc, user) {
+function seesFullCatalog(doc: Doc, user: User | null | undefined) {
 	if (user && isOwnerUser(user)) return true;
 	for (const tab of doc.tabs || []) {
 		if (!can(user, "view", { res: "tab", id: tab.id }, doc)) return false;
@@ -983,7 +1019,7 @@ function seesFullCatalog(doc, user) {
 	}
 	return true;
 }
-function clickStatsFor(doc, user) {
+function clickStatsFor(doc: Doc, user: User | null | undefined): ClickStats {
 	const stats = computeClickStats(doc);
 	if (seesFullCatalog(doc, user)) return { ...stats, fullCatalog: true };
 	return {
@@ -996,7 +1032,7 @@ function clickStatsFor(doc, user) {
 		fullCatalog: false
 	};
 }
-function computeClickStats(doc) {
+function computeClickStats(doc: Doc) {
 	let all = 0;
 	for (const tab of doc.tabs) for (const cat of tab.categories) for (const app of cat.apps) if (app.kind === "app") all += app.clicks || 0;
 	const days = doc.clickDays ?? {};
@@ -1029,7 +1065,7 @@ function computeClickStats(doc) {
 		spanDays
 	};
 }
-function bumpClickDay(doc) {
+function bumpClickDay(doc: Doc) {
 	const key = dayKey(new Date(), doc.settings?.timezone);
 	const days = { ...doc.clickDays ?? {} };
 	days[key] = (days[key] || 0) + 1;
@@ -1037,12 +1073,12 @@ function bumpClickDay(doc) {
 	for (const k of Object.keys(days)) if (k < cutoff) delete days[k];
 	doc.clickDays = days;
 }
-function dataPath(join) {
+function dataPath(join: (dir: string, ...parts: string[]) => string) {
 	const custom = process.env.PORTAL_DATA_FILE?.trim();
 	if (custom) return custom;
 	return join(process.cwd(), "data", "portal.json");
 }
-function asStore(raw) {
+function asStore(raw: any): Doc | null {
 	if (!raw || typeof raw !== "object") return null;
 	const doc = raw;
 	const tabs = Array.isArray(doc.spaces) ? doc.spaces : doc.tabs;
@@ -1100,22 +1136,22 @@ function asStore(raw) {
 		groups: asGroups(doc.groups),
 		roles: asRoles(doc.roles),
 		history: asHistory(doc.history),
-		tabs: tabs.map((t, i) => ({
+		tabs: tabs.map((t: any, i: number) => ({
 			id: t.id || crypto.randomUUID(),
 			name: t.name,
 			icon: t.icon || "Layers",
 			sortOrder: Number(t.sortOrder ?? i + 1),
 			...normalizeTabAccess(t),
-			categories: (t.categories ?? []).map((c, j) => ({
+			categories: (t.categories ?? []).map((c: any, j: number) => ({
 				...c,
 				sortOrder: Number(c.sortOrder ?? j + 1),
 				...normalizeCatAccess(c),
-				apps: (c.cards ?? c.apps ?? []).map((a, k) => normalizeItem(a, c.id, Number(a.sortOrder ?? k + 1)))
+				apps: (c.cards ?? c.apps ?? []).map((a: any, k: number) => normalizeItem(a, c.id, Number(a.sortOrder ?? k + 1)))
 			}))
 		}))
 	};
 }
-function historyToDisk(row) {
+function historyToDisk(row: any): any {
 	if (!row || typeof row !== "object") return row;
 	const restored = row.restored && typeof row.restored === "object" ? row.restored : {};
 	return {
@@ -1128,7 +1164,7 @@ function historyToDisk(row) {
 		snapshot: snapshotToDisk(row.snapshot)
 	};
 }
-function toDisk(doc) {
+function toDisk(doc: Doc) {
 	const { tabs, lastTabId, history, ...rest } = doc;
 	return {
 		...rest,
@@ -1146,15 +1182,15 @@ function toDisk(doc) {
 		history: (history || []).map(historyToDisk)
 	};
 }
-let liveDoc = null;
-let clickFlushTimer = null;
+let liveDoc: Doc | null = null;
+let clickFlushTimer: ReturnType<typeof setTimeout> | null = null;
 const CLICK_FLUSH_MS = 4000;
-async function persistDocMedia(doc) {
+async function persistDocMedia(doc: Doc) {
 	const { persistMediaValue } = await import("./assets");
 	doc.settings.logo = await persistMediaValue("logo", doc.settings.logo);
 	doc.settings.favicon = await persistMediaValue("favicon", doc.settings.favicon);
 	const icons = Array.isArray(doc.customIcons) ? doc.customIcons : [];
-	const next = [];
+	const next: CustomIcon[] = [];
 	for (const ic of icons.slice(0, MAX_CUSTOM_ICONS)) {
 		const id = String(ic.id || crypto.randomUUID());
 		next.push({
@@ -1165,7 +1201,7 @@ async function persistDocMedia(doc) {
 	}
 	doc.customIcons = next;
 }
-async function readDocUnlocked() {
+async function readDocUnlocked(): Promise<Doc> {
 	assertProductionSecrets();
 	if (liveDoc) return liveDoc;
 	const { readFile } = await import("node:fs/promises");
@@ -1187,7 +1223,7 @@ async function readDocUnlocked() {
 	await writeDocUnlocked(seeded);
 	return seeded;
 }
-async function persistDoc(doc) {
+async function persistDoc(doc: Doc) {
 	await persistDocMedia(doc);
 	liveDoc = doc;
 	const { mkdir, rename, writeFile, unlink } = await import("node:fs/promises");
@@ -1203,7 +1239,7 @@ async function persistDoc(doc) {
 		throw err;
 	}
 }
-async function writeDocUnlocked(doc) {
+async function writeDocUnlocked(doc: Doc) {
 	if (clickFlushTimer) {
 		clearTimeout(clickFlushTimer);
 		clickFlushTimer = null;
@@ -1228,7 +1264,7 @@ function withLock<T>(fn: () => T | Promise<T>): Promise<T> {
 async function readDoc() {
 	return withLock(readDocUnlocked);
 }
-function mutate<T>(fn: (doc: any) => T | Promise<T>): Promise<T> {
+function mutate<T>(fn: (doc: Doc) => T | Promise<T>): Promise<T> {
 	return withLock(async () => {
 		const doc = await readDocUnlocked();
 		const result = await fn(doc);
@@ -1236,10 +1272,10 @@ function mutate<T>(fn: (doc: any) => T | Promise<T>): Promise<T> {
 		return result;
 	});
 }
-async function loadPortal(tabId, token) {
+async function loadPortal(tabId: string | undefined, token: string | null | undefined) {
 	const doc = await readDoc();
 	ensureUsers(doc);
-	let user = null;
+	let user: HydratedUser | null = null;
 	if (token) try {
 		user = requireUser(doc, token);
 	} catch {
@@ -1249,7 +1285,7 @@ async function loadPortal(tabId, token) {
 	if (out.session && user?.id === "admin") out.session.mustChangePassword = await isDefaultAdminPassword(doc);
 	return out;
 }
-function publicTabs(doc, user) {
+function publicTabs(doc: Doc, user: HydratedUser | null) {
 	return [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder).filter((t) => tabCanSee(t, user, doc)).map((t) => ({
 		id: t.id,
 		name: t.name,
@@ -1261,7 +1297,7 @@ function publicTabs(doc, user) {
 		hideLabel: Boolean(t.hideLabel)
 	}));
 }
-function manageTabs(doc) {
+function manageTabs(doc: Doc) {
 	return [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder).map((t) => ({
 		id: t.id,
 		name: t.name,
@@ -1281,11 +1317,11 @@ function manageTabs(doc) {
 		hideLabel: Boolean(t.hideLabel)
 	}));
 }
-function clientSettings(doc, user) {
+function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 	const s = doc.settings;
 	const dirs = asDirectories(s);
 	const realms = dirs.filter(directoryReady).map((d) => ({ id: d.id, label: d.domain }));
-	const out = {
+	const out: any = {
 		...s,
 		logo: toClientAsset(s.logo),
 		favicon: toClientAsset(s.favicon),
@@ -1296,7 +1332,7 @@ function clientSettings(doc, user) {
 		ldapDomain: realms[0]?.label || "",
 		ldapHasBindPassword: dirs.some((d) => Boolean(d.bindPassword)),
 		ldapDirectories: dirs.map((d) => {
-			const row = { ...d, hasBindPassword: Boolean(d.bindPassword) };
+			const row: any = { ...d, hasBindPassword: Boolean(d.bindPassword) };
 			delete row.bindPassword;
 			return row;
 		}),
@@ -1334,25 +1370,25 @@ function clientSettings(doc, user) {
 		out.ldapUserFilter = String(s.ldapUserFilter || "");
 		out.ldapAutoCreate = Boolean(s.ldapAutoCreate);
 		out.ldapDirectories = dirs.map((d) => {
-			const row = { ...d, hasBindPassword: Boolean(d.bindPassword) };
+			const row: any = { ...d, hasBindPassword: Boolean(d.bindPassword) };
 			delete row.bindPassword;
 			return row;
 		});
 	}
 	return out;
 }
-function view(doc, tabId, user) {
+function view(doc: Doc, tabId: string | undefined, user: HydratedUser | null) {
 	ensureUsers(doc);
 	const session = user ? sessionInfo(user, doc) : null;
 	const tabs = publicTabs(doc, user);
 	const activeTabId = tabId && tabs.some((t) => t.id === tabId) && tabId || doc.lastTabId && tabs.some((t) => t.id === doc.lastTabId) && doc.lastTabId || tabs[0]?.id || "";
 	if (activeTabId && user?.role === "admin") doc.lastTabId = activeTabId;
 	const stored = doc.tabs.find((t) => t.id === activeTabId);
-	const sortCats = (cats) => [...cats].filter((c) => catCanSee(c, user, doc)).sort((a, b) => a.sortOrder - b.sortOrder).map((c) => ({
+	const sortCats = (cats: PortalCategory[]) => [...cats].filter((c) => catCanSee(c, user, doc)).sort((a, b) => a.sortOrder - b.sortOrder).map((c) => ({
 		...c,
 		apps: [...c.apps].filter((a) => can(user, "view", { res: "card", id: a.id }, doc)).sort((a, b) => a.sortOrder - b.sortOrder)
 	}));
-	const stripAcl = (cats) => sortCats(cats).map((c) => ({ ...c, viewers: [], editors: [] }));
+	const stripAcl = (cats: PortalCategory[]) => sortCats(cats).map((c) => ({ ...c, viewers: [], editors: [] }));
 	const visibleIds = new Set(tabs.map((t) => t.id));
 	const catalog = [...doc.tabs].sort((a, b) => a.sortOrder - b.sortOrder).filter((t) => visibleIds.has(t.id)).map((t) => ({
 		id: t.id,
@@ -1385,14 +1421,14 @@ function view(doc, tabId, user) {
 		}
 	};
 }
-function tabOfCategory(doc, categoryId) {
-	const tab = doc.tabs.find((t) => t.categories.some((c) => c.id === categoryId));
+function tabOfCategory(doc: Doc, categoryId: string): DocTab {
+	const tab = doc.tabs.find((t) => t.categories!.some((c) => c.id === categoryId));
 	if (!tab) throw new Error("errors.categoryNotFound");
 	return tab;
 }
-function categoryOf(doc, categoryId) {
+function categoryOf(doc: Doc, categoryId: string): { tab: DocTab; cat: PortalCategory } {
 	for (const tab of doc.tabs) {
-		const cat = tab.categories.find((c) => c.id === categoryId);
+		const cat = tab.categories!.find((c) => c.id === categoryId);
 		if (cat) return {
 			tab,
 			cat
@@ -1400,8 +1436,8 @@ function categoryOf(doc, categoryId) {
 	}
 	throw new Error("errors.categoryNotFound");
 }
-function appOf(doc, appId) {
-	for (const tab of doc.tabs) for (const cat of tab.categories) {
+function appOf(doc: Doc, appId: string): { tab: DocTab; cat: PortalCategory; app: PortalApp } {
+	for (const tab of doc.tabs) for (const cat of tab.categories!) {
 		const app = cat.apps.find((a) => a.id === appId);
 		if (app) return {
 			tab,
@@ -1411,17 +1447,18 @@ function appOf(doc, appId) {
 	}
 	throw new Error("errors.appNotFound");
 }
-function liveAppId(doc, id) {
-	for (const tab of doc.tabs) for (const cat of tab.categories) if (cat.apps.some((a) => a.id === id)) return true;
+function liveAppId(doc: Doc, id: string) {
+	for (const tab of doc.tabs) for (const cat of tab.categories!) if (cat.apps.some((a) => a.id === id)) return true;
 	return false;
 }
-function ensureRestoredTab(doc, meta) {
+type MetaShape = { id?: string; name?: string; icon?: string; restricted?: boolean; viewers?: string[]; editors?: string[]; hideLabel?: boolean; sortOrder?: number; apps?: any[]; cards?: any[]; categories?: any[]; [key: string]: any };
+function ensureRestoredTab(doc: Doc, meta: MetaShape | null | undefined): DocTab {
 	if (!meta) throw new Error("errors.historySpaceMissing");
 	const byId = doc.tabs.find((t) => t.id === meta.id);
 	if (byId) return byId;
 	const byName = doc.tabs.find((t) => t.name.toLowerCase() === String(meta.name || "").toLowerCase());
 	if (byName) return byName;
-	const tab = {
+	const tab: DocTab = {
 		id: meta.id && !doc.tabs.some((t) => t.id === meta.id) ? meta.id : crypto.randomUUID(),
 		name: meta.name || "Space",
 		icon: meta.icon || "Layers",
@@ -1435,24 +1472,25 @@ function ensureRestoredTab(doc, meta) {
 	doc.tabs.push(tab);
 	return tab;
 }
-function ensureRestoredCat(tab, meta) {
+function ensureRestoredCat(tab: DocTab, meta: MetaShape | null | undefined): PortalCategory {
 	if (!meta) throw new Error("errors.historyCategoryMissing");
-	const byId = tab.categories.find((c) => c.id === meta.id);
+	const cats = tab.categories ?? (tab.categories = []);
+	const byId = cats.find((c) => c.id === meta.id);
 	if (byId) return byId;
-	const byName = tab.categories.find((c) => c.name.toLowerCase() === String(meta.name || "").toLowerCase());
+	const byName = cats.find((c) => c.name.toLowerCase() === String(meta.name || "").toLowerCase());
 	if (byName) return byName;
-	const cat = {
-		id: meta.id && !tab.categories.some((c) => c.id === meta.id) ? meta.id : crypto.randomUUID(),
+	const cat: PortalCategory = {
+		id: meta.id && !cats.some((c) => c.id === meta.id) ? meta.id : crypto.randomUUID(),
 		name: meta.name || "Category",
 		icon: meta.icon || "AppWindow",
-		sortOrder: Math.max(0, ...tab.categories.map((c) => c.sortOrder)) + 1,
+		sortOrder: Math.max(0, ...cats.map((c) => c.sortOrder)) + 1,
 		...normalizeCatAccess(meta),
 		apps: []
 	};
-	tab.categories.push(cat);
+	cats.push(cat);
 	return cat;
 }
-function putRestoredApp(doc, tabMeta, catMeta, app) {
+function putRestoredApp(doc: Doc, tabMeta: MetaShape | null | undefined, catMeta: MetaShape | null | undefined, app: any) {
 	const tab = ensureRestoredTab(doc, tabMeta);
 	const cat = ensureRestoredCat(tab, catMeta);
 	const id = app.id && !liveAppId(doc, app.id) ? app.id : crypto.randomUUID();
@@ -1467,7 +1505,7 @@ function putRestoredApp(doc, tabMeta, catMeta, app) {
 		id
 	};
 }
-function markRestored(ev, scope, id) {
+function markRestored(ev: HistoryEvent, scope: "tab" | "category" | "card", id?: string) {
 	if (!ev.restored) ev.restored = {
 		tab: false,
 		categories: [],
@@ -1475,10 +1513,10 @@ function markRestored(ev, scope, id) {
 	};
 	if (scope === "tab") ev.restored.tab = true;
 	else if (scope === "category") {
-		if (!ev.restored.categories.includes(id)) ev.restored.categories.push(id);
-	} else if (!ev.restored.apps.includes(id)) ev.restored.apps.push(id);
+		if (!ev.restored.categories.includes(id || "")) ev.restored.categories.push(id || "");
+	} else if (!ev.restored.apps.includes(id || "")) ev.restored.apps.push(id || "");
 }
-function snapshotAppFromEvent(ev, targetId) {
+function snapshotAppFromEvent(ev: HistoryEvent, targetId: string): { app: any; category: any; tab: any } | null {
 	const snap = ev.snapshot || {};
 	if ((snap.app || snap.card) && (snap.app || snap.card).id === targetId) return {
 		app: snap.app || snap.card,
@@ -1497,7 +1535,7 @@ function snapshotAppFromEvent(ev, targetId) {
 	};
 	return null;
 }
-function restoreHistoryItem(doc, user, eventId, scope, targetId) {
+function restoreHistoryItem(doc: Doc, user: HydratedUser, eventId: string, scope: "tab" | "category" | "card", targetId: string) {
 	const ev = (doc.history || []).find((row) => row.id === eventId);
 	if (!ev || ev.purged || !ev.snapshot) throw new Error("errors.trashMissing");
 	const snap = ev.snapshot;
@@ -1521,7 +1559,7 @@ function restoreHistoryItem(doc, user, eventId, scope, targetId) {
 		let apps = snap.apps || snap.cards || [];
 		const tabMeta = snap.tab || snap.space;
 		if (!catMeta) {
-			const cat = (snap.categories || []).find((c) => c.id === targetId);
+			const cat = (snap.categories || []).find((c: any) => c.id === targetId);
 			if (!cat) throw new Error("errors.historyCategoryMissing");
 			catMeta = snapshotCat(cat);
 			apps = cat.apps || cat.cards || [];
@@ -1566,10 +1604,10 @@ function restoreHistoryItem(doc, user, eventId, scope, targetId) {
 export const getPortal = createServerFn({ method: "GET" }).validator(z.object({
 	tabId: z.string().optional(),
 	token: z.string().optional()
-})).handler(async ({ data, request }) => loadPortal(data.tabId, tok(data, request)));
+})).handler(async ({ data, request }: any) => loadPortal(data.tabId, tok(data, request)));
 export const listHistory = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField
-})).handler(async ({ data, request }) => withLock(async () => {
+})).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canAudit && !user.canRestore && user.role !== "admin") throw new Error("errors.insufficient");
@@ -1590,7 +1628,7 @@ export const restoreHistory = createServerFn({ method: "POST" }).validator(z.obj
 	id: z.string().min(1),
 	scope: z.enum(["card", "category", "tab"]),
 	targetId: z.string().min(1)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canRestore && user.role !== "admin") throw new Error("errors.insufficient");
 	const ev = (doc.history || []).find((row) => row.id === data.id);
@@ -1601,7 +1639,7 @@ export const restoreHistory = createServerFn({ method: "POST" }).validator(z.obj
 }));
 export const purgeTrash = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField
-})).handler(async ({ data, request }) => mutate(async (doc) => {
+})).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canPurge && user.role !== "admin") throw new Error("errors.insufficient");
 	emptyTrash(doc);
@@ -1616,7 +1654,7 @@ export const purgeTrash = createServerFn({ method: "POST" }).validator(z.object(
 export const rememberTab = createServerFn({ method: "POST" }).validator(z.object({
 	tabId: z.string().min(1),
 	token: z.string().optional()
-})).handler(async ({ data, request }) => withLock(async () => {
+})).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	if (doc.lastTabId === data.tabId) return;
 	const tab = doc.tabs.find((t) => t.id === data.tabId);
@@ -1635,7 +1673,7 @@ export const rememberTab = createServerFn({ method: "POST" }).validator(z.object
 export const recordClick = createServerFn({ method: "POST" }).validator(z.object({
 	id: z.string().min(1),
 	token: z.string().optional()
-})).handler(async ({ data, request }) => withLock(async () => {
+})).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	let user = null;
 	const token = tok(data, request);
@@ -1666,13 +1704,13 @@ export const recordClick = createServerFn({ method: "POST" }).validator(z.object
 export const resetClicks = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	tabId: z.string().optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	for (const tab of doc.tabs) for (const cat of tab.categories) for (const app of cat.apps) if (app.kind === "app") app.clicks = 0;
 	doc.clickDays = {};
 	return emit(doc, user, data.tabId);
 }));
-export const resetPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => mutate(async (doc) => {
+export const resetPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	requireAdmin(doc, tok(data, request));
 	const fresh = blankTabs();
 	doc.settings = defaultSettings();
@@ -1689,7 +1727,7 @@ export const resetPortal = createServerFn({ method: "POST" }).validator(z.object
 	}];
 	for (const [tok, row] of sessions) if (row.userId !== "admin") sessions.delete(tok);
 	doc.history = [];
-	const admin = doc.users[0];
+	const admin = doc.users[0]!;
 	appendHistory(doc, admin, {
 		type: "portal.reset",
 		label: tt(doc, "audit.item.reset")
@@ -1731,7 +1769,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	timezone: z.string().max(80).optional(),
 	numberFormat: z.enum(["auto", "space-comma", "comma-dot", "dot-comma", "apostrophe-comma"]).optional(),
 	tabId: z.string().optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
@@ -1765,7 +1803,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		timeFormat: data.timeFormat === "12h" || data.timeFormat === "24h" ? data.timeFormat : asTimeFormat(doc.settings.timeFormat),
 		timezone: typeof data.timezone === "string" ? asTimeZone(data.timezone) : asTimeZone(doc.settings.timezone),
 		locale: data.locale === "fr" || data.locale === "en" ? data.locale : doc.settings.locale === "fr" ? "fr" : "en",
-		numberFormat: NUMBER_FORMATS.includes(data.numberFormat) ? data.numberFormat : NUMBER_FORMATS.includes(doc.settings.numberFormat) ? doc.settings.numberFormat : "auto"
+		numberFormat: NUMBER_FORMATS.includes(data.numberFormat) ? data.numberFormat : NUMBER_FORMATS.includes(doc.settings.numberFormat as import("./i18n").NumberFormat) ? doc.settings.numberFormat : "auto"
 	};
 	pruneUnusedTags(doc);
 	appendHistory(doc, user, {
@@ -1779,7 +1817,7 @@ export const updateThemeCss = createServerFn({ method: "POST" }).validator(z.obj
 	cssLight: z.string().max(CSS_MAX),
 	cssDark: z.string().max(CSS_MAX),
 	tabId: z.string().optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
@@ -1807,13 +1845,13 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 		domain = "local";
 	}
 	if (!username) throw new Error("errors.badLogin");
-	const key = clientKey(`${domain}:${username}`, ctx.request);
+	const key = clientKey(`${domain}:${username}`, (ctx as any).request);
 	if (loginBlocked(key)) throw new Error("errors.badLogin");
 	if (domain !== "local") {
 		const snap = await readDoc();
 		const dir = pickDirectory(snap.settings, domain);
-		if (!directoryReady(dir)) throw new Error("errors.ldapOff");
-		let auth;
+		if (!dir || !directoryReady(dir)) throw new Error("errors.ldapOff");
+		let auth: any;
 		try {
 			auth = await ldapAuthenticate(dir, username, data.password || "");
 		} catch (err) {
@@ -1909,7 +1947,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 	oidcLabel: z.string().max(40).optional(),
 	oidcAutoCreate: z.boolean().optional(),
 	tabId: z.string().optional()
-})).handler(async ({ data, request }) => mutate(async (doc) => {
+})).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	const issuer = data.oidcIssuer.trim();
 	const clientId = data.oidcClientId.trim();
@@ -1954,7 +1992,7 @@ export const updateLdapSettings = createServerFn({ method: "POST" }).validator(z
 		autoCreate: z.boolean().optional()
 	})).max(8),
 	tabId: z.string().optional()
-})).handler(async ({ data, request }) => mutate(async (doc) => {
+})).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	const prev = asDirectories(doc.settings);
 	const prevById = new Map(prev.map((d) => [d.id, d]));
@@ -2010,7 +2048,7 @@ export const searchLdapGroups = createServerFn({ method: "POST" }).validator(z.o
 	token: tokenField,
 	directoryId: z.string().min(1).max(80),
 	query: z.string().max(80)
-})).handler(async ({ data, request }) => {
+})).handler(async ({ data, request }: any) => {
 	const doc = await readDoc();
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
@@ -2028,12 +2066,12 @@ export const linkLdapGroups = createServerFn({ method: "POST" }).validator(z.obj
 		dn: z.string().min(1).max(400),
 		name: z.string().min(1).max(60)
 	})).min(1).max(20)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
 	const dir = asDirectories(doc.settings).find((d) => d.id === data.directoryId);
 	if (!dir || !directoryReady(dir)) throw new Error("errors.ldapOff");
-	const listed = data.groups.map((g) => ({
+	const listed = data.groups.map((g: any) => ({
 		dn: g.dn,
 		name: g.name,
 		key: adGroupKey(dir.id, g.dn)
@@ -2041,7 +2079,7 @@ export const linkLdapGroups = createServerFn({ method: "POST" }).validator(z.obj
 	upsertAdGroups(doc, dir, listed);
 	appendHistory(doc, actor, {
 		type: "group.create",
-		label: listed.map((g) => g.name).join(", ")
+		label: listed.map((g: any) => g.name).join(", ")
 	});
 	return directoryPayload(doc, actor);
 }));
@@ -2049,7 +2087,7 @@ export const updateLoginOrder = createServerFn({ method: "POST" }).validator(z.o
 	token: tokenField,
 	loginOrder: z.array(z.string().min(1).max(80)).min(1).max(16),
 	tabId: z.string().optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
@@ -2065,10 +2103,10 @@ export const startOidc = createServerFn({ method: "POST" }).validator(z.object({
 	const doc = await readDoc();
 	const s = doc.settings;
 	if (!s.oidcEnabled || !s.oidcIssuer || !s.oidcClientId) throw new Error("errors.oidcOff");
-	const key = clientKey("oidc", ctx.request);
+	const key = clientKey("oidc", (ctx as any).request);
 	if (loginBlocked(key)) throw new Error("errors.tooManyTries");
 	const { discoverOidc, buildAuthorizeUrl, randomUrlToken, s256, publicOrigin } = await import("./oidc-runtime");
-	const origin = publicOrigin(ctx.request);
+	const origin = publicOrigin((ctx as any).request);
 	if (!origin) throw new Error("errors.unknownOrigin");
 	const redirectUri = `${origin}/oidc/callback`;
 	const disc = await discoverOidc(s.oidcIssuer);
@@ -2099,7 +2137,7 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 	const pending = oidcPending.get(ctx.data.state);
 	oidcPending.delete(ctx.data.state);
 	if (!pending || pending.exp < Date.now()) throw new Error("errors.oidcExpired");
-	const key = clientKey("oidc", ctx.request);
+	const key = clientKey("oidc", (ctx as any).request);
 	if (loginBlocked(key)) throw new Error("errors.tooManyTries");
 	return mutate(async (doc) => {
 		const s = doc.settings;
@@ -2166,9 +2204,9 @@ const grantField = z.object({
 	deny: z.array(z.string()).optional(),
 	scope: z.enum(["public"]).optional()
 });
-function cleanRoleIds(doc, ids, { allowOwner = false, allowEmpty = false } = {}) {
+function cleanRoleIds(doc: Doc, ids: unknown, { allowOwner = false, allowEmpty = false } = {}) {
 	const allowed = new Set((doc.roles || []).map((r) => r.id));
-	const out = [];
+	const out: string[] = [];
 	for (const id of asIdList(ids)) {
 		if (!allowed.has(id)) continue;
 		if (id === "owner" && !allowOwner) continue;
@@ -2177,7 +2215,7 @@ function cleanRoleIds(doc, ids, { allowOwner = false, allowEmpty = false } = {})
 	if (out.length) return out;
 	return allowEmpty ? [] : ["lecteur"];
 }
-export const listUsers = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
+export const listUsers = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const actor = requireAccountManager(doc, tok(data, request));
 	return directoryPayload(doc, actor);
@@ -2192,7 +2230,7 @@ export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
 	grants: z.array(grantField).optional(),
 	disabled: z.boolean().optional(),
 	groupIds: z.array(z.string()).optional()
-})).handler(async ({ data, request }) => mutate(async (doc) => {
+})).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageUsers) throw new Error("errors.insufficient");
 	ensureRoles(doc);
@@ -2240,7 +2278,7 @@ export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
 		};
 		doc.users.push(target);
 	}
-	if (data.groupIds) syncUserGroups(doc, target.id, data.groupIds);
+	if (data.groupIds) syncUserGroups(doc, target!.id, data.groupIds);
 	appendHistory(doc, actor, {
 		type: existing ? "user.update" : "user.create",
 		label: username
@@ -2250,7 +2288,7 @@ export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
 export const deleteUser = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	const target = doc.users.find((u) => u.id === data.id);
 	if (!target) throw new Error("errors.userNotFound");
@@ -2273,7 +2311,7 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 	roleIds: z.array(z.string()).optional(),
 	members: z.array(z.string()).optional(),
 	grants: z.array(grantField).optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
 	ensureGroups(doc);
@@ -2288,13 +2326,13 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 		target.role = roleIds[0] || "";
 		if (data.grants) target.grants = asGrants(data.grants);
 	} else if (target) {
-		if (doc.groups.some((g) => g.id !== target.id && g.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
+		if (doc.groups.some((g) => g.id !== target!.id && (g.name || "").toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
 		target.name = name;
 		target.roleIds = roleIds;
 		target.role = roleIds[0];
 		if (data.grants) target.grants = asGrants(data.grants);
 	} else {
-		if (doc.groups.some((g) => g.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
+		if (doc.groups.some((g) => (g.name || "").toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
 		target = {
 			id: crypto.randomUUID(),
 			name,
@@ -2317,7 +2355,7 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 export const deleteGroup = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	ensureGroups(doc);
 	const target = doc.groups.find((g) => g.id === data.id);
@@ -2339,7 +2377,7 @@ export const saveRole = createServerFn({ method: "POST" }).validator(z.object({
 	grants: z.array(grantField).optional(),
 	userIds: z.array(z.string()).optional(),
 	groupIds: z.array(z.string()).optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageRoles) throw new Error("errors.insufficient");
 	ensureRoles(doc);
@@ -2359,13 +2397,13 @@ export const saveRole = createServerFn({ method: "POST" }).validator(z.object({
 	const description = String(data.description || "").trim().slice(0, 200);
 	const grants = asGrants(data.grants);
 	if (target) {
-		if (doc.roles.some((r) => r.id !== target.id && r.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
+		if (doc.roles.some((r) => r.id !== target!.id && (r.name || "").toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
 		target.name = name;
 		target.description = description;
 		target.grants = grants;
 	} else {
 		if (doc.roles.length >= 40) throw new Error("errors.tooManyIcons");
-		if (doc.roles.some((r) => r.name.toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
+		if (doc.roles.some((r) => (r.name || "").toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
 		target = {
 			id: crypto.randomUUID(),
 			name,
@@ -2385,7 +2423,7 @@ export const saveRole = createServerFn({ method: "POST" }).validator(z.object({
 export const deleteRole = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageRoles) throw new Error("errors.insufficient");
 	ensureRoles(doc);
@@ -2408,7 +2446,7 @@ export const createTab = createServerFn({ method: "POST" }).validator(z.object({
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional(),
 	hideLabel: z.boolean().optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireCreateTab(doc, tok(data, request));
 	const id = crypto.randomUUID();
 	const next = Math.max(0, ...doc.tabs.map((t) => t.sortOrder)) + 1;
@@ -2437,7 +2475,7 @@ export const createTab = createServerFn({ method: "POST" }).validator(z.object({
 export const duplicateTab = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireCreateTab(doc, tok(data, request));
 	const src = doc.tabs.find((t) => t.id === data.id);
 	if (!src) throw new Error("errors.spaceNotFound");
@@ -2494,7 +2532,7 @@ export const updateTab = createServerFn({ method: "POST" }).validator(z.object({
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional(),
 	hideLabel: z.boolean().optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.id);
 	const tab = doc.tabs.find((t) => t.id === data.id);
 	if (!tab) throw new Error("errors.portalNotFound");
@@ -2518,7 +2556,7 @@ export const updateFavsOptions = createServerFn({ method: "POST" }).validator(z.
 	token: tokenField,
 	hideLabel: z.boolean(),
 	tabId: z.string().optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	doc.settings.favsHideLabel = data.hideLabel;
 	return emit(doc, user, data.tabId);
@@ -2526,7 +2564,7 @@ export const updateFavsOptions = createServerFn({ method: "POST" }).validator(z.
 export const deleteTab = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.id);
 	if (doc.tabs.length <= 1) throw new Error("errors.lastSpace");
 	const tab = doc.tabs.find((t) => t.id === data.id);
@@ -2553,7 +2591,7 @@ export const createCategory = createServerFn({ method: "POST" }).validator(z.obj
 	restricted: z.boolean().optional(),
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.tabId);
 	const tab = doc.tabs.find((t) => t.id === data.tabId);
 	if (!tab) throw new Error("errors.portalNotFound");
@@ -2593,7 +2631,7 @@ export const updateCategory = createServerFn({ method: "POST" }).validator(z.obj
 	restricted: z.boolean().optional(),
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	const { tab, cat } = categoryOf(doc, data.id);
 	requireEdit(doc, tok(data, request), tab.id);
@@ -2617,7 +2655,7 @@ export const updateCategory = createServerFn({ method: "POST" }).validator(z.obj
 export const deleteCategory = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	const tab = tabOfCategory(doc, data.id);
 	requireEdit(doc, tok(data, request), tab.id);
@@ -2670,22 +2708,22 @@ const itemPayload = {
 	})).max(4).optional().default([]),
 	tagColors: z.record(z.string().min(1).max(32), z.string().max(7)).optional()
 };
-function requireUrl(kind, url) {
+function requireUrl(kind: unknown, url: string) {
 	if (kind === "note") return;
 	if (!safeAppHref(url)) throw new Error(kind === "embed" ? "errors.embedUrlRequired" : "errors.urlRequired");
 }
-function requireTitle(kind, title) {
+function requireTitle(kind: unknown, title: string) {
 	if (kind === "note" || kind === "embed") return;
 	if (!title.trim()) throw new Error("errors.nameRequired");
 }
-function requireBody(kind, description) {
+function requireBody(kind: unknown, description: unknown) {
 	if (kind !== "note") return;
 	if (!String(description || "").trim()) throw new Error("errors.contentRequired");
 }
 export const createApp = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	...itemPayload
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	requireUrl(data.kind, data.url);
 	requireTitle(data.kind, data.title);
@@ -2724,7 +2762,7 @@ export const updateApp = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1),
 	...itemPayload
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	requireUrl(data.kind, data.url);
 	requireTitle(data.kind, data.title);
@@ -2772,7 +2810,7 @@ export const updateApp = createServerFn({ method: "POST" }).validator(z.object({
 export const deleteApp = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	const { tab, cat, app } = appOf(doc, data.id);
 	requireEdit(doc, tok(data, request), tab.id);
@@ -2797,7 +2835,7 @@ export const reorderApps = createServerFn({ method: "POST" }).validator(z.object
 		categoryId: z.string().min(1),
 		sortOrder: z.number().int().min(0).max(9999)
 	})).min(1).max(400)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.tabId);
 	const tab = doc.tabs.find((t) => t.id === data.tabId);
 	if (!tab) throw new Error("errors.portalNotFound");
@@ -2824,7 +2862,7 @@ export const arrangeCategory = createServerFn({ method: "POST" }).validator(z.ob
 	categoryId: z.string().min(1),
 	sort: z.enum(["alpha", "za"]).optional(),
 	resetSpans: z.boolean().optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const { tab, cat } = categoryOf(doc, data.categoryId);
 	const user = requireEdit(doc, tok(data, request), tab.id);
 	let changed = false;
@@ -2862,7 +2900,7 @@ export const moveApp = createServerFn({ method: "POST" }).validator(z.object({
 	destTabId: z.string().min(1),
 	destCategoryId: z.string().min(1),
 	sortOrder: z.number().int().min(0).max(9999)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireUser(doc, tok(data, request));
 	const found = appOf(doc, data.id);
 	if (!isOwnerUser(user) && !can(user, "move", { res: "card", id: found.app.id }, doc)) throw new Error("errors.noMove");
@@ -2897,11 +2935,11 @@ export const reorderCategories = createServerFn({ method: "POST" }).validator(z.
 	token: tokenField,
 	tabId: z.string().min(1),
 	order: z.array(z.string().min(1)).min(1).max(80)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.tabId);
 	const tab = doc.tabs.find((t) => t.id === data.tabId);
 	if (!tab) throw new Error("errors.portalNotFound");
-	data.order.forEach((id, i) => {
+	data.order.forEach((id: string, i: number) => {
 		const cat = tab.categories.find((c) => c.id === id);
 		if (cat) cat.sortOrder = i + 1;
 	});
@@ -2912,7 +2950,7 @@ export const previewMoveCategory = createServerFn({ method: "POST" }).validator(
 	token: tokenField,
 	categoryId: z.string().min(1),
 	destTabId: z.string().min(1)
-})).handler(async ({ data, request }) => withLock(async () => {
+})).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
 	if (!isOwnerUser(user) && !can(user, "move", { res: "cat", id: data.categoryId }, doc)) throw new Error("errors.noMove");
@@ -2925,7 +2963,7 @@ export const moveCategory = createServerFn({ method: "POST" }).validator(z.objec
 	categoryId: z.string().min(1),
 	destTabId: z.string().min(1),
 	insertAt: z.number().int().min(0).max(80).optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!isOwnerUser(user) && !can(user, "move", { res: "cat", id: data.categoryId }, doc)) throw new Error("errors.noMove");
 	if (!isOwnerUser(user) && !can(user, "move", { res: "tab", id: data.destTabId }, doc) && !can(user, "edit", { res: "tab", id: data.destTabId }, doc)) throw new Error("errors.noMove");
@@ -2945,20 +2983,20 @@ export const reorderTabs = createServerFn({ method: "POST" }).validator(z.object
 	token: tokenField,
 	tabId: z.string().optional(),
 	order: z.array(z.string().min(1)).min(1).max(40)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireCreateTab(doc, tok(data, request));
-	data.order.forEach((id, i) => {
+	data.order.forEach((id: string, i: number) => {
 		const tab = doc.tabs.find((t) => t.id === id);
 		if (tab) tab.sortOrder = i + 1;
 	});
 	doc.tabs.sort((a, b) => a.sortOrder - b.sortOrder);
 	return emit(doc, user, data.tabId);
 }));
-function eachItem(doc, fn) {
+function eachItem(doc: Doc, fn: (app: PortalApp) => void) {
 	for (const tab of doc.tabs) for (const cat of tab.categories) for (const app of cat.apps) fn(app);
 }
-function tagColorFromName(name) {
-	return defaultTagHex(name);
+function tagColorFromName(name: unknown) {
+	return defaultTagHex(String(name));
 }
 export const manageTags = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
@@ -2970,18 +3008,18 @@ export const manageTags = createServerFn({ method: "POST" }).validator(z.object(
 	})).max(80).optional(),
 	remove: z.array(z.string().min(1).max(32)).max(80).optional(),
 	colors: z.record(z.string().min(1).max(32), z.string().max(7)).optional()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
-	const removeKeys = new Set((data.remove ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean));
+	const removeKeys = new Set((data.remove ?? []).map((t: string) => t.trim().toLowerCase()).filter(Boolean));
 	const renameMap = /* @__PURE__ */ new Map();
-	for (const r of data.rename ?? []) {
+	for (const r of (data.rename ?? []) as { from: string; to: string }[]) {
 		const from = r.from.trim().toLowerCase();
 		const to = r.to.trim().slice(0, 32);
 		if (!from) continue;
 		renameMap.set(from, to);
 	}
 	eachItem(doc, (app) => {
-		const next = [];
+		const next: string[] = [];
 		const seen = /* @__PURE__ */ new Set();
 		for (const tag of app.tags) {
 			const key = tag.toLowerCase();
@@ -3026,7 +3064,7 @@ export const saveCustomIcon = createServerFn({ method: "POST" }).validator(z.obj
 	token: tokenField,
 	name: z.string().min(1).max(80),
 	dataUrl: z.string().min(20).max(4e5).regex(/^data:image\//)
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	requireEdit(doc, tok(data, request));
 	if ((doc.customIcons || []).length >= MAX_CUSTOM_ICONS) throw new Error("errors.tooManyIcons");
 	doc.customIcons.push({
@@ -3040,13 +3078,13 @@ export const saveCustomIcon = createServerFn({ method: "POST" }).validator(z.obj
 	}));
 }));
 
-function unwrapBackup(raw) {
+function unwrapBackup(raw: any) {
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
 	if (raw.settings && (Array.isArray(raw.spaces) || Array.isArray(raw.tabs))) return raw;
 	if (raw.backup && typeof raw.backup === "object") return raw.backup;
 	return raw;
 }
-export const exportPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
+export const exportPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
 	const { assetToDataUrl } = await import("./assets");
 	const doc = await readDocUnlocked();
 	requireAdmin(doc, tok(data, request));
@@ -3069,7 +3107,7 @@ export const exportPortal = createServerFn({ method: "POST" }).validator(z.objec
 		})
 	};
 }));
-export const exportAudit = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
+export const exportAudit = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canAudit && user.role !== "admin") throw new Error("errors.insufficient");
@@ -3085,7 +3123,7 @@ export const exportAudit = createServerFn({ method: "POST" }).validator(z.object
 export const importPortal = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	payload: z.unknown()
-})).handler(async ({ data, request }) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate((doc) => {
 	const actor = requireAdmin(doc, tok(data, request));
 	const parsed = asStore(unwrapBackup(data.payload));
 	if (!parsed || !parsed.tabs.length) throw new Error("errors.badBackup");
@@ -3107,7 +3145,7 @@ export const importPortal = createServerFn({ method: "POST" }).validator(z.objec
 	});
 	return emit(doc, nextUser);
 }));
-async function resolveProbeByIds(token, ids) {
+async function resolveProbeByIds(token: string, ids: string[]) {
 	const doc = await readDoc();
 	let user = null;
 	if (token) try {
@@ -3145,7 +3183,7 @@ async function resolveProbeByIds(token, ids) {
 	}
 	return out;
 }
-async function requireEditorSession(token) {
+async function requireEditorSession(token: string) {
 	const doc = await readDoc();
 	const user = requireUser(doc, token);
 	if (!user._canEdit && !isOwnerUser(user)) throw new Error("errors.insufficient");
@@ -3157,9 +3195,9 @@ export const probeTargets = createServerFn({ method: "POST" }).validator(z.objec
 	ids: z.array(z.string().min(1).max(80)).min(1).max(8)
 })).handler(async (ctx) => {
 	const { probeAllowed, probeOne } = await import("./probe-runtime");
-	if (!probeAllowed(ctx.request)) return [];
+	if (!probeAllowed((ctx as any).request)) return [];
 	const doc = await readDoc();
-	const token = tok(ctx.data, ctx.request);
+	const token = tok(ctx.data, (ctx as any).request);
 	if (doc.settings.probeAuthOnly) {
 		try {
 			requireUser(doc, token);
@@ -3168,7 +3206,7 @@ export const probeTargets = createServerFn({ method: "POST" }).validator(z.objec
 		}
 	}
 	const targets = await resolveProbeByIds(token, ctx.data.ids);
-	return Promise.all(targets.map((target) => probeOne(target, Boolean(doc.settings.probeTlsVerify))));
+	return Promise.all(targets.map((target) => probeOne(target as import("./probe-runtime").ProbeTarget, Boolean(doc.settings.probeTlsVerify))));
 });
 
 export const probePreview = createServerFn({ method: "POST" }).validator(z.object({
@@ -3178,8 +3216,8 @@ export const probePreview = createServerFn({ method: "POST" }).validator(z.objec
 	host: z.string().max(253).optional()
 })).handler(async (ctx) => {
 	const { probeAllowed, probeIcmp, probeHttp } = await import("./probe-runtime");
-	await requireEditorSession(tok(ctx.data, ctx.request));
-	if (!probeAllowed(ctx.request)) throw new Error("errors.tooManyProbes");
+	await requireEditorSession(tok(ctx.data, (ctx as any).request));
+	if (!probeAllowed((ctx as any).request)) throw new Error("errors.tooManyProbes");
 	const doc = await readDoc();
 	const tlsVerify = Boolean(doc.settings.probeTlsVerify);
 	if (ctx.data.mode === "icmp") return probeIcmp("preview", ctx.data.host || "");
@@ -3192,7 +3230,7 @@ export const grabSiteFavicon = createServerFn({ method: "POST" }).validator(z.ob
 	token: z.string().min(1),
 	url: z.string().max(2000)
 })).handler(async (ctx) => {
-	await requireEditorSession(tok(ctx.data, ctx.request));
+	await requireEditorSession(tok(ctx.data, (ctx as any).request));
 	const href = safeAppHref(ctx.data.url);
 	if (!href) throw new Error("errors.httpRequired");
 	const { fetchSiteFavicon } = await import("./favicon-runtime");
