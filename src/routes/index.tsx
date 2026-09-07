@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -139,6 +140,7 @@ import {
   purgeTrash,
 } from "@/lib/portal";
 import { auditCsv } from "@/lib/history";
+import type { AuditRow, TrashRow } from "@/lib/history";
 import { probePreview, probeTargets } from "@/lib/probe";
 import type { ProbeResult } from "@/lib/probe";
 import { checkLatestRelease } from "@/lib/release";
@@ -185,7 +187,8 @@ import type {
   DirectoryUser,
   UserRole,
 } from "@/lib/portal";
-import type { CategoryMoveImpact, Group, Role } from "@/lib/acl";
+import type { Category, CategoryMoveImpact, Group, Role } from "@/lib/acl";
+import type { Directory } from "@/lib/ldap-runtime";
 export const Route = createFileRoute("/")({
   loader: async () => {
     const data = await getPortal({
@@ -1089,6 +1092,28 @@ type MoreHoverState = { at: number } | null;
 type CarryState = { app?: PortalApp; fromTabId: string; cat?: PortalCategory | null } | null;
 type ResizeLiveState = { origin: HTMLElement; placeholder: HTMLElement | null } | null;
 type ModalState = { kind: string; [key: string]: unknown };
+type AccessPayload = {
+  restricted?: boolean;
+  viewers?: string[];
+  editors?: string[];
+  hideLabel?: boolean;
+};
+type AppFormPayload = {
+  categoryId: string;
+  kind: ItemKind;
+  title: string;
+  description: string;
+  url: string;
+  icon: string;
+  openIn: "_blank" | "_self";
+  tags: string[];
+  colSpan: 1 | 2 | 3;
+  rowSpan: 1 | 2 | 3;
+  check?: CheckMode;
+  checkHost?: string;
+  links?: { title: string; url: string }[];
+  tagColors?: Record<string, string>;
+};
 function Home() {
   const initial: PortalData = Route.useLoaderData();
   const [data, setData] = useState<PortalData>(initial);
@@ -1765,7 +1790,7 @@ function Home() {
       window.removeEventListener("pointercancel", up);
     };
   }
-  function bindAppResize(app: PortalApp, origin: HTMLElement, edge: { x: number; y: number }, ev: PointerEvent) {
+  function bindAppResize(app: PortalApp, origin: HTMLElement, edge: { x: number; y: number }, ev: { clientX: number; clientY: number; pointerId: number }) {
     unbindDrag();
     endLiveResize();
     const grid = origin.closest<HTMLElement>("[data-app-grid]");
@@ -3129,7 +3154,7 @@ function Home() {
     if (d.kind === "app" && o.kind === "app") {
       const carry = carryRef.current;
       const destTabId = current.activeTabId;
-      if (carry && carry.fromTabId !== destTabId) {
+      if (carry && carry.fromTabId !== destTabId && carry.app) {
         const nextCats = placeCarriedApp(current.categories, carry.app, o.catId, o.insertAt);
         if (nextCats) persistMove(carry.app, carry.fromTabId, destTabId, nextCats);
         clearCarry();
@@ -4356,7 +4381,7 @@ function Home() {
                           ctxMenu={data.settings.cardContextMenu !== false}
                           onPointerDown={(e) => {
                             if (!canDrag) return;
-                            if (e.target.closest("button")) return;
+                            if ((e.target as HTMLElement).closest("button")) return;
                             if (e.button != null && e.button !== 0) return;
                             if (canResize && e.pointerType !== "touch" && finePointer()) {
                               const edge = cardResizeEdge(e.currentTarget, e.clientX, e.clientY);
@@ -4446,7 +4471,7 @@ function Home() {
                 setModal({
                   kind: "stats",
                 })
-            : null
+            : void 0
         }
       />
       {modal.kind !== "none" && (
@@ -4486,7 +4511,7 @@ function Home() {
                 setBusy(true);
                 try {
                   try {
-                    sessionStorage.setItem(OIDC_NEXT_KEY, modal.next || "session");
+                    sessionStorage.setItem(OIDC_NEXT_KEY, (modal.next as string) || "session");
                   } catch {
                     // ignore
                   }
@@ -4511,7 +4536,7 @@ function Home() {
                         domain: domain === "ad" ? "ad" : "local",
                       },
                     }),
-                    new Promise((_, reject) => {
+                    new Promise<never>((_, reject) => {
                       window.setTimeout(() => reject(new Error("errors.timeout")), 12e3);
                     }),
                   ]);
@@ -4650,15 +4675,15 @@ function Home() {
           )}
           {modal.kind === "history" && (
             <HistoryPanel
-              key={modal.tab || "recovery"}
+              key={(modal.tab as string) || "recovery"}
               token={token}
-              tab={modal.tab || "recovery"}
+              tab={(modal.tab as string) || "recovery"}
               onClose={() =>
                 setModal({
                   kind: "none",
                 })
               }
-              onRestored={(next) => {
+              onRestored={(next: PortalData) => {
                 setData(next);
                 if (next.session) {
                   setSession(next.session);
@@ -4669,7 +4694,7 @@ function Home() {
           )}
           {modal.kind === "admin" && (
             <AdminPanel
-              tab={modal.tab}
+              tab={(modal.tab as string) || "general"}
               settings={data.settings}
               runtime={data.runtime}
               catalog={data.catalog}
@@ -4679,7 +4704,7 @@ function Home() {
               token={token}
               session={session}
               busy={busy}
-              onTab={(tab) =>
+              onTab={(tab: string) =>
                 setModal({
                   kind: "admin",
                   tab,
@@ -4799,7 +4824,7 @@ function Home() {
           )}
           {modal.kind === "tab" && (
             <TabForm
-              initial={modal.tab}
+              initial={(modal.tab as MenuTab | null) ?? null}
               busy={busy}
               picker={picker}
               canAcl={session?.role === "admin"}
@@ -4814,7 +4839,7 @@ function Home() {
                     ? updateTab({
                         data: {
                           token,
-                          id: modal.tab.id,
+                          id: (modal.tab as MenuTab).id,
                           name,
                           icon,
                           ...access,
@@ -4857,7 +4882,7 @@ function Home() {
           )}
           {modal.kind === "category" && (
             <CategoryForm
-              initial={modal.category}
+              initial={(modal.category as PortalCategory | null) ?? null}
               busy={busy}
               picker={picker}
               canAcl={session?.role === "admin"}
@@ -4873,7 +4898,7 @@ function Home() {
                     ? updateCategory({
                         data: {
                           token,
-                          id: modal.category.id,
+                          id: (modal.category as PortalCategory).id,
                           name,
                           icon,
                           ...access,
@@ -4895,9 +4920,9 @@ function Home() {
           {modal.kind === "app" && (
             <AppForm
               categories={data.categories}
-              categoryId={modal.categoryId}
+              categoryId={(modal.categoryId as string) || ""}
               catalog={data.catalog}
-              initial={modal.app}
+              initial={(modal.app as PortalApp | null) ?? null}
               busy={busy}
               picker={picker}
               probes={data.settings.healthChecks !== false}
@@ -4914,7 +4939,7 @@ function Home() {
                     ? updateApp({
                         data: {
                           token,
-                          id: modal.app.id,
+                          id: (modal.app as PortalApp).id,
                           ...payload,
                         },
                       })
@@ -4930,21 +4955,28 @@ function Home() {
           )}
           {modal.kind === "move-pick" && (
             <MovePickDialog
-              category={modal.category}
+              category={modal.category as Category | null | undefined}
               tabs={data.tabs}
-              fromTabId={modal.fromTabId}
+              fromTabId={modal.fromTabId as string | undefined}
               busy={busy}
               onCancel={() =>
                 setModal({
                   kind: "none",
                 })
               }
-              onContinue={(destTabId) => openMoveCat(modal.category, modal.fromTabId, destTabId)}
+              onContinue={(destTabId) =>
+                openMoveCat(
+                  modal.category as PortalCategory,
+                  modal.fromTabId as string | undefined,
+                  destTabId,
+                  undefined,
+                )
+              }
             />
           )}
           {modal.kind === "move-cat" && (
             <MoveSectionDialog
-              impact={modal.impact}
+              impact={modal.impact as CategoryMoveImpact & { insertAt?: number }}
               busy={busy}
               onCancel={() =>
                 setModal({
@@ -4956,10 +4988,10 @@ function Home() {
                   moveCategory({
                     data: {
                       token,
-                      categoryId: modal.impact.categoryId,
-                      destTabId: modal.impact.toId,
-                      ...(typeof modal.impact.insertAt === "number"
-                        ? { insertAt: modal.impact.insertAt }
+                      categoryId: (modal.impact as CategoryMoveImpact).categoryId,
+                      destTabId: (modal.impact as CategoryMoveImpact).toId,
+                      ...(typeof (modal.impact as { insertAt?: number }).insertAt === "number"
+                        ? { insertAt: (modal.impact as { insertAt?: number }).insertAt }
                         : {}),
                     },
                   }),
@@ -4972,7 +5004,7 @@ function Home() {
               inline
               title={t("confirm.deleteCategory")}
               body={t("confirm.deleteCategoryBody", {
-                name: modal.category.name,
+                name: (modal.category as PortalCategory).name,
               })}
               busy={busy}
               onCancel={() =>
@@ -4985,7 +5017,7 @@ function Home() {
                   deleteCategory({
                     data: {
                       token,
-                      id: modal.category.id,
+                      id: (modal.category as PortalCategory).id,
                     },
                   }),
                 )
@@ -4995,9 +5027,11 @@ function Home() {
           {modal.kind === "confirm-app" && (
             <ConfirmDialog
               inline
-              title={itemKind(modal.app.kind).remove}
+              title={itemKind((modal.app as PortalApp).kind).remove}
               body={t("item.removedBody", {
-                name: String(modal.app.title || "").trim() || itemKind(modal.app.kind).option,
+                name:
+                String((modal.app as PortalApp).title || "").trim() ||
+                itemKind((modal.app as PortalApp).kind).option,
               })}
               busy={busy}
               onCancel={() =>
@@ -5010,7 +5044,7 @@ function Home() {
                   deleteApp({
                     data: {
                       token,
-                      id: modal.app.id,
+                      id: (modal.app as PortalApp).id,
                     },
                   }),
                 )
@@ -5022,7 +5056,7 @@ function Home() {
               inline
               title={t("confirm.deleteSpace")}
               body={t("confirm.deleteSpaceBody", {
-                name: modal.tab.name,
+                name: (modal.tab as MenuTab).name,
               })}
               busy={busy}
               onCancel={() =>
@@ -5035,7 +5069,7 @@ function Home() {
                   deleteTab({
                     data: {
                       token,
-                      id: modal.tab.id,
+                      id: (modal.tab as MenuTab).id,
                     },
                   }),
                 )
@@ -5047,7 +5081,15 @@ function Home() {
     </div>
   );
 }
-function StatusMark({ result, pending, onRecheck }) {
+function StatusMark({
+  result,
+  pending,
+  onRecheck,
+}: {
+  result?: ProbeResult;
+  pending?: boolean;
+  onRecheck: () => void;
+}) {
   const state = pending && !result ? "wait" : result ? (result.ok ? "up" : "down") : "wait";
   const label =
     pending && !result
@@ -5070,7 +5112,7 @@ function StatusMark({ result, pending, onRecheck }) {
     />
   );
 }
-function FavStar({ on, onToggle }) {
+function FavStar({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
     <button
       type="button"
@@ -5555,7 +5597,27 @@ function AppCard({
     </div>
   );
 }
-function BrandPick({ label, hint, resetLabel, accept, src, variant, onFile, onReset, children }) {
+function BrandPick({
+  label,
+  hint,
+  resetLabel,
+  accept,
+  src,
+  variant,
+  onFile,
+  onReset,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  resetLabel: string;
+  accept: string;
+  src: string;
+  variant?: string;
+  onFile: (file: File) => Promise<void>;
+  onReset: () => void;
+  children?: ReactNode;
+}) {
   return (
     <div className="brand-slot">
       {" "}
@@ -5594,7 +5656,7 @@ function BrandPick({ label, hint, resetLabel, accept, src, variant, onFile, onRe
   );
 }
 function settingsSections() {
-  return [
+  const raw: [string, typeof Settings2][] = [
     ["general", Settings2],
     ["locales", Globe],
     ["themes", Palette],
@@ -5606,15 +5668,16 @@ function settingsSections() {
     ["info", MousePointerClick],
     ["backup", Download],
     ["about", BadgeInfo],
-  ].map(([id, icon]) => ({
+  ];
+  return raw.map(([id, icon]) => ({
     id,
     icon,
     label: t(`sections.${id}.label`),
     lead: t(`sections.${id}.lead`),
   }));
 }
-function collectTopApps(catalog, limit = 10) {
-  const rows = [];
+function collectTopApps(catalog: CatalogTab[] | null | undefined, limit = 10) {
+  const rows: { id: string; title: string; icon: string; tab: string; clicks: number }[] = [];
   for (const tab of catalog ?? [])
     for (const cat of tab.categories)
       for (const app of cat.apps) {
@@ -5631,21 +5694,21 @@ function collectTopApps(catalog, limit = 10) {
     .sort((a, b) => b.clicks - a.clicks || a.title.localeCompare(b.title, localeTag()))
     .slice(0, limit);
 }
-function formatHistoryWhen(at) {
+function formatHistoryWhen(at: number) {
   return formatWhen(at);
 }
-function historyScopeLabel(scope, kind) {
+function historyScopeLabel(scope: string | undefined, kind: string | undefined) {
   if (scope === "tab" || kind === "tab") return t("nav.space");
   if (scope === "category" || kind === "category") return t("item.category");
   if (kind === "note") return t("history.scopeNote");
   if (kind === "embed") return t("history.scopeEmbed");
   return t("history.scopeCard");
 }
-function historyCountLabel(n) {
+function historyCountLabel(n: number | undefined) {
   if (!n) return "";
   return tp("history.cardCount", n);
 }
-function historyMatches(needle, parts) {
+function historyMatches(needle: string, parts: (string | undefined | null)[]) {
   if (!needle) return true;
   return parts
     .filter(Boolean)
@@ -5653,10 +5716,20 @@ function historyMatches(needle, parts) {
     .toLowerCase()
     .includes(needle);
 }
-function HistoryPanel({ token, tab, onClose, onRestored }) {
+function HistoryPanel({
+  token,
+  tab,
+  onClose,
+  onRestored,
+}: {
+  token: string;
+  tab: string;
+  onClose: () => void;
+  onRestored: (next: PortalData) => void;
+}) {
   const [pane, setPane] = useState(tab === "audit" ? "audit" : "recovery");
-  const [audit, setAudit] = useState([]);
-  const [trash, setTrash] = useState([]);
+  const [audit, setAudit] = useState<AuditRow[]>([]);
+  const [trash, setTrash] = useState<TrashRow[]>([]);
   const [canPurge, setCanPurge] = useState(false);
   const [canAudit, setCanAudit] = useState(true);
   const [canRestore, setCanRestore] = useState(true);
@@ -5723,7 +5796,7 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
       return "";
     },
   );
-  async function restore(row) {
+  async function restore(row: TrashRow) {
     if (busy) return;
     setBusy(true);
     try {
@@ -6014,7 +6087,15 @@ function HistoryPanel({ token, tab, onClose, onRestored }) {
     </div>
   );
 }
-function StatsPanel({ catalog, scoped, onClose }) {
+function StatsPanel({
+  catalog,
+  scoped,
+  onClose,
+}: {
+  catalog: CatalogTab[];
+  scoped: boolean;
+  onClose: () => void;
+}) {
   const top = useMemo(() => collectTopApps(catalog, 10).filter((r) => r.clicks > 0), [catalog]);
   const max = Math.max(1, ...top.map((r) => r.clicks));
   const total = top.reduce((sum, row) => sum + row.clicks, 0);
@@ -6074,6 +6155,12 @@ function StatsPanel({ catalog, scoped, onClose }) {
     </div>
   );
 }
+type TagsPayload = {
+  create?: string[];
+  rename?: { from: string; to: string }[];
+  remove?: string[];
+  colors?: Record<string, string>;
+};
 function AdminPanel({
   tab,
   settings,
@@ -6093,6 +6180,25 @@ function AdminPanel({
   onSaveTheme,
   onResetPortal,
   onImportPortal,
+}: {
+  tab: string;
+  settings: PortalSettings;
+  runtime?: PortalData["runtime"];
+  catalog: CatalogTab[];
+  tags: { name: string; count: number }[];
+  tabs: MenuTab[];
+  directory: DirectoryEntry[];
+  token: string;
+  session: SessionInfo | null;
+  busy: boolean;
+  onTab: (id: string) => void;
+  onCancel: () => void;
+  onSaveSettings: (payload: SettingsPayload, opts?: { close?: boolean }) => void;
+  onResetClicks: () => void;
+  onApplyTags: (payload: TagsPayload) => void;
+  onSaveTheme: (payload: { cssLight: string; cssDark: string }) => void;
+  onResetPortal: () => void;
+  onImportPortal: (payload: unknown) => void;
 }) {
   const sections = settingsSections().filter((s) => {
     if (s.id === "about") return true;
@@ -6249,8 +6355,18 @@ function AdminPanel({
     </div>
   );
 }
-function AboutForm({ busy, canReset, onReset }) {
-  const [release, setRelease] = useState(null);
+function AboutForm({
+  busy,
+  canReset,
+  onReset,
+}: {
+  busy: boolean;
+  canReset?: boolean;
+  onReset: () => void;
+}) {
+  const [release, setRelease] = useState<{ kind: string; latest?: string; url?: string } | null>(
+    null,
+  );
   useEffect(() => {
     let live = true;
     checkLatestRelease({
@@ -6394,7 +6510,15 @@ function AboutForm({ busy, canReset, onReset }) {
     </div>
   );
 }
-function OidcForm({ initial, onSave, busy }) {
+function OidcForm({
+  initial,
+  onSave,
+  busy,
+}: {
+  initial: PortalSettings;
+  onSave: (payload: OidcPayload) => void;
+  busy: boolean;
+}) {
   const [oidcEnabled, setOidcEnabled] = useState(Boolean(initial.oidcEnabled));
   const [oidcIssuer, setOidcIssuer] = useState(initial.oidcIssuer || "");
   const [oidcClientId, setOidcClientId] = useState(initial.oidcClientId || "");
@@ -6491,7 +6615,8 @@ function OidcForm({ initial, onSave, busy }) {
     </form>
   );
 }
-function blankLdapDir() {
+type LdapDirRow = Directory & { hasBindPassword?: boolean };
+function blankLdapDir(): LdapDirRow {
   return {
     id: crypto.randomUUID(),
     enabled: false,
@@ -6507,7 +6632,7 @@ function blankLdapDir() {
     autoCreate: false,
   };
 }
-function seedLdapDirs(initial) {
+function seedLdapDirs(initial: PortalSettings): LdapDirRow[] {
   if (Array.isArray(initial.ldapDirectories) && initial.ldapDirectories.length) {
     return initial.ldapDirectories.map((d) => ({
       ...blankLdapDir(),
@@ -6537,7 +6662,40 @@ function seedLdapDirs(initial) {
   }
   return [];
 }
-function settingsBase(initial) {
+type SettingsPayload = {
+  title: string;
+  subtitle: string;
+  logo: string;
+  healthChecks: boolean;
+  usageStats: boolean;
+  infoBar: boolean;
+  favNotes: boolean;
+  favEmbeds: boolean;
+  onlineIcons: boolean;
+  navRichIcons: boolean;
+  locale: "en" | "fr";
+  dateFormat: "ymd" | "yyyy" | "dmy" | "mdy" | "iso";
+  timeFormat: "24h" | "12h";
+  timezone: string;
+  numberFormat: "auto" | "space-comma" | "comma-dot" | "dot-comma" | "apostrophe-comma";
+  probeBlink: boolean;
+  annexFade: boolean;
+  catCounts: boolean;
+  pruneOrphanTags: boolean;
+  tagsAlpha: boolean;
+  cardResize: boolean;
+  cardContextMenu: boolean;
+  cardDragCollapse: boolean;
+  infoStats: boolean;
+  infoGeek: boolean;
+  probeTlsVerify: boolean;
+  probeAuthOnly: boolean;
+  sessionHttpOnly: boolean;
+  devAdminNoPassword: boolean;
+  documentTitle: string;
+  favicon: string;
+};
+function settingsBase(initial: PortalSettings): SettingsPayload {
   return {
     title: initial.title,
     subtitle: initial.subtitle || "",
@@ -6572,13 +6730,25 @@ function settingsBase(initial) {
     favicon: initial.favicon || "",
   };
 }
-function SettingsForm({ initial, busy, embedded, onCancel, onSave }) {
+function SettingsForm({
+  initial,
+  busy,
+  embedded,
+  onCancel,
+  onSave,
+}: {
+  initial: PortalSettings;
+  busy: boolean;
+  embedded?: boolean;
+  onCancel: () => void;
+  onSave: (payload: SettingsPayload) => void;
+}) {
   const [title, setTitle] = useState(initial.title);
   const [subtitle, setSubtitle] = useState(initial.subtitle);
   const [logo, setLogo] = useState(initial.logo || "");
   const [documentTitle, setDocumentTitle] = useState(initial.documentTitle || "Dockit");
   const [favicon, setFavicon] = useState(initial.favicon || "");
-  async function applyLogo(next) {
+  async function applyLogo(next: string) {
     setLogo(next);
     if (!next) {
       setFavicon("");
@@ -6697,7 +6867,7 @@ function SettingsForm({ initial, busy, embedded, onCancel, onSave }) {
     </form>
   );
 }
-function TimeZoneField({ value, onChange }) {
+function TimeZoneField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const groups = useMemo(() => listTimeZones(), []);
   return (
     <Field label={t("lang.timezone")}>
@@ -6719,7 +6889,14 @@ function TimeZoneField({ value, onChange }) {
     </Field>
   );
 }
-const REGIONS = [
+const REGIONS: {
+  id: string;
+  labelKey: string;
+  locale: "en" | "fr";
+  dateFormat: "ymd" | "yyyy" | "dmy" | "mdy" | "iso";
+  timeFormat: "24h" | "12h";
+  numberFormat: "auto" | "space-comma" | "comma-dot" | "dot-comma" | "apostrophe-comma";
+}[] = [
   { id: "en-US", labelKey: "lang.regionEnUs", locale: "en", dateFormat: "mdy", timeFormat: "12h", numberFormat: "comma-dot" },
   { id: "en-GB", labelKey: "lang.regionEnGb", locale: "en", dateFormat: "dmy", timeFormat: "24h", numberFormat: "comma-dot" },
   { id: "fr-FR", labelKey: "lang.regionFrFr", locale: "fr", dateFormat: "dmy", timeFormat: "24h", numberFormat: "space-comma" },
@@ -6727,7 +6904,13 @@ const REGIONS = [
   { id: "fr-BE", labelKey: "lang.regionFrBe", locale: "fr", dateFormat: "dmy", timeFormat: "24h", numberFormat: "dot-comma" },
   { id: "fr-LU", labelKey: "lang.regionFrLu", locale: "fr", dateFormat: "dmy", timeFormat: "24h", numberFormat: "space-comma" },
 ];
-function LocalesForm({ initial, onSave }) {
+function LocalesForm({
+  initial,
+  onSave,
+}: {
+  initial: PortalSettings;
+  onSave: (payload: SettingsPayload) => void;
+}) {
   const [locale, setLocaleDraft] = useState(asLocale(initial.locale));
   const [dateFormat, setDateDraft] = useState(asDateFormat(initial.dateFormat));
   const [timeFormat, setTimeDraft] = useState(asTimeFormat(initial.timeFormat));
@@ -6865,7 +7048,19 @@ function LocalesForm({ initial, onSave }) {
     </form>
   );
 }
-function BackupForm({ token, busy, catalog, title, onImport }) {
+function BackupForm({
+  token,
+  busy,
+  catalog,
+  title,
+  onImport,
+}: {
+  token: string;
+  busy: boolean;
+  catalog: CatalogTab[];
+  title: string;
+  onImport: (payload: unknown) => void;
+}) {
   const [pending, setPending] = useState(false);
   const working = busy || pending;
   async function doExport() {
@@ -6894,7 +7089,7 @@ function BackupForm({ token, busy, catalog, title, onImport }) {
       setPending(false);
     }
   }
-  async function doImport(file) {
+  async function doImport(file: File) {
     if (!file) return;
     if (file.size > 5e6) {
       toast.error(t("backup.fileTooBig"));
@@ -6944,7 +7139,7 @@ function BackupForm({ token, busy, catalog, title, onImport }) {
   }
   function downloadPdf() {
     try {
-      const blob = new Blob([inventoryPdf(inventoryRows(), title || "Dockit")], {
+      const blob = new Blob([inventoryPdf(inventoryRows(), title || "Dockit") as BlobPart], {
         type: "application/pdf",
       });
       const url = URL.createObjectURL(blob);
@@ -6993,7 +7188,7 @@ function BackupForm({ token, busy, catalog, title, onImport }) {
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = "";
-                doImport(file);
+                if (file) void doImport(file);
               }}
             />
           </label>
@@ -7034,7 +7229,13 @@ function BackupForm({ token, busy, catalog, title, onImport }) {
     </div>
   );
 }
-function PresentationForm({ initial, onSave }) {
+function PresentationForm({
+  initial,
+  onSave,
+}: {
+  initial: PortalSettings;
+  onSave: (payload: SettingsPayload) => void;
+}) {
   const [usageStats, setUsageStats] = useState(initial.usageStats !== false);
   const [favNotes, setFavNotes] = useState(Boolean(initial.favNotes));
   const [favEmbeds, setFavEmbeds] = useState(Boolean(initial.favEmbeds));
@@ -7204,7 +7405,13 @@ function PresentationForm({ initial, onSave }) {
     </form>
   );
 }
-function ReachabilityForm({ initial, onSave }) {
+function ReachabilityForm({
+  initial,
+  onSave,
+}: {
+  initial: PortalSettings;
+  onSave: (payload: SettingsPayload) => void;
+}) {
   const [healthChecks, setHealthChecks] = useState(initial.healthChecks !== false);
   const [probeBlink, setProbeBlink] = useState(Boolean(initial.probeBlink));
   const infoBar = initial.infoBar !== false;
@@ -7251,7 +7458,15 @@ function ReachabilityForm({ initial, onSave }) {
     </form>
   );
 }
-function SecurityForm({ initial, isDev, onSave }) {
+function SecurityForm({
+  initial,
+  isDev,
+  onSave,
+}: {
+  initial: PortalSettings;
+  isDev: boolean;
+  onSave: (payload: SettingsPayload) => void;
+}) {
   const [probeTlsVerify, setProbeTlsVerify] = useState(Boolean(initial.probeTlsVerify));
   const [probeAuthOnly, setProbeAuthOnly] = useState(Boolean(initial.probeAuthOnly));
   const [sessionHttpOnly, setSessionHttpOnly] = useState(Boolean(initial.sessionHttpOnly));
@@ -7332,9 +7547,23 @@ function SecurityForm({ initial, isDev, onSave }) {
     </form>
   );
 }
-function DebugPanel({ settings, runtime, session }) {
-  const s = settings || {};
-  const r = runtime || {};
+function DebugPanel({
+  settings,
+  runtime,
+  session,
+}: {
+  settings: PortalSettings;
+  runtime?: PortalData["runtime"];
+  session: SessionInfo | null;
+}) {
+  const s = settings || ({} as PortalSettings);
+  const r =
+    runtime ||
+    ({
+      isDev: false,
+      publicOrigin: "",
+      trustProxy: false,
+    } as NonNullable<PortalData["runtime"]>);
   const rows = [
     r.isDev
       ? {
@@ -7426,7 +7655,7 @@ function DebugPanel({ settings, runtime, session }) {
           detail: t("debug.publicDetail"),
         }
       : null,
-  ].filter(Boolean);
+  ].filter((row): row is { level: string; title: string; detail: string } => row !== null);
   return (
     <div className="settings-stack">
       {" "}
@@ -7453,7 +7682,17 @@ function DebugPanel({ settings, runtime, session }) {
     </div>
   );
 }
-function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
+function InfoBarForm({
+  initial,
+  busy,
+  onSave,
+  onResetClicks,
+}: {
+  initial: PortalSettings;
+  busy: boolean;
+  onSave: (payload: SettingsPayload) => void;
+  onResetClicks: () => void;
+}) {
   const [infoStats, setInfoStats] = useState(initial.infoStats !== false);
   const [infoGeek, setInfoGeek] = useState(initial.infoGeek !== false);
   const infoBar = initial.infoBar !== false;
@@ -7525,7 +7764,8 @@ function InfoBarForm({ initial, busy, onSave, onResetClicks }) {
     </form>
   );
 }
-const THEME_COLOR_FIELDS = [
+type ThemeColors = { bg: string; surface: string; header: string };
+const THEME_COLOR_FIELDS: { id: keyof ThemeColors; cssVar: string }[] = [
   {
     id: "bg",
     cssVar: "--color-bg",
@@ -7551,14 +7791,14 @@ const DARK_COLORS = {
 };
 const MANAGED_BLOCK_RE =
   /html\.(?:light|dark)\s*\{\s*(?:--color-(?:bg|surface|header)\s*:\s*#[0-9a-fA-F]{3,8}\s*;\s*)+\}/g;
-function expandHex(raw) {
+function expandHex(raw: string) {
   const s = raw.trim();
   if (/^#[0-9a-fA-F]{6}$/.test(s)) return s.toLowerCase();
   if (/^#[0-9a-fA-F]{3}$/.test(s))
     return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`.toLowerCase();
   return null;
 }
-function hexLuma(raw) {
+function hexLuma(raw: unknown) {
   const hex = expandHex(String(raw || ""));
   if (!hex) return 1;
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -7566,7 +7806,7 @@ function hexLuma(raw) {
   const b = parseInt(hex.slice(5, 7), 16) / 255;
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-function parseThemeCss(css, fallback) {
+function parseThemeCss(css: string, fallback: ThemeColors) {
   const colors = {
     ...fallback,
   };
@@ -7583,12 +7823,20 @@ function parseThemeCss(css, fallback) {
     extra: css.replace(MANAGED_BLOCK_RE, "").trim(),
   };
 }
-function composeThemeCss(mode, colors, extra) {
+function composeThemeCss(mode: string, colors: ThemeColors, extra: string) {
   const block = `html.${mode} {\n  --color-bg: ${colors.bg};\n  --color-surface: ${colors.surface};\n  --color-header: ${colors.header};\n}`;
   const rest = extra.trim();
   return rest ? `${rest}\n${block}\n` : `${block}\n`;
 }
-function ThemeColorField({ label, value, onChange }) {
+function ThemeColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
     <label className="theme-chip">
       {" "}
@@ -7612,7 +7860,17 @@ function ThemeColorField({ label, value, onChange }) {
     </label>
   );
 }
-function ThemeForm({ initial, busy, onCancel, onSave }) {
+function ThemeForm({
+  initial,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  initial: PortalSettings;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (payload: { cssLight: string; cssDark: string }) => void;
+}) {
   const { theme, apply } = useTheme();
   const [pane, setPane] = useState(theme);
   const lightParsed = parseThemeCss(initial.cssLight || "", LIGHT_COLORS);
@@ -7745,6 +8003,18 @@ function LockForm({
   onCancel,
   onUnlock,
   onOidc,
+}: {
+  busy: boolean;
+  oidcEnabled: boolean;
+  oidcLabel: string;
+  ldapEnabled: boolean;
+  ldapDomain: string;
+  ldapRealms?: { id: string; label: string }[];
+  loginOrder?: string[];
+  noPassword: boolean;
+  onCancel: () => void;
+  onUnlock: (username: string, password: string, domain: string) => void;
+  onOidc?: () => void;
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -7869,20 +8139,32 @@ function LockForm({
     </form>
   );
 }
-function issuerHost(url) {
+function issuerHost(url: unknown) {
   try {
     return new URL(String(url || "")).host || "";
   } catch {
     return "";
   }
 }
-function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLoginOrder }) {
+function IdentitySourcesPanel({
+  settings,
+  busy,
+  onSaveLdap,
+  onSaveOidc,
+  onSaveLoginOrder,
+}: {
+  settings: PortalSettings;
+  busy: boolean;
+  onSaveLdap: (payload: LdapPayload) => void;
+  onSaveOidc: (payload: OidcPayload) => void;
+  onSaveLoginOrder: (order: string[]) => void;
+}) {
   const expand = useExpandSession();
-  const listRef = useRef(null);
-  const dragRef = useRef(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ key: string; pointerId: number } | null>(null);
   const didDrag = useRef(false);
-  const snap = useRef(null);
-  const [dirs, setDirs] = useState(() => seedLdapDirs(settings));
+  const snap = useRef("");
+  const [dirs, setDirs] = useState<LdapDirRow[]>(() => seedLdapDirs(settings));
   const [order, setOrder] = useState(() =>
     Array.isArray(settings.loginOrder) && settings.loginOrder.length
       ? settings.loginOrder
@@ -7890,10 +8172,10 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
   );
   const orderRef = useRef(order);
   orderRef.current = order;
-  const [dragKey, setDragKey] = useState(null);
-  const [confirm, setConfirm] = useState(null);
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ id: string; name?: string } | null>(null);
   const [oidcDraft, setOidcDraft] = useState(false);
-  function patchDir(id, next) {
+  function patchDir(id: string, next: Partial<LdapDirRow>) {
     setDirs((cur) => {
       const out = cur.map((d) =>
         d.id === id
@@ -7907,7 +8189,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
       return out;
     });
   }
-  function persistDirs(nextDirs, nextOrder) {
+  function persistDirs(nextDirs?: LdapDirRow[], nextOrder?: string[]) {
     const list = nextDirs || dirs;
     onSaveLdap({
       ldapDirectories: list.map((d) => ({
@@ -7979,7 +8261,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
   }
   const defaultId =
     order.find((id) => id === "local" || dirs.some((d) => d.id === id && d.enabled)) || "local";
-  function toggleRow(id, edit) {
+  function toggleRow(id: string, edit: boolean) {
     if (didDrag.current) {
       didDrag.current = false;
       return;
@@ -8010,14 +8292,14 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
       apply: () => expand.markDirty(false),
     });
   }
-  function setDefault(id) {
+  function setDefault(id: string) {
     if (!id || id === "oidc") return;
     const next = [id, ...order.filter((x) => x !== id)];
     if (!next.includes("local")) next.unshift("local");
     setOrder(next);
     onSaveLoginOrder(next);
   }
-  function removeProvider(id) {
+  function removeProvider(id: string) {
     if (id === "local") return;
     if (id === "oidc") {
       onSaveOidc({
@@ -8040,7 +8322,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
     expand.markDirty(false);
     expand.requestClose();
   }
-  function moveOrder(id, dir) {
+  function moveOrder(id: string, dir: number) {
     const i = order.indexOf(id);
     const j = i + dir;
     if (i < 0 || j < 0 || j >= order.length) return;
@@ -8050,16 +8332,16 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
     setOrder(next);
     onSaveLoginOrder(next);
   }
-  function endDrag(el, pointerId) {
+  function endDrag(el: HTMLElement | null, pointerId?: number) {
     dragRef.current = null;
     setDragKey(null);
     try {
-      el?.releasePointerCapture(pointerId);
+      if (pointerId != null) el?.releasePointerCapture(pointerId);
     } catch {
       // ignore
     }
   }
-  function onGripDown(e, key) {
+  function onGripDown(e: ReactPointerEvent<HTMLElement>, key: string) {
     if (order.length < 2 || e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -8071,12 +8353,12 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
     didDrag.current = false;
     setDragKey(key);
   }
-  function onGripMove(e) {
+  function onGripMove(e: ReactPointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     const root = listRef.current;
     if (!root) return;
-    const others = [...root.querySelectorAll("[data-row-id]")].filter((row) => {
+    const others = [...root.querySelectorAll<HTMLElement>("[data-row-id]")].filter((row) => {
       const id = row.getAttribute("data-row-id");
       return id && id !== drag.key && order.includes(id);
     });
@@ -8097,13 +8379,22 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
       return rest;
     });
   }
-  function onGripUp(e) {
+  function onGripUp(e: ReactPointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     endDrag(e.currentTarget, e.pointerId);
     if (didDrag.current) onSaveLoginOrder(orderRef.current);
   }
-  function renderCard(r) {
+  type ProviderRow = {
+    id: string;
+    name: string;
+    type: string;
+    host: string;
+    on: boolean;
+    draggable: boolean;
+    dir?: LdapDirRow;
+  };
+  function renderCard(r: ProviderRow) {
     const open = expand.openId === r.id;
     const isDefault = r.id === defaultId;
     const dir = r.dir || dirs.find((d) => d.id === r.id);
@@ -8283,7 +8574,7 @@ function IdentitySourcesPanel({ settings, busy, onSaveLdap, onSaveOidc, onSaveLo
     </div>
   );
 }
-function LdapDirFields({ d, patch }) {
+function LdapDirFields({ d, patch }: { d: LdapDirRow; patch: (next: Partial<LdapDirRow>) => void }) {
   const tlsOn = d.tls !== false;
   return (
     <>
@@ -8428,6 +8719,29 @@ function LdapDirFields({ d, patch }) {
     </>
   );
 }
+type OidcPayload = {
+  oidcEnabled: boolean;
+  oidcIssuer: string;
+  oidcClientId: string;
+  oidcClientSecret?: string;
+  oidcLabel?: string;
+  oidcAutoCreate?: boolean;
+};
+type LdapDirectoryPayload = {
+  id: string;
+  enabled: boolean;
+  host: string;
+  port?: number;
+  tls?: boolean;
+  tlsVerify?: boolean;
+  bindDn?: string;
+  bindPassword?: string;
+  baseDn?: string;
+  userFilter?: string;
+  domain?: string;
+  autoCreate?: boolean;
+};
+type LdapPayload = { ldapDirectories: LdapDirectoryPayload[] };
 function AccessFrame({
   token,
   session,
@@ -8438,6 +8752,16 @@ function AccessFrame({
   onSaveOidc,
   onSaveLdap,
   onSaveLoginOrder,
+}: {
+  token: string;
+  session: SessionInfo | null;
+  tabs: MenuTab[];
+  settings: PortalSettings;
+  busy: boolean;
+  onClose: () => void;
+  onSaveOidc: (payload: OidcPayload) => void;
+  onSaveLdap: (payload: LdapPayload) => void;
+  onSaveLoginOrder: (order: string[]) => void;
 }) {
   const [section, setSection] = useState("users");
   const canAccess = Boolean(
@@ -8549,36 +8873,44 @@ function AccessFrame({
               onSaveLoginOrder={onSaveLoginOrder}
             />
           ) : pane === "roles" ? (
-            <AccessRoles
-              token={token}
-              actor={session}
-              tabs={tabs}
-              directories={seedLdapDirs(settings)}
-            />
+            <AccessRoles token={token} tabs={tabs} directories={seedLdapDirs(settings)} />
           ) : pane === "groups" ? (
             <AccessGroups
               token={token}
-              actor={session}
+              actor={session ?? undefined}
               tabs={tabs}
               directories={seedLdapDirs(settings)}
             />
           ) : (
-            <AccessUsers
-              token={token}
-              actor={session}
-              tabs={tabs}
-              directories={seedLdapDirs(settings)}
-            />
+            <AccessUsers token={token} actor={session ?? undefined} tabs={tabs} />
           )}
         </div>
       </div>
     </div>
   );
 }
-function IconPicker({ value, onChange, token, library, onLibrary, online, siteUrl, pictosOnly }) {
+function IconPicker({
+  value,
+  onChange,
+  token,
+  library,
+  onLibrary,
+  online,
+  siteUrl,
+  pictosOnly,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  token: string;
+  library: CustomIcon[];
+  onLibrary: (icons: CustomIcon[]) => void;
+  online: boolean;
+  siteUrl?: string;
+  pictosOnly?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [remote, setRemote] = useState([]);
+  const [remote, setRemote] = useState<{ id: string; src: string }[]>([]);
   const [busyIcon, setBusyIcon] = useState(false);
   const query = q.trim().toLowerCase();
   const products = query
@@ -8596,7 +8928,7 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
       })
         .then((r) => r.json())
         .then((json) => {
-          const ids = (json.icons ?? []).slice(0, 48);
+          const ids = ((json.icons ?? []) as string[]).slice(0, 48);
           setRemote(
             ids
               .map((id) => ({
@@ -8613,11 +8945,11 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
       ctrl.abort();
     };
   }, [query, online, open, pictosOnly]);
-  function choose(next) {
+  function choose(next: string) {
     onChange(next);
     setOpen(false);
   }
-  async function pickRemote(src) {
+  async function pickRemote(src: string) {
     setBusyIcon(true);
     try {
       choose(await urlToDataUrl(src));
@@ -8627,7 +8959,7 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
       setBusyIcon(false);
     }
   }
-  async function importFile(file) {
+  async function importFile(file: File) {
     if (!file) return;
     setBusyIcon(true);
     try {
@@ -8753,7 +9085,7 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           e.target.value = "";
-                          importFile(file);
+                          if (file) void importFile(file);
                         }}
                       />
                     </label>
@@ -8892,7 +9224,21 @@ function IconPicker({ value, onChange, token, library, onLibrary, online, siteUr
   );
 }
 const FIELD_SM = "h-9 rounded-md bg-transparent";
-function AclFields({ restricted, setRestricted, seeHint }) {
+function AclFields({
+  restricted,
+  setRestricted,
+  seeHint,
+}: {
+  restricted: boolean;
+  setRestricted: (v: boolean) => void;
+  viewers: string[];
+  setViewers: (v: string[]) => void;
+  editors: string[];
+  setEditors: (v: string[]) => void;
+  people?: DirectoryEntry[];
+  seeHint?: string;
+  editHint?: string;
+}) {
   return (
     <div className="settings-card">
       <p className="settings-kicker">{t("space.visibility")}</p>
@@ -8910,7 +9256,29 @@ function AclFields({ restricted, setRestricted, seeHint }) {
     </div>
   );
 }
-function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
+function TabForm({
+  initial,
+  busy,
+  picker,
+  people,
+  canAcl,
+  onCancel,
+  onSave,
+}: {
+  initial?: MenuTab | null;
+  busy: boolean;
+  picker: {
+    token: string;
+    library: CustomIcon[];
+    online: boolean;
+    navRichIcons: boolean;
+    onLibrary: (icons: CustomIcon[]) => void;
+  };
+  people: DirectoryEntry[];
+  canAcl: boolean;
+  onCancel: () => void;
+  onSave: (name: string, icon: string, access: AccessPayload) => void;
+}) {
   const [name, setName] = useState(initial?.name ?? "");
   const [icon, setIcon] = useState(initial?.icon ?? "Layers");
   const [restricted, setRestricted] = useState(Boolean(initial?.restricted));
@@ -9046,7 +9414,17 @@ function TabForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
     </form>
   );
 }
-function FavsForm({ hideLabel: initialHide, busy, onCancel, onSave }) {
+function FavsForm({
+  hideLabel: initialHide,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  hideLabel: boolean;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (hideLabel: boolean) => void;
+}) {
   const [hideLabel, setHideLabel] = useState(Boolean(initialHide));
   return (
     <form
@@ -9082,7 +9460,29 @@ function FavsForm({ hideLabel: initialHide, busy, onCancel, onSave }) {
     </form>
   );
 }
-function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave }) {
+function CategoryForm({
+  initial,
+  busy,
+  picker,
+  people,
+  canAcl,
+  onCancel,
+  onSave,
+}: {
+  initial?: PortalCategory | null;
+  busy: boolean;
+  picker: {
+    token: string;
+    library: CustomIcon[];
+    online: boolean;
+    navRichIcons: boolean;
+    onLibrary: (icons: CustomIcon[]) => void;
+  };
+  people: DirectoryEntry[];
+  canAcl: boolean;
+  onCancel: () => void;
+  onSave: (name: string, icon: string, access: AccessPayload) => void;
+}) {
   const [name, setName] = useState(initial?.name ?? "");
   const [icon, setIcon] = useState(initial?.icon ?? "Folder");
   const [restricted, setRestricted] = useState(Boolean(initial?.restricted));
@@ -9206,7 +9606,7 @@ function CategoryForm({ initial, busy, picker, people, canAcl, onCancel, onSave 
     </form>
   );
 }
-function itemKind(kind) {
+function itemKind(kind: string | undefined) {
   const k = kind === "note" || kind === "embed" ? kind : "app";
   return {
     option: t(`item.${k}.option`),
@@ -9216,26 +9616,32 @@ function itemKind(kind) {
     urlLabel: t(`item.${k}.urlLabel`),
   };
 }
-function ExtraLinksField({ links, setLinks }) {
-  const listRef = useRef(null);
-  const dragRef = useRef(null);
+function ExtraLinksField({
+  links,
+  setLinks,
+}: {
+  links: { key: string; title: string; url: string }[];
+  setLinks: React.Dispatch<React.SetStateAction<{ key: string; title: string; url: string }[]>>;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ key: string; pointerId: number } | null>(null);
   const didDrag = useRef(false);
-  const [dragKey, setDragKey] = useState(null);
-  const [openId, setOpenId] = useState(null);
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const INPUT_SM = FIELD_SM;
-  function patch(key, next) {
+  function patch(key: string, next: Partial<{ title: string; url: string }>) {
     setLinks((cur) => cur.map((r) => (r.key === key ? { ...r, ...next } : r)));
   }
-  function endDrag(el, pointerId) {
+  function endDrag(el: HTMLElement | null, pointerId?: number) {
     dragRef.current = null;
     setDragKey(null);
     try {
-      el?.releasePointerCapture(pointerId);
+      if (pointerId != null) el?.releasePointerCapture(pointerId);
     } catch {
       // ignore
     }
   }
-  function onGripDown(e, key) {
+  function onGripDown(e: ReactPointerEvent<HTMLElement>, key: string) {
     if (links.length < 2 || e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -9247,12 +9653,12 @@ function ExtraLinksField({ links, setLinks }) {
     didDrag.current = false;
     setDragKey(key);
   }
-  function onGripMove(e) {
+  function onGripMove(e: ReactPointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     const root = listRef.current;
     if (!root) return;
-    const others = [...root.querySelectorAll("[data-row-id]")].filter((row) => {
+    const others = [...root.querySelectorAll<HTMLElement>("[data-row-id]")].filter((row) => {
       const id = row.getAttribute("data-row-id");
       return id && id !== drag.key;
     });
@@ -9273,12 +9679,12 @@ function ExtraLinksField({ links, setLinks }) {
       return rest;
     });
   }
-  function onGripUp(e) {
+  function onGripUp(e: ReactPointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     endDrag(e.currentTarget, e.pointerId);
   }
-  function toggle(id) {
+  function toggle(id: string) {
     if (didDrag.current) {
       didDrag.current = false;
       return;
@@ -9368,7 +9774,7 @@ function ExtraLinksField({ links, setLinks }) {
     </div>
   );
 }
-function SizePreview({ colSpan, rowSpan }) {
+function SizePreview({ colSpan, rowSpan }: { colSpan: number; rowSpan: number }) {
   const cols = Math.min(3, Math.max(1, Number(colSpan) || 1));
   const rows = Math.min(3, Math.max(1, Number(rowSpan) || 1));
   const slots = [];
@@ -9416,6 +9822,24 @@ function AppForm({
   tagColors,
   onCancel,
   onSave,
+}: {
+  categories: PortalCategory[];
+  categoryId: string;
+  catalog: CatalogTab[];
+  initial?: PortalApp | null;
+  busy: boolean;
+  picker: {
+    token: string;
+    library: CustomIcon[];
+    online: boolean;
+    navRichIcons: boolean;
+    onLibrary: (icons: CustomIcon[]) => void;
+  };
+  probes?: boolean;
+  knownTags?: string[];
+  tagColors?: Record<string, string>;
+  onCancel: () => void;
+  onSave: (payload: AppFormPayload) => void;
 }) {
   const [kind, setKind] = useState(initial?.kind ?? "app");
   const [catId, setCatId] = useState(initial?.categoryId ?? categoryId);
@@ -9423,15 +9847,15 @@ function AppForm({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [url, setUrl] = useState(initial?.url ?? "");
   const [icon, setIcon] = useState(initial?.icon ?? "Link");
-  const [openIn, setOpenIn] = useState(initial?.openIn ?? "_blank");
+  const [openIn, setOpenIn] = useState<"_blank" | "_self">(initial?.openIn ?? "_blank");
   const [tags, setTags] = useState(initial?.tags ?? []);
   const [tagDraft, setTagDraft] = useState("");
   const [draftColors, setDraftColors] = useState({});
-  const [colSpan, setColSpan] = useState(initial?.colSpan ?? 1);
-  const [rowSpan, setRowSpan] = useState(initial?.rowSpan ?? 1);
-  const [check, setCheck] = useState(initial?.check ?? "off");
+  const [colSpan, setColSpan] = useState<1 | 2 | 3>(initial?.colSpan ?? 1);
+  const [rowSpan, setRowSpan] = useState<1 | 2 | 3>(initial?.rowSpan ?? 1);
+  const [check, setCheck] = useState<CheckMode>(initial?.check ?? "off");
   const [checkHost, setCheckHost] = useState(initial?.checkHost ?? "");
-  const [links, setLinks] = useState(() =>
+  const [links, setLinks] = useState<{ key: string; title: string; url: string }[]>(() =>
     (Array.isArray(initial?.links) ? initial.links : [])
       .map((r) => ({
         key: crypto.randomUUID(),
@@ -9449,7 +9873,7 @@ function AppForm({
       : pane === "design"
         ? "taille"
         : pane;
-  function addTag(raw) {
+  function addTag(raw: string) {
     const t = raw.trim().slice(0, 32);
     if (!t) return;
     setTags((cur) => {
@@ -9461,7 +9885,7 @@ function AppForm({
           ...colors,
         };
         if (lookupTagColor(t, merged)) return colors;
-        if (knownTags.some((k) => k.toLowerCase() === t.toLowerCase())) return colors;
+        if ((knownTags ?? []).some((k) => k.toLowerCase() === t.toLowerCase())) return colors;
         const used = new Set(Object.values(merged).map((h) => String(h).toLowerCase()));
         return {
           ...colors,
@@ -9472,10 +9896,10 @@ function AppForm({
     });
     setTagDraft("");
   }
-  function removeTag(name) {
+  function removeTag(name: string) {
     setTags((cur) => cur.filter((x) => x.toLowerCase() !== name.toLowerCase()));
   }
-  function resetFieldsForKind(next) {
+  function resetFieldsForKind(next: ItemKind) {
     setKind(next);
     setTitle("");
     setDescription("");
@@ -9492,7 +9916,7 @@ function AppForm({
     setPane("general");
     setIcon(next === "note" ? "FileText" : next === "embed" ? "AppWindow" : "Link");
   }
-  async function changeKind(next) {
+  async function changeKind(next: ItemKind) {
     if (next === kind) return;
     const hasContent = Boolean(
       title.trim() ||
@@ -9553,7 +9977,7 @@ function AppForm({
       className="kind-select"
       value={kind}
       aria-label={t("item.type")}
-      onChange={(e) => void changeKind(e.target.value)}
+      onChange={(e) => void changeKind(e.target.value as ItemKind)}
     >
       <option value="app">{itemKind("app").option}</option>
       <option value="note">{itemKind("note").option}</option>
@@ -9806,7 +10230,7 @@ function AppForm({
                   />
                   <p className="theme-css-meta">{`${tags.length}/3`}</p>
                   <datalist id="portal-tag-suggest">
-                    {knownTags.map((tg) => (
+                    {(knownTags ?? []).map((tg) => (
                       <option key={tg} value={tg} />
                     ))}
                   </datalist>
@@ -9822,7 +10246,7 @@ function AppForm({
                   <Select
                     className={FIELD_SM}
                     value={colSpan}
-                    onChange={(e) => setColSpan(Number(e.target.value))}
+                    onChange={(e) => setColSpan(Number(e.target.value) as 1 | 2 | 3)}
                   >
                     <option value={1}>{t("item.col1")}</option>
                     <option value={2}>{t("item.col2")}</option>
@@ -9833,7 +10257,7 @@ function AppForm({
                   <Select
                     className={FIELD_SM}
                     value={rowSpan}
-                    onChange={(e) => setRowSpan(Number(e.target.value))}
+                    onChange={(e) => setRowSpan(Number(e.target.value) as 1 | 2 | 3)}
                   >
                     <option value={1}>{t("item.row1")}</option>
                     <option value={2}>{t("item.row2")}</option>
@@ -9861,7 +10285,7 @@ function AppForm({
                 <Select
                   className={FIELD_SM}
                   value={openIn}
-                  onChange={(e) => setOpenIn(e.target.value)}
+                  onChange={(e) => setOpenIn(e.target.value as "_blank" | "_self")}
                 >
                   <option value="_blank">{t("item.newTab")}</option>
                   <option value="_self">{t("item.sameWindow")}</option>
@@ -9881,7 +10305,7 @@ function AppForm({
                   className={FIELD_SM}
                   value={check}
                   disabled={probes === false}
-                  onChange={(e) => setCheck(e.target.value)}
+                  onChange={(e) => setCheck(e.target.value as CheckMode)}
                 >
                   <option value="off">{t("item.probeNone")}</option>
                   <option value="http">{t("item.probeHttp")}</option>
@@ -9937,10 +10361,20 @@ function AppForm({
     </form>
   );
 }
-function TagColorPick({ hex, name, disabled, onChange }) {
+function TagColorPick({
+  hex,
+  name,
+  disabled,
+  onChange,
+}: {
+  hex: string;
+  name: string;
+  disabled?: boolean;
+  onChange: (hex: string) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const btnRef = useRef(null);
-  const panelRef = useRef(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({
     top: 0,
     left: 0,
@@ -9961,11 +10395,15 @@ function TagColorPick({ hex, name, disabled, onChange }) {
   useEffect(() => {
     if (!open) return;
     place();
-    const onDoc = (e) => {
-      if (btnRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return;
+    const onDoc = (e: PointerEvent) => {
+      if (
+        btnRef.current?.contains(e.target as Node) ||
+        panelRef.current?.contains(e.target as Node)
+      )
+        return;
       setOpen(false);
     };
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
     document.addEventListener("pointerdown", onDoc);
@@ -9987,10 +10425,12 @@ function TagColorPick({ hex, name, disabled, onChange }) {
         ref={btnRef}
         className="tag-color-btn"
         disabled={disabled}
-        style={{
-          ["--tag-bg"]: current,
-          ["--tag-fg"]: ink,
-        }}
+        style={
+          {
+            ["--tag-bg"]: current,
+            ["--tag-fg"]: ink,
+          } as CSSProperties
+        }
         title={t("tags.colorOf", {
           name,
         })}
@@ -10022,10 +10462,12 @@ function TagColorPick({ hex, name, disabled, onChange }) {
                   type="button"
                   role="option"
                   className={`tag-palette-dot${swatch === current ? " is-on" : ""}`}
-                  style={{
-                    ["--tag-bg"]: swatch,
-                    ["--tag-fg"]: tagInk(swatch),
-                  }}
+                  style={
+                    {
+                      ["--tag-bg"]: swatch,
+                      ["--tag-fg"]: tagInk(swatch),
+                    } as CSSProperties
+                  }
                   aria-selected={swatch === current}
                   aria-label={t("tags.pickColor")}
                   title={swatch}
@@ -10053,10 +10495,21 @@ function TagManager({
   onCancel,
   onSave,
   onApply,
+}: {
+  tags: { name: string; count: number }[];
+  colors: Record<string, string>;
+  busy: boolean;
+  embedded?: boolean;
+  settings: PortalSettings;
+  pruneOrphanTags: boolean;
+  tagsAlpha: boolean;
+  onCancel: () => void;
+  onSave: (payload: SettingsPayload) => void;
+  onApply: (payload: TagsPayload) => void;
 }) {
   const [prune, setPrune] = useState(Boolean(pruneOrphanTags));
   const [alpha, setAlpha] = useState(tagsAlpha !== false);
-  const [drafts, setDrafts] = useState({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [createDraft, setCreateDraft] = useState("");
   const col = useColSort();
   const sortedTags = col.apply(tags, (row, key) => {
@@ -10090,7 +10543,7 @@ function TagManager({
       create: [name],
     });
   }
-  function renameTag(from, to) {
+  function renameTag(from: string, to: string) {
     const next = String(to || "")
       .trim()
       .slice(0, 32);
@@ -10104,7 +10557,7 @@ function TagManager({
       ],
     });
   }
-  async function removeTag(name) {
+  async function removeTag(name: string) {
     if (
       !(await askConfirm({
         title: t("actions.delete"),
@@ -10116,7 +10569,7 @@ function TagManager({
       remove: [name],
     });
   }
-  function changeColor(name, hex) {
+  function changeColor(name: string, hex: string) {
     const next = remapTagHex((expandHex(hex) ?? String(hex || "")).toLowerCase());
     if (!/^#[0-9a-f]{6}$/.test(next)) return;
     setLocalColors((cur) => ({
@@ -10258,7 +10711,21 @@ function TagManager({
     </form>
   );
 }
-function FormActions({ busy, onCancel, label = t("actions.save"), form, disabled, hideCancel }) {
+function FormActions({
+  busy,
+  onCancel,
+  label = t("actions.save"),
+  form,
+  disabled,
+  hideCancel,
+}: {
+  busy: boolean;
+  onCancel?: () => void;
+  label?: string;
+  form?: string;
+  disabled?: boolean;
+  hideCancel?: boolean;
+}) {
   return (
     <div className={`settings-actions${hideCancel ? " is-save-only" : ""}`}>
       {hideCancel ? null : (

@@ -187,6 +187,10 @@ export type PortalSettings = {
   ldapAutoCreate: boolean;
   ldapDirectories: Directory[];
   loginOrder: string[];
+  /** Present on client payloads only (see clientSettings). */
+  oidcHasSecret?: boolean;
+  /** Present on client payloads only (see clientSettings). */
+  ldapHasBindPassword?: boolean;
 };
 
 export type CustomIcon = {
