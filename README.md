@@ -52,6 +52,8 @@ Dockit can be used as a team's browser start page, or deployed centrally and pus
 * **Drag & drop** — Keep spaces and categories organised
 * **Probes** — HTTP and ICMP availability directly on cards
 * **Access control** — Users, groups, roles and granular ACLs
+* **Audit & recovery** — Full change history with restore for spaces, categories and cards
+* **Reports** — Audit trail as CSV; card inventory as CSV and PDF
 * **Authentication** — Local accounts, LDAP / Active Directory and OIDC
 * **Themes** — Light / dark mode, logo, favicon and tags
 * **Import / export** — Move or back up the entire portal as one JSON file
