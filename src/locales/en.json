@@ -322,21 +322,21 @@
     "app": {
       "option": "Application",
       "create": "New card",
-      "edit": "Edit card",
+      "edit": "Edit",
       "remove": "Delete this card?",
       "urlLabel": "Link"
     },
     "note": {
       "option": "Note",
       "create": "New note",
-      "edit": "Edit note",
+      "edit": "Edit",
       "remove": "Delete this note?",
       "urlLabel": "Link"
     },
     "embed": {
       "option": "External link",
       "create": "New external link",
-      "edit": "Edit external link",
+      "edit": "Edit",
       "remove": "Remove external link ?",
       "urlLabel": "Link"
     },
@@ -400,7 +400,8 @@
     "embedBgNone": "None",
     "embedBgDefault": "Default",
     "embedBgCustom": "Custom color",
-    "embedBgHint": "None keeps the page transparent. Default uses the soft neutral background. Custom sets a color of your choice."
+    "embedBgHint": "None keeps the page transparent. Default uses the soft neutral background. Custom sets a color of your choice.",
+    "descriptionPlaceholder": "Short description…"
   },
   "space": {
     "edit": "Edit space",

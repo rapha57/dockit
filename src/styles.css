@@ -1550,14 +1550,21 @@ html.dark .debug-row.is-warn .debug-level {
 }
 .kind-select {
   height: 2.25rem;
-  min-width: 9rem;
+  width: 11rem;
   padding: 0 1.75rem 0 0.7rem;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: transparent;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  background-size: 1rem;
+  appearance: none;
   color: var(--color-fg);
-  font-size: 0.75rem;
-  font-weight: 550;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  outline: none;
 }
 .settings-pane {
   min-height: 0;

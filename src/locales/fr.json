@@ -322,21 +322,21 @@
     "app": {
       "option": "Application",
       "create": "Nouvelle carte",
-      "edit": "Modifier la carte",
+      "edit": "Éditer",
       "remove": "Supprimer la carte ?",
       "urlLabel": "Lien"
     },
     "note": {
       "option": "Note",
       "create": "Nouvelle note",
-      "edit": "Modifier la note",
+      "edit": "Éditer",
       "remove": "Supprimer la note ?",
       "urlLabel": "Lien"
     },
     "embed": {
       "option": "Lien externe",
       "create": "Nouveau lien externe",
-      "edit": "Modifier le lien externe",
+      "edit": "Éditer",
       "remove": "Supprimer le lien externe ?",
       "urlLabel": "Lien"
     },
@@ -400,7 +400,8 @@
     "embedBgNone": "Aucun",
     "embedBgDefault": "Défaut",
     "embedBgCustom": "Couleur",
-    "embedBgHint": "Aucun garde la page transparente. Défaut utilise le fond neutre du soft. Couleur applique la teinte de votre choix."
+    "embedBgHint": "Aucun garde la page transparente. Défaut utilise le fond neutre du soft. Couleur applique la teinte de votre choix.",
+    "descriptionPlaceholder": "Description courte…"
   },
   "space": {
     "edit": "Modifier l'espace",

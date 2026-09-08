@@ -5402,7 +5402,7 @@ function AppCard({
     );
   const kind = app.kind || "app";
   const untitled = !String(app.title || "").trim();
-  const headless = (kind === "note" || kind === "embed") && untitled;
+  const headless = (kind === "note" || kind === "embed") && untitled && !editMode;
   const tagRow =
     kind === "app" ? (
       <div className="card-tags">
@@ -5563,6 +5563,11 @@ function AppCard({
               <FileText className="size-4" />
               <h3 className="truncate font-medium tracking-tight text-fg">{app.title}</h3>
             </div>
+          ) : editMode ? (
+            <div className="note-title invisible mb-2 flex items-center gap-2 text-muted">
+              <FileText className="size-4" />
+              <h3 className="truncate font-medium tracking-tight text-fg">—</h3>
+            </div>
           ) : null}{" "}
           <NoteBody source={app.description} />
           {tagRow}
@@ -5572,7 +5577,15 @@ function AppCard({
   else if (kind === "embed")
     inner = (
       <div className="flex h-full min-h-0 flex-col">
-        {untitled ? null : (
+        {untitled ? (
+          editMode ? (
+            <div className="mb-3 flex items-center gap-2 invisible">
+              {grip}
+              <AppWindow className="size-4 text-muted" />
+              <h3 className="min-w-0 flex-1 truncate font-medium tracking-tight">—</h3>
+            </div>
+          ) : null
+        ) : (
           <div className="mb-3 flex items-center gap-2">
             {grip}
             <AppWindow className="size-4 text-muted" />
@@ -11111,15 +11124,24 @@ function AppForm({
                   />
                 </Field>
               )}
+              {kind === "app" ? (
+                <Field label={t("item.description")}>
+                  <Textarea
+                    className="min-h-14 rounded-md bg-transparent"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder={t("item.descriptionPlaceholder")}
+                  />
+                </Field>
+              ) : null}
             </div>
-            <div className="settings-card">
-              <p className="settings-kicker">
-                {kind === "note"
-                  ? t("item.content")
-                  : kind === "embed"
-                    ? kindMeta.urlLabel
-                    : t("item.description")}
-              </p>
+            {kind === "note" || kind === "embed" ? (
+              <div className="settings-card">
+                <p className="settings-kicker">
+                  {kind === "note"
+                    ? t("item.content")
+                    : kindMeta.urlLabel}
+                </p>
               {kind === "note" ? (
                 <Field>
                   <NoteEditor value={description} onChange={setDescription} />
@@ -11148,16 +11170,9 @@ function AppForm({
                     <p className="settings-hint">{t("item.embedBorderHint")}</p>
                   </div>
                 </>
-              ) : (
-                <Field>
-                  <Textarea
-                    className="min-h-14 rounded-md bg-transparent"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </Field>
-              )}
+              ) : null}
             </div>
+            ) : null}
             {kind === "app" ? (
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.link")}</p>
