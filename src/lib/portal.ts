@@ -123,6 +123,8 @@ export type PortalApp = {
   checkHost: string;
   clicks: number;
   linkMenu?: boolean;
+  embedBorder?: boolean;
+  embedBg?: string;
   links: { title: string; url: string }[];
 };
 
@@ -186,6 +188,7 @@ export type PortalSettings = {
   pruneOrphanTags: boolean;
   tagsAlpha: boolean;
   cardResize: boolean;
+  cardIconBg: boolean;
   cardContextMenu: boolean;
   cardDragCollapse: boolean;
   infoStats: boolean;
@@ -412,6 +415,13 @@ function asTags(v: unknown): string[] {
 	}
 	return out;
 }
+function asEmbedBg(raw: unknown): string | undefined {
+	const v = String(raw || "").trim().toLowerCase();
+	if (!v) return void 0;
+	if (v === "default") return "default";
+	if (/^#[0-9a-f]{6}$/.test(v)) return v;
+	return void 0;
+}
 function asExtraLinks(raw: unknown): { title: string; url: string }[] {
 	if (!Array.isArray(raw)) return [];
 	const out: { title: string; url: string }[] = [];
@@ -457,7 +467,9 @@ function normalizeItem(a: any, categoryId: string, sortOrder: number): PortalApp
 		checkHost: kind === "app" && asCheck(a.check) === "icmp" ? asCheckHost(a.checkHost) : "",
 		clicks: Math.max(0, Math.floor(Number(a.clicks) || 0)),
 		links: kind === "app" ? linksFull : [],
-		linkMenu: kind === "app" ? Boolean(a.linkMenu) : false
+		linkMenu: kind === "app" ? Boolean(a.linkMenu) : false,
+		embedBorder: kind === "embed" ? Boolean(a.embedBorder) : void 0,
+		embedBg: kind === "embed" ? asEmbedBg(a.embedBg) : void 0
 	};
 }
 function defaultSettings(): PortalSettings {
@@ -484,6 +496,7 @@ function defaultSettings(): PortalSettings {
 		pruneOrphanTags: false,
 		tagsAlpha: true,
 		cardResize: true,
+		cardIconBg: true,
 		cardContextMenu: true,
 		cardDragCollapse: true,
 		infoStats: true,
@@ -1187,6 +1200,7 @@ function asStore(raw: any): Doc | null {
 			pruneOrphanTags: Boolean(doc.settings.pruneOrphanTags),
 			tagsAlpha: doc.settings.tagsAlpha !== false,
 			cardResize: doc.settings.cardResize !== false,
+			cardIconBg: doc.settings.cardIconBg !== false,
 			cardContextMenu: doc.settings.cardContextMenu !== false,
 			cardDragCollapse: doc.settings.cardDragCollapse !== false,
 			infoStats: doc.settings.infoStats !== false,
@@ -1844,6 +1858,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	pruneOrphanTags: z.boolean().optional(),
 	tagsAlpha: z.boolean().optional(),
 	cardResize: z.boolean().optional(),
+	cardIconBg: z.boolean().optional(),
 	cardContextMenu: z.boolean().optional(),
 	cardDragCollapse: z.boolean().optional(),
 	infoStats: z.boolean().optional(),
@@ -1882,6 +1897,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		pruneOrphanTags: typeof data.pruneOrphanTags === "boolean" ? data.pruneOrphanTags : Boolean(doc.settings.pruneOrphanTags),
 		tagsAlpha: typeof data.tagsAlpha === "boolean" ? data.tagsAlpha : doc.settings.tagsAlpha !== false,
 		cardResize: typeof data.cardResize === "boolean" ? data.cardResize : doc.settings.cardResize !== false,
+		cardIconBg: typeof data.cardIconBg === "boolean" ? data.cardIconBg : doc.settings.cardIconBg !== false,
 		cardContextMenu: typeof data.cardContextMenu === "boolean" ? data.cardContextMenu : doc.settings.cardContextMenu !== false,
 		cardDragCollapse: typeof data.cardDragCollapse === "boolean" ? data.cardDragCollapse : doc.settings.cardDragCollapse !== false,
 		infoStats: typeof data.infoStats === "boolean" ? data.infoStats : doc.settings.infoStats !== false,
@@ -2864,6 +2880,8 @@ const itemPayload = {
 		url: z.string().min(1).max(2e3)
 	})).max(5).optional().default([]),
 	linkMenu: z.boolean().optional(),
+	embedBorder: z.boolean().optional(),
+	embedBg: z.string().max(7).optional(),
 	tagColors: z.record(z.string().min(1).max(32), z.string().max(7)).optional()
 };
 function requireUrl(kind: unknown, url: string) {
@@ -2902,7 +2920,9 @@ export const createApp = createServerFn({ method: "POST" }).validator(z.object({
 		check: data.check,
 		checkHost: data.checkHost,
 		links: data.links,
-		linkMenu: data.linkMenu
+		linkMenu: data.linkMenu,
+		embedBorder: data.embedBorder,
+		embedBg: data.embedBg
 	}, cat.id, next));
 	assignTagColors(doc, data.tags, data.tagColors);
 	const created = cat.apps[cat.apps.length - 1];
@@ -2949,7 +2969,9 @@ export const updateApp = createServerFn({ method: "POST" }).validator(z.object({
 		checkHost: data.checkHost,
 		clicks: found.app.clicks,
 		links: data.links,
-		linkMenu: data.linkMenu
+		linkMenu: data.linkMenu,
+		embedBorder: data.embedBorder,
+		embedBg: data.embedBg
 	}, dest.cat.id, found.app.sortOrder);
 	Object.assign(found.app, next);
 	found.app.id = data.id;

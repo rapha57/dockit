@@ -1144,6 +1144,8 @@ type AppFormPayload = {
   checkHost?: string;
   links?: { title: string; url: string }[];
   linkMenu?: boolean;
+  embedBorder?: boolean;
+  embedBg?: string;
   tagColors?: Record<string, string>;
 };
 function Home() {
@@ -4012,6 +4014,7 @@ function Home() {
                           activeTags={tagFilter}
                           tagColors={data.settings.tagColors}
                           tagsAlpha={data.settings.tagsAlpha !== false}
+                          cardIconBg={data.settings.cardIconBg !== false}
                           health={data.settings.healthChecks ? health[app.id] : void 0}
                           healthPending={
                             data.settings.healthChecks && app.check !== "off" && !health[app.id]
@@ -4222,6 +4225,7 @@ function Home() {
                           activeTags={tagFilter}
                           tagColors={data.settings.tagColors}
                           tagsAlpha={data.settings.tagsAlpha !== false}
+                          cardIconBg={data.settings.cardIconBg !== false}
                           health={data.settings.healthChecks ? health[app.id] : void 0}
                           healthPending={
                             data.settings.healthChecks && app.check !== "off" && !health[app.id]
@@ -4470,6 +4474,7 @@ function Home() {
                           activeTags={tagFilter}
                           tagColors={data.settings.tagColors}
                           tagsAlpha={data.settings.tagsAlpha !== false}
+                          cardIconBg={data.settings.cardIconBg !== false}
                           health={data.settings.healthChecks ? health[app.id] : void 0}
                           healthPending={
                             data.settings.healthChecks && app.check !== "off" && !health[app.id]
@@ -5320,10 +5325,12 @@ type AppCardProps = {
   onDelete?: () => void;
   dimMenu?: boolean;
   ctxMenu?: boolean;
+  cardIconBg?: boolean;
 };
 function AppCard({
   app,
   editMode,
+  cardIconBg,
   canDrag,
   canResize,
   dragging,
@@ -5528,7 +5535,11 @@ function AppCard({
     ) : null;
   const grip = canDrag ? <GripVertical className="card-grip" aria-hidden /> : null;
   const appMark = (
-    <span className="portal-mark flex size-11 shrink-0 items-center justify-center rounded-lg p-1.5 text-fg">
+    <span
+      className={`portal-mark flex size-11 shrink-0 items-center justify-center rounded-lg p-1.5 text-fg${
+        cardIconBg === false ? " is-plain" : ""
+      }`}
+    >
       {" "}
       <PortalIcon name={app.icon} className="size-7" />
     </span>
@@ -5572,7 +5583,14 @@ function AppCard({
           <iframe
             title={app.title || t("item.embed.option")}
             src={safeAppHref(app.url)}
-            className="min-h-0 w-full flex-1 rounded-lg border border-border bg-elevated"
+            className={`min-h-0 w-full flex-1 rounded-lg${app.embedBorder ? " border border-border" : ""} ${
+              app.embedBg === "default" ? "bg-elevated" : "bg-transparent"
+            }`}
+            style={
+              app.embedBg && app.embedBg !== "default"
+                ? { background: app.embedBg }
+                : undefined
+            }
             sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
             referrerPolicy="no-referrer"
           />
@@ -7517,6 +7535,7 @@ type SettingsPayload = {
   pruneOrphanTags: boolean;
   tagsAlpha: boolean;
   cardResize: boolean;
+  cardIconBg?: boolean;
   cardContextMenu: boolean;
   cardDragCollapse: boolean;
   infoStats: boolean;
@@ -8078,6 +8097,7 @@ function PresentationForm({
   const [cardResize, setCardResize] = useState(initial.cardResize !== false);
   const [cardContextMenu, setCardContextMenu] = useState(initial.cardContextMenu !== false);
   const [cardDragCollapse, setCardDragCollapse] = useState(initial.cardDragCollapse !== false);
+  const [cardIconBg, setCardIconBg] = useState(initial.cardIconBg !== false);
   const [infoBar, setInfoBar] = useState(initial.infoBar !== false);
   return (
     <form
@@ -8097,6 +8117,7 @@ function PresentationForm({
           cardResize,
           cardContextMenu,
           cardDragCollapse,
+          cardIconBg,
           infoBar,
         });
       }}
@@ -8156,6 +8177,15 @@ function PresentationForm({
             {t("pres.cardResize")}
           </label>
           <p className="settings-hint">{t("pres.cardResizeHint")}</p>
+          <label>
+            <input
+              type="checkbox"
+              checked={cardIconBg}
+              onChange={(e) => setCardIconBg(e.target.checked)}
+            />
+            {t("pres.cardIconBg")}
+          </label>
+          <p className="settings-hint">{t("pres.cardIconBgHint")}</p>
           <label>
             <input
               type="checkbox"
@@ -9929,8 +9959,9 @@ function IconPicker({
       Icon: o.Icon,
       code: o.name,
     }));
-    const base =
-      tab === "symbols"
+    const base = pictosOnly
+      ? syms
+      : tab === "symbols"
         ? syms
         : tab === "icons"
           ? [...customs, ...prods]
@@ -10053,9 +10084,9 @@ function IconPicker({
                 </div>
               </div>
             ) : null}
+            {gridItems.length ? (
             <div className="icon-pick-grid">
-              {gridItems.length ? (
-                gridItems.map((item) =>
+              {gridItems.map((item) =>
                   item.src ? (
                     <button
                       key={item.key}
@@ -10088,11 +10119,11 @@ function IconPicker({
                       {item.Icon ? <item.Icon className="size-6" /> : null}
                     </button>
                   ),
-                )
-              ) : (
-                <p className="am-note">{t("empty.noResults")}</p>
               )}
             </div>
+            ) : (
+              <p className="am-note">{t("empty.noResults")}</p>
+            )}
           </EdgeFade>
           </div>
         </ModalShell>
@@ -10775,6 +10806,8 @@ function AppForm({
     return rows;
   });
   const [linkMenu, setLinkMenu] = useState(Boolean(initial?.linkMenu));
+  const [embedBorder, setEmbedBorder] = useState(Boolean(initial?.embedBorder));
+  const [embedBg, setEmbedBg] = useState<string>(initial?.embedBg || "");
   const [probeBusy, setProbeBusy] = useState(false);
   const [pane, setPane] = useState("general");
   const catOptions = useMemo(() => categories, [categories]);
@@ -10820,6 +10853,8 @@ function AppForm({
     setDraftColors({});
     setLinks([]);
     setLinkMenu(false);
+    setEmbedBorder(false);
+    setEmbedBg("");
     setOpenIn("_blank");
     setCheck("off");
     setCheckHost("");
@@ -10845,7 +10880,7 @@ function AppForm({
       !(await askConfirm({
         title: t("item.type"),
         body: t("confirm.changeKind"),
-        okLabel: t("actions.save"),
+        okLabel: t("actions.continue"),
         danger: false,
       }))
     )
@@ -10899,15 +10934,16 @@ function AppForm({
       <option value="embed">{itemKind("embed").option}</option>
     </select>
   );
+  const mainLink = kind === "app" ? links[0]?.url || "" : url;
   const canSave =
     kind === "app"
-      ? Boolean(title.trim() && safeAppHref(url))
+      ? Boolean(title.trim() && safeAppHref(mainLink))
       : kind === "note"
         ? Boolean(description.trim())
-        : Boolean(safeAppHref(url));
+        : Boolean(safeAppHref(mainLink));
   const urlDupes = useMemo(
-    () => (kind === "note" ? [] : findUrlDuplicates(catalog, url, initial?.id)),
-    [catalog, url, kind, initial?.id],
+    () => (kind === "note" ? [] : findUrlDuplicates(catalog, mainLink, initial?.id)),
+    [catalog, mainLink, kind, initial?.id],
   );
   const urlDupHint = urlDupes.length ? (
     <p className="settings-hint is-warn">
@@ -10975,6 +11011,8 @@ function AppForm({
                   }))
               : [],
           linkMenu: kind === "app" ? linkMenu && links.length > 1 : undefined,
+          embedBorder: kind === "embed" ? embedBorder : undefined,
+          embedBg: kind === "embed" ? embedBg : undefined,
           tagColors: kind === "app" ? draftColors : undefined,
         });
       }}
@@ -11087,26 +11125,50 @@ function AppForm({
                   <NoteEditor value={description} onChange={setDescription} />
                 </Field>
               ) : kind === "embed" ? (
-                <Field>
-                  <Input
-                    className={FIELD_SM}
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder="https://"
-                    required
-                  />
-                  {urlDupHint}
-                </Field>
+                <>
+                  <Field>
+                    <Input
+                      className={FIELD_SM}
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      placeholder="https://"
+                      required
+                    />
+                    {urlDupHint}
+                  </Field>
+                  <div className="settings-toggles">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={embedBorder}
+                        onChange={(e) => setEmbedBorder(e.target.checked)}
+                      />
+                      {t("item.embedBorder")}
+                    </label>
+                    <p className="settings-hint">{t("item.embedBorderHint")}</p>
+                  </div>
+                </>
               ) : (
                 <Field>
                   <Textarea
-                    className="min-h-24 rounded-md bg-transparent"
+                    className="min-h-14 rounded-md bg-transparent"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                   />
                 </Field>
               )}
             </div>
+            {kind === "app" ? (
+              <div className="settings-card">
+                <p className="settings-kicker">{t("item.link")}</p>
+                <ExtraLinksField
+                  links={links}
+                  setLinks={setLinks}
+                  linkMenu={linkMenu}
+                  setLinkMenu={setLinkMenu}
+                />
+              </div>
+            ) : null}
             {kind === "app" ? (
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.tags")}</p>
@@ -11195,9 +11257,9 @@ function AppForm({
             </div>
           </div>
           <div className={paneSafe === "lien" ? "settings-stack" : "hidden"}>
-            <div className="settings-card">
-              <p className="settings-kicker">{t("item.link")}</p>
-              {kind === "embed" ? (
+            {kind === "embed" ? (
+              <div className="settings-card">
+                <p className="settings-kicker">{t("item.link")}</p>
                 <Field label={kindMeta.urlLabel}>
                   <Input
                     className={FIELD_SM}
@@ -11208,15 +11270,8 @@ function AppForm({
                   />
                   {urlDupHint}
                 </Field>
-              ) : (
-                <ExtraLinksField
-                  links={links}
-                  setLinks={setLinks}
-                  linkMenu={linkMenu}
-                  setLinkMenu={setLinkMenu}
-                />
-              )}
-            </div>
+              </div>
+            ) : null}
             <div className="settings-card">
               <p className="settings-kicker">{t("item.openLink")}</p>
               <Field>

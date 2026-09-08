@@ -143,7 +143,8 @@
     "addLink": "Add a link",
     "addCard": "Add a card",
     "addCategory": "Add a category",
-    "saved": "Saved"
+    "saved": "Saved",
+    "continue": "Continue"
   },
   "aria": {
     "account": "Account",
@@ -333,11 +334,11 @@
       "urlLabel": "Link"
     },
     "embed": {
-      "option": "Web page",
-      "create": "New web page",
-      "edit": "Edit web page",
-      "remove": "Delete this web page?",
-      "urlLabel": "Page URL"
+      "option": "External link",
+      "create": "New external link",
+      "edit": "Edit external link",
+      "remove": "Remove external link ?",
+      "urlLabel": "Link"
     },
     "general": "General",
     "link": "Link",
@@ -391,7 +392,15 @@
     "linksHint": "The first row is the link opened by the card click. Reorder with the handle.",
     "linkMenu": "Open the link menu on click",
     "linkMenuHint": "Clicking the card unfolds the list of links instead of opening the first one. Needs at least two links.",
-    "display": "Display"
+    "display": "Display",
+    "embedStyle": "Appearance",
+    "embedBorder": "Border",
+    "embedBorderHint": "Shows a fine frame around the embedded page.",
+    "embedBgLabel": "Background",
+    "embedBgNone": "None",
+    "embedBgDefault": "Default",
+    "embedBgCustom": "Custom color",
+    "embedBgHint": "None keeps the page transparent. Default uses the soft neutral background. Custom sets a color of your choice."
   },
   "space": {
     "edit": "Edit space",
@@ -779,7 +788,9 @@
     "cardContextMenu": "Right-click menu on cards",
     "cardContextMenuHint": "Opens extra links and copy with a right-click. Extra links are set on the card.",
     "cardDragCollapse": "Collapse other categories while moving a card",
-    "cardDragCollapseHint": "While you drag a card, other categories collapse. Hover a heading to expand it. Drop on a heading to move the card there."
+    "cardDragCollapseHint": "While you drag a card, other categories collapse. Hover a heading to expand it. Drop on a heading to move the card there.",
+    "cardIconBg": "Icons on a soft background",
+    "cardIconBgHint": "Shows a light square behind card icons. Off: icons sit directly on the card."
   },
   "reach": {
     "probes": "Probes",

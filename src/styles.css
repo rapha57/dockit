@@ -1834,7 +1834,7 @@ html.dark .settings-hint.is-warn {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px dashed color-mix(in oklab, var(--color-border) 70%, var(--color-muted));
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-elevated);
 }
@@ -1889,31 +1889,14 @@ html.dark .settings-hint.is-warn {
 .icon-trigger.is-header {
   width: 4rem;
   height: 4rem;
-  border: 1px dashed var(--color-border);
+  border: 1px solid var(--color-border);
+  background: var(--color-elevated);
   border-radius: var(--radius-lg);
   position: relative;
 }
 .icon-trigger.is-header:hover {
   border-color: color-mix(in oklab, var(--color-fg) 25%, var(--color-border));
-}
-.icon-trigger.is-header .icon-trigger-pen,
-.icon-trigger.is-header::after {
-  content: "";
-  position: absolute;
-  right: -0.2rem;
-  bottom: -0.2rem;
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 999px;
-  background: var(--color-surface)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236a6a6e' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z'/%3E%3C/svg%3E")
-    center/7px no-repeat;
-  box-shadow: 0 0 0 1px var(--color-border);
-  opacity: 0;
-  transition: opacity 140ms ease;
-}
-.icon-trigger.is-header:hover::after {
-  opacity: 1;
+  background: var(--color-surface);
 }
 .size-preview-wrap {
   display: flex;
@@ -4502,4 +4485,8 @@ button.am-perm:hover {
   flex: 1;
   height: 1px;
   background: color-mix(in oklab, var(--color-border) 70%, transparent);
+}
+
+.portal-mark.is-plain {
+  background: transparent;
 }

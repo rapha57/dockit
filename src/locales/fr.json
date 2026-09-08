@@ -143,7 +143,8 @@
     "addLink": "Ajouter un lien",
     "addCard": "Ajouter une carte",
     "addCategory": "Ajouter une catégorie",
-    "saved": "Enregistré"
+    "saved": "Enregistré",
+    "continue": "Continuer"
   },
   "aria": {
     "account": "Compte",
@@ -333,11 +334,11 @@
       "urlLabel": "Lien"
     },
     "embed": {
-      "option": "Page web",
-      "create": "Nouvelle page web",
-      "edit": "Modifier la page web",
-      "remove": "Supprimer la page web ?",
-      "urlLabel": "Lien de la page"
+      "option": "Lien externe",
+      "create": "Nouveau lien externe",
+      "edit": "Modifier le lien externe",
+      "remove": "Supprimer le lien externe ?",
+      "urlLabel": "Lien"
     },
     "general": "Général",
     "link": "Lien",
@@ -391,7 +392,15 @@
     "linksHint": "La première ligne est le lien ouvert par la carte. Réordonnez avec la poignée.",
     "linkMenu": "Ouvrir le menu des liens au clic",
     "linkMenuHint": "Le clic sur la carte déplie la liste des liens au lieu d’ouvrir le premier. Nécessite au moins deux liens.",
-    "display": "Affichage"
+    "display": "Affichage",
+    "embedStyle": "Habillage",
+    "embedBorder": "Cadre",
+    "embedBorderHint": "Affiche un cadre fin autour de la page intégrée.",
+    "embedBgLabel": "Fond",
+    "embedBgNone": "Aucun",
+    "embedBgDefault": "Défaut",
+    "embedBgCustom": "Couleur",
+    "embedBgHint": "Aucun garde la page transparente. Défaut utilise le fond neutre du soft. Couleur applique la teinte de votre choix."
   },
   "space": {
     "edit": "Modifier l'espace",
@@ -779,7 +788,9 @@
     "cardContextMenu": "Menu clic droit sur les cartes",
     "cardContextMenuHint": "Ouvre les liens supplémentaires et la copie au clic droit. Les liens se règlent sur la carte.",
     "cardDragCollapse": "Replier les autres catégories pendant le déplacement d’une carte",
-    "cardDragCollapseHint": "Pendant le déplacement d’une carte, les autres catégories se replient. Survoler un titre pour l’ouvrir. Déposer sur un titre pour y déplacer la carte."
+    "cardDragCollapseHint": "Pendant le déplacement d’une carte, les autres catégories se replient. Survoler un titre pour l’ouvrir. Déposer sur un titre pour y déplacer la carte.",
+    "cardIconBg": "Icônes sur fond doux",
+    "cardIconBgHint": "Affiche un carré clair derrière les icônes des cartes. Désactivé : les icônes reposent directement sur la carte."
   },
   "reach": {
     "probes": "Sondes",
