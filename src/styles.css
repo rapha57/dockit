@@ -4312,6 +4312,11 @@ button.am-create,
 .am-tree-row.is-cat {
   padding-left: 1rem;
 }
+.am-tree > .am-tree-block:last-child > .am-tree-row:last-child,
+.am-tree > .am-tree-block:last-child > *:last-child > .am-tree-row:last-child,
+.am-tree > .am-tree-row:last-child {
+  border-bottom: 0;
+}
 .am-tree-row.is-card {
   padding-left: 2rem;
 }
