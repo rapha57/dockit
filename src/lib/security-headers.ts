@@ -9,7 +9,7 @@ export const SECURITY_HEADERS: Record<string, string> = {
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: blob: https:",
 		"font-src 'self' data:",
-		"connect-src 'self'",
+		"connect-src 'self' https://api.iconify.design",
 		"frame-src https: http:",
 		"frame-ancestors 'self'",
 		"base-uri 'self'",

@@ -9843,10 +9843,7 @@ function IconPicker({
           const ids = ((json.icons ?? []) as string[]).slice(0, 48);
           setRemote(
             ids
-              .map((id) => ({
-                id,
-                src: iconifySrc(id),
-              }))
+              .map((id) => ({ id, src: iconifySrc(id) }))
               .filter((x) => x.src),
           );
         })
