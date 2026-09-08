@@ -386,7 +386,12 @@
     "addTag": "Add a tag, Enter",
     "urlExists": "This link already exists: “{title}” ({tab})",
     "urlExistsN": "This link already exists on {n} cards ({list})",
-    "removedBody": "“{name}” will be removed from the portal."
+    "removedBody": "“{name}” will be removed from the portal.",
+    "links": "Links",
+    "linksHint": "The first row is the link opened by the card click. Reorder with the handle.",
+    "linkMenu": "Open the link menu on click",
+    "linkMenuHint": "Clicking the card unfolds the list of links instead of opening the first one. Needs at least two links.",
+    "display": "Display"
   },
   "space": {
     "edit": "Edit space",
@@ -399,7 +404,8 @@
     "restrict": "Restrict access",
     "noAccounts": "No account to allow — Create accounts in Users.",
     "editors": "Editors",
-    "editHint": "Can edit cards and categories in this space."
+    "editHint": "Can edit cards and categories in this space.",
+    "hideLabelHint": "The space shows as an icon only in the navigation bar."
   },
   "category": {
     "edit": "Edit category",
@@ -1117,7 +1123,7 @@
     "importPng": "Import PNG / SVG",
     "filterOnline": "Filter, or search online",
     "filterLib": "Filter the library",
-    "offlineHint": "Offline mode. Enable Iconify in Settings → Presentation if the portal has Internet access.",
+    "offlineHint": "Online search is off (enable Iconify in Settings → Presentation for Internet access).",
     "imported": "Imported",
     "onlineClick": "Online — Click = local copy",
     "product": "Product library",
@@ -1126,7 +1132,12 @@
     "needSession": "Sign-in required",
     "replaceConfirm": "Replace the current icon with the site favicon?",
     "applied": "Favicon applied",
-    "copiedLocal": "{id} (copied locally)"
+    "copiedLocal": "{id} (copied locally)",
+    "import": "Import",
+    "tabAll": "All",
+    "tabIcons": "Icons",
+    "tabSymbols": "Symbols",
+    "onlineOff": "Online search is off"
   },
   "tags": {
     "memory": "Memory",

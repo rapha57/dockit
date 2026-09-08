@@ -32,8 +32,8 @@ export function collectInventory(catalog: InventoryTab[] | null | undefined): In
 					category: cat.name || "",
 					kind: kind === "embed" ? t("inventory.kindEmbed") : kind === "note" ? t("inventory.kindNote") : t("inventory.kindApp"),
 					title: String(app.title || "").trim(),
-					url: kind === "note" ? "" : String(app.url || "").trim(),
-					extras: ((app.links ?? []).map((l) => l.url).filter(Boolean)).join(" | "),
+					url: kind === "note" ? "" : String((app.links ?? [])[0]?.url || app.url || "").trim(),
+					extras: ((app.links ?? []).slice(1).map((l) => l.url).filter(Boolean)).join(" | "),
 					tags: (app.tags ?? []).join(", ")
 				});
 			}

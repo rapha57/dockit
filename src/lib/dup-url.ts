@@ -15,7 +15,13 @@ export function canonicalAppUrl(raw: string | undefined | null): string {
 	}
 }
 
-type DupApp = { id?: string; kind?: string; url?: string; title?: string };
+type DupApp = {
+  id?: string;
+  kind?: string;
+  url?: string;
+  title?: string;
+  links?: { url?: string }[];
+};
 type DupCategory = { name?: string; apps?: DupApp[] };
 type DupTab = { name?: string; categories?: DupCategory[] };
 type DupHit = { id?: string; title: string; tab?: string; category?: string };
@@ -33,7 +39,7 @@ export function findUrlDuplicates(
 			for (const app of cat.apps ?? []) {
 				if (exceptId && app.id === exceptId) continue;
 				if ((app.kind || "app") === "note") continue;
-				if (canonicalAppUrl(app.url) !== key) continue;
+				if (canonicalAppUrl((app.links ?? [])[0]?.url || app.url || "") !== key) continue;
 				hits.push({
 					id: app.id,
 					title: String(app.title || "").trim() || "Sans titre",

@@ -13,6 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
+import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   AlertTriangle,
@@ -73,6 +74,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/field";
+import { Label } from "@/components/ui/label";
 import { EmptyState } from "@/components/empty-state";
 import { EdgeFade } from "@/components/edge-fade";
 import { ConfirmDialog, askConfirm } from "@/components/confirm-dialog";
@@ -155,6 +157,7 @@ import { probePreview, probeTargets } from "@/lib/probe";
 import type { ProbeResult } from "@/lib/probe";
 import { checkLatestRelease } from "@/lib/release";
 import { safeAppHref } from "@/lib/safe-href";
+import { cardUrl } from "@/lib/portal";
 import { findUrlDuplicates } from "@/lib/dup-url";
 import { collectInventory, inventoryCsv, inventoryPdf } from "@/lib/inventory";
 import { CSS_MAX, sanitizeThemeCss } from "@/lib/theme-css";
@@ -1140,6 +1143,7 @@ type AppFormPayload = {
   check?: CheckMode;
   checkHost?: string;
   links?: { title: string; url: string }[];
+  linkMenu?: boolean;
   tagColors?: Record<string, string>;
 };
 function Home() {
@@ -5346,9 +5350,10 @@ function AppCard({
   dimMenu,
   ctxMenu,
 }: AppCardProps) {
-  const extra = (app.kind || "app") === "app" ? (app.links ?? []) : [];
-  const primaryHref = safeAppHref(app.url);
+  const extra = (app.kind || "app") === "app" ? (app.links ?? []).slice(1) : [];
+  const primaryHref = safeAppHref(cardUrl(app));
   const extraLinks = extra.filter((row) => safeAppHref(row.url));
+  const menuMode = (app.kind || "app") === "app" && Boolean(app.linkMenu) && extraLinks.length > 0;
   const ctxOn = ctxMenu !== false;
   const canCtx = extraLinks.length > 0 || (ctxOn && Boolean(primaryHref));
   const [menu, setMenu] = useState<AppCardMenu | null>(null);
@@ -5663,9 +5668,9 @@ function AppCard({
       </div>
     );
   }
-  const showPrimary = Boolean(ctxOn && primaryHref);
+  const showPrimary = Boolean((ctxOn || menuMode) && primaryHref);
+  const primaryLabel = String(extra[0]?.title || "").trim() || String(app.title || "").trim();
   const ctxCount = (showPrimary ? 1 : 0) + extraLinks.length;
-  const ctxName = String(app.title || "").trim();
   const ctxHeading = ctxCount === 1 ? t("annex.one") : t("annex.linksTitle");
   const linkMenu =
     menu && canCtx && typeof document !== "undefined"
@@ -5693,7 +5698,7 @@ function AppCard({
                 {ctxHeading}
               </p>
               <div className="menu-sep" />
-              {showPrimary ? ctxRow(primaryHref, ctxName || t("annex.one"), "primary") : null}
+              {showPrimary ? ctxRow(primaryHref, primaryLabel || t("annex.one"), "primary") : null}
               {showPrimary && extraLinks.length ? <div className="menu-sep" /> : null}
               {extraLinks.map((row, i) =>
                 ctxRow(row.url, row.title, `x-${i}-${row.url}`),
@@ -5703,7 +5708,7 @@ function AppCard({
           document.body,
         )
       : null;
-  const href = safeAppHref(app.url);
+  const href = safeAppHref(cardUrl(app));
   if (kind === "app" && !editMode)
     return (
       <div data-app-id={app.id} className={shell} onContextMenu={onCtx}>
@@ -5713,10 +5718,19 @@ function AppCard({
             target={app.openIn === "_self" ? "_self" : "_blank"}
             rel={app.openIn === "_self" ? void 0 : "noopener noreferrer"}
             className="card-hit"
-            aria-label={app.title}
-            onClick={() => onOpen?.()}
+            aria-label={menuMode ? t("item.linkMenu") : app.title}
+            aria-haspopup={menuMode ? "menu" : undefined}
+            onClick={(e) => {
+              if (menuMode) {
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                setMenu({ x: r.left, y: r.bottom + 4 });
+                return;
+              }
+              onOpen?.();
+            }}
             onAuxClick={(e) => {
-              if (e.button === 1) onOpen?.();
+              if (e.button === 1 && !menuMode) onOpen?.();
             }}
           />
         ) : null}{" "}
@@ -9753,6 +9767,7 @@ function IconPicker({
   online,
   siteUrl,
   pictosOnly,
+  header,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -9762,15 +9777,14 @@ function IconPicker({
   online: boolean;
   siteUrl?: string;
   pictosOnly?: boolean;
+  header?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [remote, setRemote] = useState<{ id: string; src: string }[]>([]);
   const [busyIcon, setBusyIcon] = useState(false);
+  const [tab, setTab] = useState<"all" | "icons" | "symbols">("all");
   const query = q.trim().toLowerCase();
-  const products = query
-    ? PRODUCT_ICONS.filter((p) => p.label.toLowerCase().includes(query) || p.slug.includes(query))
-    : PRODUCT_ICONS;
   useEffect(() => {
     if (!open || pictosOnly || !online || query.length < 2) {
       if (!open || pictosOnly || query.length < 2) setRemote([]);
@@ -9800,9 +9814,14 @@ function IconPicker({
       ctrl.abort();
     };
   }, [query, online, open, pictosOnly]);
+  function close() {
+    setOpen(false);
+    setQ("");
+    setTab("all");
+  }
   function choose(next: string) {
     onChange(next);
-    setOpen(false);
+    close();
   }
   async function pickRemote(src: string) {
     setBusyIcon(true);
@@ -9878,203 +9897,206 @@ function IconPicker({
       setBusyIcon(false);
     }
   }
-  const panel = open ? (
-    <ModalShell onClose={() => setOpen(false)} padded={false} label={t("icons.choose")}>
-              <div className="icon-pick-head">
-                {" "}
-                <h3 className="dialog-title">{t("item.icon")}</h3>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setOpen(false)}
-                  aria-label={t("actions.close")}
-                  title={t("actions.close")}
-                >
-                  {" "}
-                  <X className="size-4" />
-                </Button>
-              </div>{" "}
-              <EdgeFade className="icon-pick-body">
-                {" "}
-                <div className="icon-pick-current">
-                  {" "}
-                  <span className="flex size-11 items-center justify-center rounded-lg bg-elevated text-primary">
-                    {" "}
-                    <PortalIcon name={value} className="size-6" />
-                  </span>{" "}
-                  <p className="min-w-0 flex-1 truncate text-sm text-muted">
-                    {value.startsWith("data:")
-                      ? t("icons.importedLocal")
-                      : value || t("icons.none")}
-                  </p>
-                </div>
-                {!pictosOnly ? (
-                  <div className="icon-pick-actions">
-                    {siteUrl != null ? (
-                      <>
-                        {" "}
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="w-full"
-                          disabled={busyIcon || !token}
-                          onClick={() => void grabFavicon()}
-                        >
-                          {" "}
-                          <Globe className="size-4" />
-                          {busyIcon ? t("icons.fetching") : t("icons.siteFavicon")}
-                        </Button>{" "}
-                        <p className="icon-pick-kicker">{t("icons.faviconHint")}</p>
-                      </>
-                    ) : null}{" "}
-                    <label className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-elevated px-3 text-sm">
-                      {" "}
-                      <Upload className="size-4" />
-                      {t("icons.importPng")}
-                      <input
-                        type="file"
-                        accept="image/png,image/svg+xml,image/webp,image/jpeg,image/gif,image/x-icon,.png,.svg,.webp,.jpg,.jpeg,.ico"
-                        className="hidden"
-                        disabled={busyIcon}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          e.target.value = "";
-                          if (file) void importFile(file);
-                        }}
-                      />
-                    </label>
-                  </div>
-                ) : null}{" "}
-                <div className="icon-pick-section">
-                  {" "}
-                  <Input
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder={
-                      pictosOnly || !online ? t("icons.filterLib") : t("icons.filterOnline")
-                    }
-                  />
-                  {!pictosOnly && !online ? (
-                    <p className="icon-pick-kicker">{t("icons.offlineHint")}</p>
-                  ) : null}
-                </div>
-                {!pictosOnly && library.length > 0 ? (
-                  <div className="icon-pick-section">
-                    {" "}
-                    <p className="icon-pick-kicker">{t("icons.imported")}</p>
-                    <div className="grid max-h-28 grid-cols-7 gap-1 overflow-y-auto sm:grid-cols-8">
-                      {library.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          title={p.name}
-                          onClick={() => choose(p.dataUrl)}
-                          className={`flex size-10 items-center justify-center rounded-md border ${value === p.dataUrl ? "border-primary bg-elevated" : "border-transparent hover:bg-elevated"}`}
-                        >
-                          {" "}
-                          <img src={p.dataUrl} alt="" className="size-5 object-contain" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {!pictosOnly && remote.length > 0 ? (
-                  <div className="icon-pick-section">
-                    {" "}
-                    <p className="icon-pick-kicker">{t("icons.onlineClick")}</p>
-                    <div className="grid max-h-36 grid-cols-7 gap-1 overflow-y-auto sm:grid-cols-8">
-                      {remote.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          title={t("icons.copiedLocal", {
-                            id: p.id,
-                          })}
-                          onClick={() => void pickRemote(p.src)}
-                          className="flex size-10 items-center justify-center rounded-md border border-transparent hover:bg-elevated"
-                        >
-                          {" "}
-                          <img
-                            src={p.src}
-                            alt=""
-                            className="size-5 object-contain"
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {!pictosOnly ? (
-                  <div className="icon-pick-section">
-                    {" "}
-                    <p className="icon-pick-kicker">{t("icons.product")}</p>
-                    <div className="grid max-h-48 grid-cols-7 gap-1 overflow-y-auto sm:grid-cols-8">
-                      {products.map((p) => (
-                        <button
-                          key={p.slug}
-                          type="button"
-                          title={p.label}
-                          onClick={() => choose(p.slug)}
-                          className={`flex size-10 items-center justify-center rounded-md border ${value === p.slug ? "border-primary bg-elevated" : "border-transparent hover:bg-elevated"}`}
-                        >
-                          {" "}
-                          <img
-                            src={p.src}
-                            alt=""
-                            className="size-5 object-contain"
-                            loading="lazy"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}{" "}
-                <div className="icon-pick-section">
-                  {" "}
-                  <p className="icon-pick-kicker">{t("icons.symbols")}</p>
-                  <div className="grid grid-cols-7 gap-1 sm:grid-cols-8">
-                    {(query
-                      ? ICON_OPTIONS.filter(
-                          (opt) =>
-                            t(`iconLabel.${opt.name}`).toLowerCase().includes(query) ||
-                            opt.label.toLowerCase().includes(query) ||
-                            opt.name.toLowerCase().includes(query),
-                        )
-                      : ICON_OPTIONS
-                    ).map((opt) => (
-                      <button
-                        key={opt.name}
-                        type="button"
-                        title={t(`iconLabel.${opt.name}`)}
-                        onClick={() => choose(opt.name)}
-                        className={`flex size-10 items-center justify-center rounded-md border ${value === opt.name ? "border-primary bg-elevated text-primary" : "border-transparent text-muted hover:bg-elevated hover:text-fg"}`}
-                      >
-                        {" "}
-                        <opt.Icon className="size-4" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </EdgeFade>
-    </ModalShell>
-  ) : null;
+  const searching = q.trim().length >= 2 && online && !pictosOnly;
+  const gridItems: {
+    key: string;
+    title: string;
+    value: string;
+    src?: string;
+    Icon?: LucideIcon;
+    remote?: boolean;
+    code?: string;
+  }[] = (() => {
+    const needle = q.trim().toLowerCase();
+    const customs = library.map((p) => ({
+      key: `c-${p.id}`,
+      title: p.name || p.id,
+      value: p.dataUrl,
+      src: p.dataUrl,
+      code: p.name || p.id,
+    }));
+    const prods = PRODUCT_ICONS.map((p) => ({
+      key: `p-${p.slug}`,
+      title: p.label,
+      value: p.slug,
+      src: p.src,
+      code: p.slug,
+    }));
+    const syms = ICON_OPTIONS.map((o) => ({
+      key: `s-${o.name}`,
+      title: t(`iconLabel.${o.name}`),
+      value: o.name,
+      Icon: o.Icon,
+      code: o.name,
+    }));
+    const base =
+      tab === "symbols"
+        ? syms
+        : tab === "icons"
+          ? [...customs, ...prods]
+          : [...customs, ...prods, ...syms];
+    const remoteHits = searching
+      ? remote.map((p) => ({
+          key: `r-${p.id}`,
+          title: p.id,
+          value: p.src,
+          src: p.src,
+          remote: true,
+          code: p.id,
+        }))
+      : [];
+    return [...remoteHits, ...base].filter(
+      (item) =>
+        !needle ||
+        item.title.toLowerCase().includes(needle) ||
+        item.value.toLowerCase().includes(needle),
+    );
+  })();
   return (
     <>
       {" "}
       <button
         type="button"
-        className="brand-preview icon-trigger"
+        className={`brand-preview icon-trigger${header ? " is-header" : ""}`}
         title={t("icons.choose")}
         aria-label={t("icons.choose")}
         onClick={() => setOpen(true)}
       >
         {" "}
-        <PortalIcon name={value} className="size-6" />
+        <PortalIcon name={value} className={header ? "size-7" : "size-6"} />
       </button>
-      {panel}
+      {open ? (
+        <ModalShell onClose={close} padded={false} label={t("icons.choose")}>
+          <div className="icon-pick-frame">
+          <div className="icon-pick-head">
+            <h3 className="dialog-title">{t("item.icon")}</h3>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={close}
+              aria-label={t("actions.close")}
+              title={t("actions.close")}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+          <EdgeFade className="icon-pick-body">
+            <div className="icon-pick-tool">
+              <div className="am-search">
+                <Search className="size-3.5" aria-hidden />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder={
+                    pictosOnly
+                      ? t("icons.filterLib")
+                      : !online
+                        ? `${t("icons.filterLib")} (${t("icons.onlineOff")})`
+                        : t("icons.filterOnline")
+                  }
+                  aria-label={t("icons.filterOnline")}
+                  autoFocus
+                />
+              </div>
+            </div>
+            {!pictosOnly ? (
+              <div className="icon-pick-tabsrow">
+                <div className="am-filters" role="tablist" aria-label={t("item.icon")}>
+                  {(
+                    [
+                      ["all", t("icons.tabAll")],
+                      ["icons", t("icons.tabIcons")],
+                      ["symbols", t("icons.tabSymbols")],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab === id}
+                      className={tab === id ? "is-on" : ""}
+                      onClick={() => setTab(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="icon-pick-actions">
+                  {siteUrl != null ? (
+                    <button
+                      type="button"
+                      className="am-create shrink-0"
+                      disabled={busyIcon || !token}
+                      title={t("icons.faviconHint")}
+                      onClick={() => void grabFavicon()}
+                    >
+                      <Globe className="size-3.5" />
+                      {busyIcon ? t("icons.fetching") : t("icons.siteFavicon")}
+                    </button>
+                  ) : null}
+                  <label className="am-create shrink-0 cursor-pointer">
+                    <Upload className="size-3.5" />
+                    {t("icons.importPng")}
+                    <input
+                      type="file"
+                      accept="image/png,image/svg+xml,image/webp,image/jpeg,image/gif,image/x-icon,.png,.svg,.webp,.jpg,.jpeg,.ico"
+                      className="hidden"
+                      disabled={busyIcon}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) void importFile(file);
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
+            <div className="icon-pick-grid">
+              {gridItems.length ? (
+                gridItems.map((item) =>
+                  item.src ? (
+                    <button
+                      key={item.key}
+                      type="button"
+                      title={item.code || item.title}
+                      onClick={() => {
+                        if (item.remote && item.src) void pickRemote(item.src);
+                        else choose(item.value);
+                      }}
+                      className={`flex size-11 items-center justify-center rounded-lg border ${
+                        value === item.value
+                          ? "border-transparent bg-elevated ring-1 ring-border"
+                          : "border-transparent hover:bg-elevated"
+                      }`}
+                    >
+                      <img src={item.src} alt="" className="size-6 object-contain" />
+                    </button>
+                  ) : (
+                    <button
+                      key={item.key}
+                      type="button"
+                      title={item.code || item.title}
+                      onClick={() => choose(item.value)}
+                      className={`flex size-11 items-center justify-center rounded-lg border ${
+                        value === item.value
+                          ? "border-transparent bg-elevated text-fg ring-1 ring-border"
+                          : "border-transparent text-muted hover:bg-elevated hover:text-fg"
+                      }`}
+                    >
+                      {item.Icon ? <item.Icon className="size-6" /> : null}
+                    </button>
+                  ),
+                )
+              ) : (
+                <p className="am-note">{t("empty.noResults")}</p>
+              )}
+            </div>
+          </EdgeFade>
+          </div>
+        </ModalShell>
+      ) : null}
     </>
   );
 }
@@ -10106,7 +10128,8 @@ function AclFields({
           />
           {t("space.restrict")}
         </label>
-        <p className="settings-hint">{restricted ? t("access.restrictedHint") : seeHint}</p>
+        {seeHint ? <p className="settings-hint">{seeHint}</p> : null}
+        <p className="settings-hint">{t("access.restrictedHint")}</p>
       </div>
     </div>
   );
@@ -10231,26 +10254,31 @@ function TabForm({
             <div className="settings-stack">
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.general")}</p>
-                <div className="field-row">
-                  {" "}
-                  <Field label={t("item.name")}>
-                    <Input
-                      className={FIELD_SM}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                    />
-                  </Field>{" "}
-                  <Field label={t("item.icon")}>
+                <div className="id-head">
+                  <div className="id-col">
+                    <Label>{t("item.icon")}</Label>
                     <IconPicker
                       value={icon}
                       onChange={setIcon}
                       {...picker}
                       pictosOnly={!picker.navRichIcons}
+                      header
                     />
-                  </Field>
+                  </div>
+                  <div className="id-col">
+                    <div className="id-field">
+                      <Label>{t("item.name")}</Label>
+                      <Input
+                        className={FIELD_SM}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div className="settings-toggles">
+                  <p className="settings-kicker">{t("item.display")}</p>
                   <label>
                     <input
                       type="checkbox"
@@ -10259,6 +10287,7 @@ function TabForm({
                     />
                     {t("space.hideLabel")}
                   </label>
+                  <p className="settings-hint">{t("space.hideLabelHint")}</p>
                 </div>
               </div>
             </div>
@@ -10433,24 +10462,28 @@ function CategoryForm({
             <div className="settings-stack">
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.general")}</p>
-                <div className="field-row">
-                  {" "}
-                  <Field label={t("item.name")}>
-                    <Input
-                      className={FIELD_SM}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                    />
-                  </Field>{" "}
-                  <Field label={t("item.icon")}>
+                <div className="id-head">
+                  <div className="id-col">
+                    <Label>{t("item.icon")}</Label>
                     <IconPicker
                       value={icon}
                       onChange={setIcon}
                       {...picker}
                       pictosOnly={!picker.navRichIcons}
+                      header
                     />
-                  </Field>
+                  </div>
+                  <div className="id-col">
+                    <div className="id-field">
+                      <Label>{t("item.name")}</Label>
+                      <Input
+                        className={FIELD_SM}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -10474,9 +10507,13 @@ function itemKind(kind: string | undefined) {
 function ExtraLinksField({
   links,
   setLinks,
+  linkMenu,
+  setLinkMenu,
 }: {
   links: { key: string; title: string; url: string }[];
   setLinks: React.Dispatch<React.SetStateAction<{ key: string; title: string; url: string }[]>>;
+  linkMenu?: boolean;
+  setLinkMenu?: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ key: string; pointerId: number } | null>(null);
@@ -10562,14 +10599,27 @@ function ExtraLinksField({
   return (
     <div className="am-work">
       <div className="am-toolbar">
-        <span className="am-toolbar-title">{t("item.extraLinks")}</span>
-        {links.length < 4 ? (
+        {links.length < 5 ? (
           <button type="button" className="am-create shrink-0" onClick={addLink}>
             <Plus className="size-3.5" /> {t("actions.addLink")}
           </button>
         ) : null}
       </div>
-      <p className="settings-hint">{t("item.extraLinksHint")}</p>
+      <p className="settings-hint">{t("item.linksHint")}</p>
+      {linkMenu !== undefined && setLinkMenu ? (
+        <div className="settings-toggles">
+          <label className={links.length > 1 ? "" : "is-disabled"}>
+            <input
+              type="checkbox"
+              checked={Boolean(linkMenu) && links.length > 1}
+              disabled={links.length < 2}
+              onChange={(e) => setLinkMenu?.(e.target.checked)}
+            />
+            {t("item.linkMenu")}
+          </label>
+          <p className="settings-hint">{t("item.linkMenuHint")}</p>
+        </div>
+      ) : null}
       {links.length ? (
         <div ref={listRef} className="am-providers" role="list">
           {links.map((row) => (
@@ -10710,15 +10760,21 @@ function AppForm({
   const [rowSpan, setRowSpan] = useState<1 | 2 | 3>(initial?.rowSpan ?? 1);
   const [check, setCheck] = useState<CheckMode>(initial?.check ?? "off");
   const [checkHost, setCheckHost] = useState(initial?.checkHost ?? "");
-  const [links, setLinks] = useState<{ key: string; title: string; url: string }[]>(() =>
-    (Array.isArray(initial?.links) ? initial.links : [])
+  const [links, setLinks] = useState<{ key: string; title: string; url: string }[]>(() => {
+    const rows = (Array.isArray(initial?.links) ? initial.links : [])
       .map((r) => ({
         key: crypto.randomUUID(),
         title: String(r.title || ""),
         url: String(r.url || ""),
       }))
-      .slice(0, 4),
-  );
+      .slice(0, 5);
+    const kind0 = initial?.kind || "app";
+    const legacy = safeAppHref(initial?.url);
+    if (kind0 === "app" && legacy && rows[0]?.url !== legacy)
+      rows.unshift({ key: crypto.randomUUID(), title: "", url: legacy });
+    return rows;
+  });
+  const [linkMenu, setLinkMenu] = useState(Boolean(initial?.linkMenu));
   const [probeBusy, setProbeBusy] = useState(false);
   const [pane, setPane] = useState("general");
   const catOptions = useMemo(() => categories, [categories]);
@@ -10763,6 +10819,7 @@ function AppForm({
     setTagDraft("");
     setDraftColors({});
     setLinks([]);
+    setLinkMenu(false);
     setOpenIn("_blank");
     setCheck("off");
     setCheckHost("");
@@ -10793,6 +10850,9 @@ function AppForm({
       }))
     )
       return;
+    if (next === "embed" && kind === "app") setUrl(links[0]?.url?.trim() || "");
+    if (next === "app" && kind === "embed" && safeAppHref(url))
+      setLinks([{ key: crypto.randomUUID(), title: "", url: safeAppHref(url) || "" }]);
     resetFieldsForKind(next);
   }
   const kindMeta = itemKind(kind);
@@ -10875,7 +10935,7 @@ function AppForm({
           setPane("general");
           return;
         }
-        if (kind === "app" && !safeAppHref(url)) {
+        if (kind === "app" && !safeAppHref(links[0]?.url || "")) {
           toast.error(t("errors.urlRequired"));
           setPane("lien");
           return;
@@ -10907,13 +10967,14 @@ function AppForm({
           links:
             kind === "app"
               ? links
-                  .filter((r) => r.title.trim() && r.url.trim())
-                  .slice(0, 4)
-                  .map((r) => ({
-                    title: r.title.trim().slice(0, 40),
-                    url: r.url.trim().slice(0, 2e3),
+                  .filter((r) => safeAppHref(r.url))
+                  .slice(0, 5)
+                  .map((r, i) => ({
+                    title: i === 0 ? r.title.trim().slice(0, 40) : r.title.trim().slice(0, 40),
+                    url: safeAppHref(r.url) || r.url.trim().slice(0, 2e3),
                   }))
               : [],
+          linkMenu: kind === "app" ? linkMenu && links.length > 1 : undefined,
           tagColors: kind === "app" ? draftColors : undefined,
         });
       }}
@@ -10964,20 +11025,43 @@ function AppForm({
             <div className="settings-card">
               <p className="settings-kicker">{t("item.general")}</p>
               {kind === "app" ? (
-                <div className="field-row">
-                  {" "}
-                  <Field label={t("item.name")}>
-                    <Input
-                      className={FIELD_SM}
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder={t("item.placeholderName")}
-                      required
+                <div className="id-head">
+                  <div className="id-col">
+                    <Label>{t("item.icon")}</Label>
+                    <IconPicker
+                      value={icon}
+                      onChange={setIcon}
+                      siteUrl={links[0]?.url || ""}
+                      {...picker}
+                      header
                     />
-                  </Field>{" "}
-                  <Field label={t("item.icon")}>
-                    <IconPicker value={icon} onChange={setIcon} siteUrl={url} {...picker} />
-                  </Field>
+                  </div>
+                  <div className="id-col">
+                    <div className="id-field">
+                      <Label>{t("item.name")}</Label>
+                      <Input
+                        className={FIELD_SM}
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        placeholder={t("item.placeholderName")}
+                        required
+                      />
+                    </div>
+                    <div className="id-field">
+                      <Label>{t("item.category")}</Label>
+                      <Select
+                        className={FIELD_SM}
+                        value={catId}
+                        onChange={(e) => setCatId(e.target.value)}
+                      >
+                        {catOptions.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <Field label={t("item.titleOptional")}>
@@ -10989,19 +11073,6 @@ function AppForm({
                   />
                 </Field>
               )}
-              <Field label={t("item.category")}>
-                <Select
-                  className={FIELD_SM}
-                  value={catId}
-                  onChange={(e) => setCatId(e.target.value)}
-                >
-                  {catOptions.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
             </div>
             <div className="settings-card">
               <p className="settings-kicker">
@@ -11126,17 +11197,29 @@ function AppForm({
           <div className={paneSafe === "lien" ? "settings-stack" : "hidden"}>
             <div className="settings-card">
               <p className="settings-kicker">{t("item.link")}</p>
-              <Field label={kindMeta.urlLabel}>
-                <Input
-                  className={FIELD_SM}
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://"
-                  required={kind === "app"}
+              {kind === "embed" ? (
+                <Field label={kindMeta.urlLabel}>
+                  <Input
+                    className={FIELD_SM}
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="https://"
+                    required
+                  />
+                  {urlDupHint}
+                </Field>
+              ) : (
+                <ExtraLinksField
+                  links={links}
+                  setLinks={setLinks}
+                  linkMenu={linkMenu}
+                  setLinkMenu={setLinkMenu}
                 />
-                {urlDupHint}
-              </Field>
-              <Field label={t("item.openLink")}>
+              )}
+            </div>
+            <div className="settings-card">
+              <p className="settings-kicker">{t("item.openLink")}</p>
+              <Field>
                 <Select
                   className={FIELD_SM}
                   value={openIn}
@@ -11146,9 +11229,6 @@ function AppForm({
                   <option value="_self">{t("item.sameWindow")}</option>
                 </Select>
               </Field>
-            </div>
-            <div className="settings-card">
-              <ExtraLinksField links={links} setLinks={setLinks} />
             </div>
             <div className="settings-card">
               <p className="settings-kicker">{t("probe.control")}</p>

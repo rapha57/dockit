@@ -79,6 +79,8 @@ When this file and the code disagree, the code wins — update this file.
 
 **Dependent controls.** When a checkbox gates another control — checkbox **or field** — the child gets `is-child` (`.settings-toggles label.is-child` / `.settings-field.is-child` → margin-left 1.6rem): the child starts at the parent's TEXT, forming a tree. Parent disabled → child also gets `is-disabled` (opacity, inputs disabled). Applies to every gated control whatever its type (Info stats under Info bar, probe blink under per-card probes, LDAP TLS verify under TLS, OIDC auto-redirect under OIDC, proxy-auth header under the proxy toggle).
 
+**Identity block (Space/Category/Card forms).** The General tab opens with a two-column identity, each column headed by its own field label (standard `Label`, 13px muted — not a kicker): **Icon** (left) over the icon picker as a 44px dashed `brand-preview icon-trigger.is-header` button (icon at real card size, pencil badge on hover); **Name** (right) over the name input, with the **Category** label + select stacked underneath for cards. Gated controls (link-menu toggle…) stay inside the block. Description and Tags return to full width in their own kicked cards (GÉNÉRAL identity → DESCRIPTION → TAGS). The Link pane splits into LINK (list + menu toggle) and OPEN LINK (opening rule) blocks.
+
 **Field labels.** `Label` (`src/components/ui/label.tsx`): **0.8125rem (13px), font-medium, `text-muted`** — same size as toggle labels, one step under the 11px kickers, never competing with the field value. Applies everywhere via the shared primitive (Settings, card forms, OIDC/LDAP forms).
 
 **Do.** Use `Field` for any labeled control; `Select` (not raw `<select>`); keep every field 36px.

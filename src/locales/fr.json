@@ -386,7 +386,12 @@
     "addTag": "Ajouter une étiquette, Entrée",
     "urlExists": "Ce lien existe déjà : « {title} » ({tab})",
     "urlExistsN": "Ce lien existe déjà sur {n} cartes ({list})",
-    "removedBody": "« {name} » sera retiré du portail."
+    "removedBody": "« {name} » sera retiré du portail.",
+    "links": "Liens",
+    "linksHint": "La première ligne est le lien ouvert par la carte. Réordonnez avec la poignée.",
+    "linkMenu": "Ouvrir le menu des liens au clic",
+    "linkMenuHint": "Le clic sur la carte déplie la liste des liens au lieu d’ouvrir le premier. Nécessite au moins deux liens.",
+    "display": "Affichage"
   },
   "space": {
     "edit": "Modifier l'espace",
@@ -399,7 +404,8 @@
     "restrict": "Restreindre l’accès",
     "noAccounts": "Aucun compte à autoriser — Créer les comptes dans Utilisateurs.",
     "editors": "Éditeurs",
-    "editHint": "Peuvent modifier les cartes et catégories de cet espace."
+    "editHint": "Peuvent modifier les cartes et catégories de cet espace.",
+    "hideLabelHint": "L'espace s'affiche en icône seule dans la barre de navigation."
   },
   "category": {
     "edit": "Modifier la catégorie",
@@ -1117,7 +1123,7 @@
     "importPng": "Importer PNG / SVG",
     "filterOnline": "Filtrer, ou chercher en ligne",
     "filterLib": "Filtrer la bibliothèque",
-    "offlineHint": "Mode hors-ligne. Activer Iconify dans Réglages → Présentation si le portail a un accès Internet.",
+    "offlineHint": "Recherche en ligne désactivée (activez Iconify dans Réglages → Présentation pour un accès Internet).",
     "imported": "Importées",
     "onlineClick": "En ligne — Clic = copie locale",
     "product": "Bibliothèque métier",
@@ -1126,7 +1132,12 @@
     "needSession": "Session requise",
     "replaceConfirm": "Remplacer l’icône actuelle par le favicon du site ?",
     "applied": "Favicon appliqué",
-    "copiedLocal": "{id} (rapatriée en local)"
+    "copiedLocal": "{id} (rapatriée en local)",
+    "import": "Importer",
+    "tabAll": "Tous",
+    "tabIcons": "Icônes",
+    "tabSymbols": "Symboles",
+    "onlineOff": "recherche en ligne désactivée"
   },
   "tags": {
     "memory": "Mémoire",

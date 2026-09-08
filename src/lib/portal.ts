@@ -112,7 +112,7 @@ export type PortalApp = {
   kind: ItemKind;
   title: string;
   description: string;
-  url: string;
+  url?: string;
   icon: string;
   openIn: "_blank" | "_self";
   tags: string[];
@@ -122,8 +122,19 @@ export type PortalApp = {
   check: CheckMode;
   checkHost: string;
   clicks: number;
+  linkMenu?: boolean;
   links: { title: string; url: string }[];
 };
+
+/** Main link of a card: apps read their first link, embeds their iframe src. */
+export function cardUrl(app: {
+  kind?: ItemKind;
+  url?: string;
+  links?: { url: string }[];
+}): string {
+  if ((app.kind || "app") === "embed") return String(app.url || "");
+  return String(app.links?.[0]?.url || app.url || "");
+}
 
 export type PortalCategory = {
   id: string;
@@ -422,13 +433,20 @@ function asExtraLinks(raw: unknown): { title: string; url: string }[] {
 }
 function normalizeItem(a: any, categoryId: string, sortOrder: number): PortalApp {
 	const kind = asKind(a.kind);
+	let linksFull: { title: string; url: string }[] = [];
+	if (kind === "app") {
+		const extras = asExtraLinks(a.links);
+		const main = safeAppHref(a.url);
+		if (main && extras[0]?.url !== main) extras.unshift({ title: "", url: main });
+		linksFull = extras.slice(0, 5);
+	}
 	return {
 		id: a.id || crypto.randomUUID(),
 		categoryId,
 		kind,
 		title: String(a.title || (kind === "note" || kind === "embed" ? "" : "Untitled")).slice(0, 80),
 		description: String(a.description || "").slice(0, 8e3),
-		url: kind === "note" ? String(a.url || "").slice(0, 2e3) : (safeAppHref(a.url) || (String(a.url || "").trim().toLowerCase().startsWith("http") ? String(a.url).trim().slice(0, 2e3) : "")),
+		url: kind === "app" ? undefined : (safeAppHref(a.url) || (String(a.url || "").trim().toLowerCase().startsWith("http") ? String(a.url).trim().slice(0, 2e3) : "")),
 		icon: String(a.icon || (kind === "note" ? "FileText" : kind === "embed" ? "AppWindow" : "Link")),
 		openIn: a.openIn === "_self" ? "_self" : "_blank",
 		tags: kind === "app" ? asTags(a.tags) : [],
@@ -438,7 +456,8 @@ function normalizeItem(a: any, categoryId: string, sortOrder: number): PortalApp
 		check: kind === "app" ? asCheck(a.check) : "off",
 		checkHost: kind === "app" && asCheck(a.check) === "icmp" ? asCheckHost(a.checkHost) : "",
 		clicks: Math.max(0, Math.floor(Number(a.clicks) || 0)),
-		links: kind === "app" ? asExtraLinks(a.links) : []
+		links: kind === "app" ? linksFull : [],
+		linkMenu: kind === "app" ? Boolean(a.linkMenu) : false
 	};
 }
 function defaultSettings(): PortalSettings {
@@ -2820,7 +2839,7 @@ const itemPayload = {
 	]).default("app"),
 	title: z.string().max(80).default(""),
 	description: z.string().max(8e3),
-	url: z.string().max(2e3),
+	url: z.string().max(2e3).optional(),
 	icon: z.string().min(1).max(4e5),
 	openIn: z.enum(["_blank", "_self"]),
 	tags: z.array(z.string().min(1).max(32)).max(3).default([]),
@@ -2841,9 +2860,10 @@ const itemPayload = {
 	]).default("off"),
 	checkHost: z.string().max(253).default(""),
 	links: z.array(z.object({
-		title: z.string().min(1).max(40),
+		title: z.string().max(40),
 		url: z.string().min(1).max(2e3)
-	})).max(4).optional().default([]),
+	})).max(5).optional().default([]),
+	linkMenu: z.boolean().optional(),
 	tagColors: z.record(z.string().min(1).max(32), z.string().max(7)).optional()
 };
 function requireUrl(kind: unknown, url: string) {
@@ -2863,7 +2883,7 @@ export const createApp = createServerFn({ method: "POST" }).validator(z.object({
 	...itemPayload
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
-	requireUrl(data.kind, data.url);
+	requireUrl(data.kind, data.links?.[0]?.url || data.url);
 	requireTitle(data.kind, data.title);
 	requireBody(data.kind, data.description);
 	const { tab, cat } = categoryOf(doc, data.categoryId);
@@ -2881,7 +2901,8 @@ export const createApp = createServerFn({ method: "POST" }).validator(z.object({
 		rowSpan: data.rowSpan,
 		check: data.check,
 		checkHost: data.checkHost,
-		links: data.links
+		links: data.links,
+		linkMenu: data.linkMenu
 	}, cat.id, next));
 	assignTagColors(doc, data.tags, data.tagColors);
 	const created = cat.apps[cat.apps.length - 1];
@@ -2902,7 +2923,7 @@ export const updateApp = createServerFn({ method: "POST" }).validator(z.object({
 	...itemPayload
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
-	requireUrl(data.kind, data.url);
+	requireUrl(data.kind, data.links?.[0]?.url || data.url);
 	requireTitle(data.kind, data.title);
 	requireBody(data.kind, data.description);
 	const found = appOf(doc, data.id);
@@ -2927,7 +2948,8 @@ export const updateApp = createServerFn({ method: "POST" }).validator(z.object({
 		check: data.check,
 		checkHost: data.checkHost,
 		clicks: found.app.clicks,
-		links: data.links
+		links: data.links,
+		linkMenu: data.linkMenu
 	}, dest.cat.id, found.app.sortOrder);
 	Object.assign(found.app, next);
 	found.app.id = data.id;
@@ -3307,7 +3329,7 @@ async function resolveProbeByIds(token: string, ids: string[]) {
 		const app = found.app;
 		if (app.kind !== "app" || app.check === "off") continue;
 		if (app.check === "http") {
-			const url = safeAppHref(app.url);
+			const url = safeAppHref(cardUrl(app));
 			if (url) out.push({
 				id: app.id,
 				mode: "http",
@@ -3353,12 +3375,15 @@ const CURATION_MAX_LINKS = 400;
 
 function curationLinksOf(app: PortalApp): CurationLink[] {
 	const links: CurationLink[] = [];
-	const main = app.kind === "note" ? "" : safeAppHref(app.url);
-	if (main) links.push({ key: "main", label: "", url: main });
-	const extra = Array.isArray(app.links) ? app.links : [];
-	for (let i = 0; i < extra.length && links.length < 5; i++) {
-		const url = safeAppHref(extra[i]?.url);
-		if (url) links.push({ key: `l${i}`, label: String(extra[i]?.title || "").slice(0, 40), url });
+	const list = Array.isArray(app.links) ? app.links : [];
+	for (let i = 0; i < list.length && links.length < 5; i++) {
+		const url = safeAppHref(list[i]?.url);
+		if (!url) continue;
+		links.push({
+			key: i === 0 ? "main" : `l${i - 1}`,
+			label: String(list[i]?.title || "").slice(0, 40),
+			url
+		});
 	}
 	return links;
 }
