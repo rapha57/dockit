@@ -1607,6 +1607,7 @@ html.dark .debug-row.is-warn .debug-level {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
+  padding-bottom: 0.5rem;
 }
 .settings-stack.app-form {
   gap: 1.15rem;
