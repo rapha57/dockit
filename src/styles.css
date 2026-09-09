@@ -2835,19 +2835,20 @@ html.dark .about-mark .dockit-stroke {
 .note-editor {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0;
   overflow: visible;
-  border: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   background: transparent;
 }
 .note-toolbar {
   display: flex;
   align-items: center;
   gap: 0.15rem;
-  padding: 0.3rem 0.35rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--color-elevated) 80%, transparent);
+  padding: 0.2rem 0.25rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .note-toolbar button {
   display: inline-flex;
@@ -2862,7 +2863,7 @@ html.dark .about-mark .dockit-stroke {
 }
 .note-toolbar button:hover,
 .note-toolbar button.is-on {
-  background: var(--color-elevated);
+  background: color-mix(in oklab, var(--color-fg) 8%, transparent);
   color: var(--color-fg);
 }
 .note-toolbar-spacer {
@@ -2978,10 +2979,10 @@ html.dark .note-body .note-amber {
   min-height: 9rem;
   max-height: 16rem;
   overflow: auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--color-elevated) 80%, transparent);
-  padding: 0.7rem 0.8rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.4rem 0.5rem;
   font-size: 0.875rem;
   line-height: 1.5;
   color: var(--color-fg);
@@ -2991,7 +2992,7 @@ html.dark .note-body .note-amber {
 .note-canvas:focus-visible,
 .note-md:focus,
 .note-md:focus-visible {
-  border-color: color-mix(in oklab, var(--color-ring) 55%, var(--color-border));
+  border-color: transparent;
   outline: none;
 }
 .note-canvas:empty:before {
