@@ -1128,7 +1128,7 @@ type AccessPayload = {
   editors?: string[];
   hideLabel?: boolean;
 };
-type AppFormPayload = {
+type CardFormPayload = {
   categoryId: string;
   kind: ItemKind;
   title: string;
@@ -5075,7 +5075,7 @@ function Home() {
             />
           )}
           {modal.kind === "app" && (
-            <AppForm
+            <CardForm
               categories={
                 modal.app && !data.categories.some((c) => c.id === (modal.app as PortalApp).categoryId)
                   ? (data.catalog.find((tb) =>
@@ -6420,7 +6420,7 @@ function CurationPanel({
   editContext: (
     cardId: string,
   ) => { app: PortalApp; categoryId: string; categories: PortalCategory[] } | null;
-  onSaveCard: (app: PortalApp, payload: AppFormPayload, onDone: () => void) => void;
+  onSaveCard: (app: PortalApp, payload: CardFormPayload, onDone: () => void) => void;
   onClose: () => void;
 }) {
   const [pane, setPane] = useState<"results" | "apps">("results");
@@ -6970,7 +6970,7 @@ function CurationPanel({
     </div>
     {edit ? (
       <ModalShell size="wide" label={t("curation.editCard")} onClose={() => setEdit(null)}>
-        <AppForm
+        <CardForm
           categories={edit.categories}
           categoryId={edit.categoryId}
           catalog={catalog}
@@ -10564,7 +10564,7 @@ function SizePreview({ colSpan, rowSpan }: { colSpan: number; rowSpan: number })
     </div>
   );
 }
-function AppForm({
+function CardForm({
   categories,
   categoryId,
   catalog,
@@ -10593,7 +10593,7 @@ function AppForm({
   knownTags?: { name: string; count: number }[];
   tagColors?: Record<string, string>;
   onCancel: () => void;
-  onSave: (payload: AppFormPayload) => void;
+  onSave: (payload: CardFormPayload) => void;
 }) {
   const [kind, setKind] = useState(initial?.kind ?? "app");
   const [catId, setCatId] = useState(initial?.categoryId ?? categoryId);
