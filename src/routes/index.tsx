@@ -10891,13 +10891,16 @@ function CardForm({
               )}
               {kind === "app" ? (
                 <Field label={t("item.description")}>
-                  <Input
-                    className={FIELD_SM}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder={t("item.descriptionPlaceholder")}
-                    maxLength={40}
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      className={FIELD_SM}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder={t("item.descriptionPlaceholder")}
+                      maxLength={40}
+                    />
+                    <p className="theme-css-meta shrink-0">{description.length}/40</p>
+                  </div>
                 </Field>
               ) : null}
             </div>
