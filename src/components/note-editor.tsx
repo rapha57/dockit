@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
-import { Baseline, Bold, Code, FileCode, Italic, Link, Type } from "lucide-react";
+import { Bold, Code, Code2, Eraser, Italic, Link, Palette } from "lucide-react";
 import { htmlToMd, mdToHtml, safeHref, escapeHtml, NOTE_COLORS, toHex } from "@/lib/note-md";
 import { t } from "@/lib/i18n";
 import { EdgeFade } from "@/components/edge-fade";
@@ -179,7 +179,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
           onMouseDown={keepSelection}
           onClick={() => run("removeFormat")}
         >
-          <Type className="size-3.5" />
+          <Eraser className="size-3.5" />
         </button>
         <button type="button" title={t("note.code")} aria-label={t("note.code")} onMouseDown={keepSelection} onClick={wrapCode}>
           <Code className="size-3.5" />
@@ -195,7 +195,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
             setColorOpen((v) => !v);
           }}
         >
-          <Baseline className="size-3.5" />
+          <Palette className="size-3.5" />
         </button>
         <button
           type="button"
@@ -219,7 +219,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
           onMouseDown={keepSelection}
           onClick={toggleMode}
         >
-          <FileCode className="size-3.5" />
+          <Code2 className="size-3.5" />
         </button>
       </div>
       {colorOpen && mode === "visuel" ? (

@@ -3002,6 +3002,14 @@ html.dark .note-body .note-amber {
 .note-canvas a {
   color: var(--color-primary);
   text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
+  text-underline-offset: 0.15em;
+}
+.note-canvas a[href^="mailto:"] {
+  color: var(--color-muted);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
 }
 .note-canvas code,
 .note-md {
