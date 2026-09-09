@@ -3521,9 +3521,41 @@ function Home() {
               </p>
             </div>
           </div>{" "}
-          <div className="search-box relative flex min-h-10 min-w-0 flex-1 items-center rounded-lg border border-border bg-surface pl-9">
+          <div className="search-box relative flex min-h-10 min-w-0 flex-1 items-center gap-1 rounded-lg border border-border bg-surface pl-9">
             {" "}
             <Search className="pointer-events-none absolute left-3 size-4 text-muted" />
+            {(tagFilter.length || downFilter) ? (
+              <div className="search-tags">
+                {downFilter ? (
+                  <button
+                    type="button"
+                    className="tag-chip is-on stats-hs-chip"
+                    title={t("info.removeHs")}
+                    onClick={() => setDownFilter(false)}
+                  >
+                    {t("info.hs")}
+                    <X className="ml-0.5 size-2.5" />
+                  </button>
+                ) : null}
+                {tagFilter.map((name) => {
+                  const paint = tagPaint(name, data.settings.tagColors);
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      data-tone={paint.tone}
+                      style={paint.style}
+                      className="tag-chip is-on"
+                      title={t("nav.removeTag", { name })}
+                      onClick={() => toggleTag(name)}
+                    >
+                      {name}
+                      <X className="ml-0.5 size-2.5" />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             <input
               ref={searchRef}
               className="h-10 min-w-[6rem] flex-1 bg-transparent text-sm outline-none placeholder:text-subtle"
@@ -3565,38 +3597,6 @@ function Home() {
               aria-autocomplete="list"
               aria-expanded={tagMatches.length > 0}
             />
-            {tagFilter.length || downFilter ? (
-              <div className="search-tags">
-                {downFilter ? (
-                  <button
-                    type="button"
-                    className="tag-chip is-on stats-hs-chip"
-                    title={t("info.removeHs")}
-                    onClick={() => setDownFilter(false)}
-                  >
-                    {t("info.hs")}
-                    <X className="ml-0.5 size-2.5" />
-                  </button>
-                ) : null}
-                {tagFilter.map((name) => {
-                  const paint = tagPaint(name, data.settings.tagColors);
-                  return (
-                    <button
-                      key={name}
-                      type="button"
-                      data-tone={paint.tone}
-                      style={paint.style}
-                      className="tag-chip is-on"
-                      title={t("nav.removeTag", { name })}
-                      onClick={() => toggleTag(name)}
-                    >
-                      {name}
-                      <X className="ml-0.5 size-2.5" />
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
             {tagMatches.length > 0 ? (
               <div className="search-suggest" role="listbox">
                 {tagMatches.map((t, i) => {
