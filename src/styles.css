@@ -1361,6 +1361,7 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
 }
 .status-mark:hover {
   background: var(--color-elevated);
+  box-shadow: 0 0 0 1px var(--color-border);
 }
 .status-mark.is-up::before {
   background: var(--color-ok);
