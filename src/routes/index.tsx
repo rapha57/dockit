@@ -5765,7 +5765,7 @@ function AppCard({
           {appMark}
           {appCopy}
         </div>
-        {app.linkMenu ? <span className="card-hub-badge"><LayoutGrid className="size-3" /></span> : null}
+        {app.linkMenu ? <span className="card-hub-badge"><LayoutGrid className="size-3.5" /></span> : null}
         {corner}
         {tagRow}
         {linkMenu}

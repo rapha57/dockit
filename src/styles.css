@@ -1145,12 +1145,11 @@ html.dark .fav-star:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.1rem;
-  height: 1.1rem;
+  width: 1.35rem;
+  height: 1.35rem;
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-muted);
-  opacity: 0.7;
+  background: var(--color-border);
+  color: var(--color-fg);
   pointer-events: none;
   z-index: 3;
 }
