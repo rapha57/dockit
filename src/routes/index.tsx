@@ -10678,7 +10678,7 @@ function CardForm({
     setTags([]);
     setTagDraft("");
     setDraftColors({});
-    setLinks([]);
+    setLinks(next === "app" ? [{ key: crypto.randomUUID(), title: "", url: "" }] : []);
     setLinkMenu(false);
     setEmbedBorder(false);
     setEmbedBg("");
