@@ -10817,7 +10817,7 @@ function CardForm({
                     openIn: r.openIn,
                   }))
               : [],
-          linkMenu: kind === "app" ? linkMenu && links.length > 1 : undefined,
+          linkMenu: kind === "app" ? linkMenu : undefined,
           embedBorder: kind === "embed" ? embedBorder : undefined,
           embedBg: kind === "embed" ? embedBg : undefined,
           tagColors: kind === "app" ? draftColors : undefined,
