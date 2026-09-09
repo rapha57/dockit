@@ -4466,7 +4466,7 @@ function Home() {
                           app={app}
                           editMode={editMode && canEditActive}
                           canDrag={canDrag}
-                          canResize={canResize}
+                          canResize={canResize && app.kind !== "app"}
                           dragging={drag?.kind === "app" && drag.id === app.id}
                           className={itemSpanClass(app)}
                           onTag={toggleTag}
@@ -11192,17 +11192,19 @@ function CardForm({
                 </Field>
               </div>
             ) : null}
-            <div className="settings-card">
-              <p className="settings-kicker">{t("item.size")}</p>
-              <div className="flex items-center gap-3">
-                <SizePicker
-                  colSpan={colSpan}
-                  rowSpan={rowSpan}
-                  onChange={(c, r) => { setColSpan(c); setRowSpan(r); }}
-                />
-                <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
+            {kind !== "app" ? (
+              <div className="settings-card">
+                <p className="settings-kicker">{t("item.size")}</p>
+                <div className="flex items-center gap-3">
+                  <SizePicker
+                    colSpan={colSpan}
+                    rowSpan={rowSpan}
+                    onChange={(c, r) => { setColSpan(c); setRowSpan(r); }}
+                  />
+                  <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
+                </div>
               </div>
-            </div>
+            ) : null}
             {kind === "embed" ? (
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.link")}</p>
