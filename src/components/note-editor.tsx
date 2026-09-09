@@ -73,8 +73,10 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
   function emitHtml() {
     const el = canvasRef.current;
     if (!el) return;
+    const md = htmlToMd(el.innerHTML);
     skipHtml.current = true;
-    onChange(htmlToMd(el.innerHTML));
+    valueRef.current = md;
+    onChange(md);
   }
 
   useLayoutEffect(() => {
@@ -151,6 +153,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
     setColorOpen(false);
     if (mode === "visuel") {
       emitHtml();
+      skipHtml.current = true;
       setMode("md");
       return;
     }
