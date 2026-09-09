@@ -5752,8 +5752,7 @@ function AppCard({
             onClick={(e) => {
               if (menuMode) {
                 e.preventDefault();
-                const r = e.currentTarget.getBoundingClientRect();
-                setMenu({ x: r.left, y: r.bottom + 4 });
+                setMenu({ x: e.clientX, y: e.clientY + 4 });
                 return;
               }
               onOpen?.();
