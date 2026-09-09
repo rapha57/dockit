@@ -7784,15 +7784,16 @@ function LocalesForm({
   const [timeFormat, setTimeDraft] = useState(asTimeFormat(initial.timeFormat));
   const [timezone, setZoneDraft] = useState(asTimeZone(initial.timezone));
   const [numberFormat, setNumberDraft] = useState(asNumberFormat(initial.numberFormat));
-  const [regionId, setRegionId] = useState(
+  const regionId = useMemo(
     () =>
       REGIONS.find(
         (r) =>
-          r.locale === asLocale(initial.locale) &&
-          r.dateFormat === asDateFormat(initial.dateFormat) &&
-          r.timeFormat === asTimeFormat(initial.timeFormat) &&
-          r.numberFormat === asNumberFormat(initial.numberFormat),
+          r.locale === asLocale(locale) &&
+          r.dateFormat === asDateFormat(dateFormat) &&
+          r.timeFormat === asTimeFormat(timeFormat) &&
+          r.numberFormat === asNumberFormat(numberFormat),
       )?.id ?? null,
+    [locale, dateFormat, timeFormat, numberFormat],
   );
   const sample = formatWhen(new Date(), true, {
     dateFormat,
@@ -7826,7 +7827,6 @@ function LocalesForm({
             onChange={(e) => {
               const reg = REGIONS.find((r) => r.id === e.target.value);
               if (reg) {
-                setRegionId(reg.id);
                 setLocaleDraft(reg.locale);
                 setDateDraft(reg.dateFormat);
                 setTimeDraft(reg.timeFormat);
@@ -7846,7 +7846,7 @@ function LocalesForm({
         </Field>
         <Field label={t("lang.label")}>
           {" "}
-          <Select value={locale} onChange={(e) => { setRegionId(null); setLocaleDraft(asLocale(e.target.value)); }}>
+          <Select value={locale} onChange={(e) => { setLocaleDraft(asLocale(e.target.value)); }}>
             {" "}
             <option value="en">{t("lang.en")}</option>
             <option value="fr">{t("lang.fr")}</option>
@@ -7860,7 +7860,7 @@ function LocalesForm({
           {" "}
           <Field label={t("lang.dateFormat")}>
             {" "}
-            <Select value={dateFormat} onChange={(e) => { setRegionId(null); setDateDraft(asDateFormat(e.target.value)); }}>
+            <Select value={dateFormat} onChange={(e) => { setDateDraft(asDateFormat(e.target.value)); }}>
               {" "}
               <option value="ymd">{t("lang.dateYmd")}</option>
               <option value="yyyy">{t("lang.dateYyyy")}</option>
@@ -7872,7 +7872,7 @@ function LocalesForm({
           </Field>{" "}
           <Field label={t("lang.timeFormat")}>
             {" "}
-            <Select value={timeFormat} onChange={(e) => { setRegionId(null); setTimeDraft(asTimeFormat(e.target.value)); }}>
+            <Select value={timeFormat} onChange={(e) => { setTimeDraft(asTimeFormat(e.target.value)); }}>
               {" "}
               <option value="24h">{t("lang.time24")}</option>
               <option value="12h">{t("lang.time12")}</option>
@@ -7888,7 +7888,7 @@ function LocalesForm({
           {" "}
           <Select
             value={numberFormat}
-            onChange={(e) => { setRegionId(null); setNumberDraft(asNumberFormat(e.target.value)); }}
+            onChange={(e) => { setNumberDraft(asNumberFormat(e.target.value)); }}
           >
             {" "}
             <option value="auto">{t("lang.numberAuto")}</option>
