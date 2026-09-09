@@ -385,7 +385,7 @@
     "type": "Type",
     "tags": "Tags",
     "maxTags": "3 tags maximum",
-    "addTag": "New tag + Enter",
+    "addTag": "Type a tag + ↵",
     "urlExists": "This link already exists: “{title}” ({tab})",
     "urlExistsN": "This link already exists on {n} cards ({list})",
     "removedBody": "“{name}” will be removed from the portal.",
@@ -1169,7 +1169,7 @@
     "exists": "This tag already exists",
     "tooMany": "Too many tags (80 max)",
     "back": "Back to tags",
-    "newPlaceholder": "New tag + Enter",
+    "newPlaceholder": "Type a tag + ↵",
     "colorOf": "Color of {name}",
     "palette": "Pastel palette",
     "pickColor": "Choose a color"

@@ -385,7 +385,7 @@
     "type": "Type",
     "tags": "Étiquettes",
     "maxTags": "3 étiquettes maximum",
-    "addTag": "Nouveau tag + Entrée",
+    "addTag": "Saisir une étiquette + ↵",
     "urlExists": "Ce lien existe déjà : « {title} » ({tab})",
     "urlExistsN": "Ce lien existe déjà sur {n} cartes ({list})",
     "removedBody": "« {name} » sera retiré du portail.",
@@ -1169,7 +1169,7 @@
     "exists": "Cette étiquette existe déjà",
     "tooMany": "Trop d’étiquettes (80 max)",
     "back": "Retour aux étiquettes",
-    "newPlaceholder": "Nouveau tag + Entrée",
+    "newPlaceholder": "Saisir une étiquette + ↵",
     "colorOf": "Couleur de {name}",
     "palette": "Palette pastel",
     "pickColor": "Choisir une couleur"
