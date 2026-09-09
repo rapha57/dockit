@@ -4820,7 +4820,7 @@ function Home() {
               picker={picker}
               catalog={data.catalog}
               probes={data.settings.healthChecks !== false}
-              knownTags={allTags.map((tag) => tag.name)}
+              knownTags={allTags}
               tagColors={data.settings.tagColors}
               editContext={(cardId) => {
                 for (const tb of data.catalog) {
@@ -5090,7 +5090,7 @@ function Home() {
               busy={busy}
               picker={picker}
               probes={data.settings.healthChecks !== false}
-              knownTags={allTags.map((t) => t.name)}
+              knownTags={allTags}
               tagColors={data.settings.tagColors}
               onCancel={() =>
                 setModal({
@@ -6416,7 +6416,7 @@ function CurationPanel({
   };
   catalog: CatalogTab[];
   probes?: boolean;
-  knownTags?: string[];
+  knownTags?: { name: string; count: number }[];
   tagColors?: Record<string, string>;
   editContext: (
     cardId: string,
@@ -10782,7 +10782,7 @@ function AppForm({
     onLibrary: (icons: CustomIcon[]) => void;
   };
   probes?: boolean;
-  knownTags?: string[];
+  knownTags?: { name: string; count: number }[];
   tagColors?: Record<string, string>;
   onCancel: () => void;
   onSave: (payload: AppFormPayload) => void;
@@ -10796,6 +10796,7 @@ function AppForm({
   const [openIn, setOpenIn] = useState<"_blank" | "_self">(initial?.openIn ?? "_blank");
   const [tags, setTags] = useState(initial?.tags ?? []);
   const [tagDraft, setTagDraft] = useState("");
+  const [tagHi, setTagHi] = useState(0);
   const [draftColors, setDraftColors] = useState({});
   const [colSpan, setColSpan] = useState<1 | 2 | 3>(initial?.colSpan ?? 1);
   const [rowSpan, setRowSpan] = useState<1 | 2 | 3>(initial?.rowSpan ?? 1);
@@ -10820,7 +10821,19 @@ function AppForm({
   const [embedBg, setEmbedBg] = useState<string>(initial?.embedBg || "");
   const [probeBusy, setProbeBusy] = useState(false);
   const [pane, setPane] = useState("general");
+  const tagInputRef = useRef<HTMLInputElement>(null);
   const catOptions = useMemo(() => categories, [categories]);
+  const tagMatches = useMemo(() => {
+    const s = fold(tagDraft.trim());
+    if (!s) return [];
+    return (knownTags ?? [])
+      .filter(
+        (t) =>
+          fold(t.name).includes(s) &&
+          !tags.some((x) => x.toLowerCase() === t.name.toLowerCase()),
+      )
+      .slice(0, 8);
+  }, [tagDraft, knownTags, tags]);
   const paneSafe =
     (pane === "lien" && kind !== "app") || pane === "tags"
       ? "general"
@@ -10839,7 +10852,7 @@ function AppForm({
           ...colors,
         };
         if (lookupTagColor(t, merged)) return colors;
-        if ((knownTags ?? []).some((k) => k.toLowerCase() === t.toLowerCase())) return colors;
+        if ((knownTags ?? []).some((k) => k.name.toLowerCase() === t.toLowerCase())) return colors;
         const used = new Set(Object.values(merged).map((h) => String(h).toLowerCase()));
         return {
           ...colors,
@@ -11185,55 +11198,116 @@ function AppForm({
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.tags")}</p>
                 <Field>
-                  {tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {tags.map((tag) => {
-                        const paint = tagPaint(tag, {
-                          ...tagColors,
-                          ...draftColors,
-                        });
-                        return (
-                          <button
-                            key={tag}
-                            type="button"
-                            data-tone={paint.tone}
-                            style={paint.style}
-                            className="tag-chip"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              removeTag(tag);
-                            }}
-                          >
-                            {tag}
-                            <X className="ml-0.5 size-2.5" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                  <Input
-                    className={FIELD_SM}
-                    value={tagDraft}
-                    placeholder={tags.length >= 3 ? t("item.maxTags") : t("item.addTag")}
-                    disabled={tags.length >= 3}
-                    onChange={(e) => setTagDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === ",") {
-                        e.preventDefault();
-                        addTag(tagDraft.replace(/,/g, ""));
-                      }
-                    }}
-                    onBlur={() => addTag(tagDraft)}
-                    list="portal-tag-suggest"
-                  />
+                  <div className="relative flex min-h-9 items-center gap-1 rounded-md border border-border bg-transparent px-3">
+                    {tags.map((tag) => {
+                      const paint = tagPaint(tag, {
+                        ...tagColors,
+                        ...draftColors,
+                      });
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          data-tone={paint.tone}
+                          style={paint.style}
+                          className="tag-chip shrink-0"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeTag(tag);
+                          }}
+                        >
+                          {tag}
+                          <X className="ml-0.5 size-2.5" />
+                        </button>
+                      );
+                    })}
+                    <input
+                      ref={tagInputRef}
+                      className="min-w-[4rem] flex-1 bg-transparent text-sm outline-none placeholder:text-subtle"
+                      value={tagDraft}
+                      placeholder={tags.length >= 3 ? t("item.maxTags") : t("item.addTag")}
+                      disabled={tags.length >= 3}
+                      onChange={(e) => {
+                        setTagDraft(e.target.value);
+                        setTagHi(0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "ArrowDown" && tagMatches.length) {
+                          e.preventDefault();
+                          setTagHi((i) => (i + 1) % tagMatches.length);
+                          return;
+                        }
+                        if (e.key === "ArrowUp" && tagMatches.length) {
+                          e.preventDefault();
+                          setTagHi((i) => (i - 1 + tagMatches.length) % tagMatches.length);
+                          return;
+                        }
+                        if (e.key === "Enter" && tagMatches.length) {
+                          e.preventDefault();
+                          const m = tagMatches[tagHi % tagMatches.length];
+                          addTag(m.name);
+                          setTagHi(0);
+                          return;
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setTagDraft("");
+                          setTagHi(0);
+                          return;
+                        }
+                        if (e.key === "Backspace" && !tagDraft && tags.length) {
+                          setTagHi(0);
+                        }
+                        if (e.key === "Enter" || e.key === ",") {
+                          e.preventDefault();
+                          addTag(tagDraft.replace(/,/g, ""));
+                        }
+                      }}
+                      onBlur={() => addTag(tagDraft)}
+                    />
+                    {tagMatches.length > 0 ? createPortal(
+                      <div
+                        className="search-suggest"
+                        role="listbox"
+                        style={{
+                          position: "fixed",
+                          left: tagInputRef.current?.getBoundingClientRect().left ?? 0,
+                          top: (tagInputRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                          width: tagInputRef.current?.getBoundingClientRect().width ?? 200,
+                          zIndex: 9999,
+                        }}
+                      >
+                        {tagMatches.map((t, i) => {
+                          const paint = tagPaint(t.name, tagColors);
+                          const hi = tagMatches.length ? tagHi % tagMatches.length : 0;
+                          return (
+                            <button
+                              key={t.name}
+                              type="button"
+                              role="option"
+                              aria-selected={i === hi}
+                              className={i === hi ? "is-hi" : ""}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                addTag(t.name);
+                                setTagDraft("");
+                                setTagHi(0);
+                              }}
+                            >
+                              <span data-tone={paint.tone} style={paint.style} className="tag-chip">
+                                {t.name}
+                              </span>
+                              <span className="text-xs text-muted">{t.count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>,
+                      document.body,
+                    ) : null}
+                  </div>
                   <p className="theme-css-meta">{`${tags.length}/3`}</p>
-                  <datalist id="portal-tag-suggest">
-                    {(knownTags ?? []).map((tg) => (
-                      <option key={tg} value={tg} />
-                    ))}
-                  </datalist>
                 </Field>
               </div>
             ) : null}
