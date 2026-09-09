@@ -10559,8 +10559,7 @@ function SizePreview({ colSpan, rowSpan }: { colSpan: number; rowSpan: number })
             gridRow: `1 / span ${rows}`,
           }}
         />
-      </div>{" "}
-      <p className="settings-hint">{t("item.sizePreview")}</p>
+      </div>
     </div>
   );
 }
