@@ -79,7 +79,7 @@
     "done": "Done",
     "space": "Space",
     "dropHere": "Drop here",
-    "addTagOrName": "Add a tag or a name…",
+    "addTagOrName": "Type a tag or name…",
     "removeTag": "Remove {name}",
     "moreSpaces": "More spaces",
     "filterRemove": "Remove filter {name}",
