@@ -36,7 +36,6 @@ import {
   Globe,
   GripVertical,
   LayoutGrid,
-  Link,
   History,
   ListChecks,
   Lock,
@@ -5684,7 +5683,6 @@ function AppCard({
             onOpen?.();
           }}
         >
-          <Link className="size-4 shrink-0" aria-hidden />
           <span className="card-ctx-copy-text min-w-0">
             <span className="card-ctx-name truncate">{label}</span>
             {ctxHideUrl ? null : <span className="card-ctx-url truncate">{safe}</span>}
