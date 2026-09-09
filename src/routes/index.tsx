@@ -11064,7 +11064,7 @@ function CardForm({
                 <p className="settings-kicker">{t("item.size")}</p>
                 <div className="flex items-start gap-4">
                   <div className="flex min-w-0 flex-col gap-1" style={{ flex: "0 0 33%" }}>
-                    <Label>{t("item.size")}</Label>
+                    <Label>{t("item.preview")}</Label>
                     <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
                     <p className="text-sm tabular-nums text-muted">{colSpan} × {rowSpan}</p>
                   </div>
