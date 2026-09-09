@@ -36,14 +36,12 @@ import {
   Globe,
   GripVertical,
   LayoutGrid,
-  Network,
   Link,
   History,
   ListChecks,
   Lock,
   LogIn,
   LogOut,
-  GitBranch,
   Minus,
   MoreHorizontal,
   MousePointerClick,
@@ -200,6 +198,29 @@ import type {
 } from "@/lib/portal";
 import type { Category, CategoryMoveImpact } from "@/lib/acl";
 import type { Directory } from "@/lib/ldap-runtime";
+
+function MenuDownIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <line x1="2" y1="4" x2="14" y2="4" />
+      <line x1="2" y1="8" x2="14" y2="8" />
+      <line x1="2" y1="12" x2="14" y2="12" />
+      <polyline points="6,14 8,16 10,14" />
+    </svg>
+  );
+}
+
+function MenuAppIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="currentColor">
+      <rect x="1" y="1" width="6" height="6" rx="1" />
+      <rect x="9" y="1" width="6" height="6" rx="1" />
+      <rect x="1" y="9" width="6" height="6" rx="1" />
+      <rect x="9" y="9" width="6" height="6" rx="1" />
+    </svg>
+  );
+}
+
 export const Route = createFileRoute("/")({
   loader: async () => {
     const data = await getPortal({
@@ -5468,7 +5489,7 @@ function AppCard({
       onPointerDown={(e) => e.stopPropagation()}
     >
       {" "}
-      {app.linkMenu ? <Network className="size-3.5" /> : <GitBranch className="size-3.5" />}
+      {app.linkMenu ? <MenuDownIcon className="size-3.5" /> : <MenuAppIcon className="size-3.5" />}
     </button>
   ) : null;
   const corner =
