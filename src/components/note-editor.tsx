@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { Bold, Code, Code2, Eraser, Italic, Link, Palette } from "lucide-react";
 import { htmlToMd, mdToHtml, safeHref, escapeHtml, NOTE_COLORS, toHex } from "@/lib/note-md";
 import { t } from "@/lib/i18n";
@@ -27,7 +27,6 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const linkRef = useRef<HTMLInputElement>(null);
   const rangeRef = useRef<Range | null>(null);
-  const skipHtml = useRef(false);
   const valueRef = useRef(value);
   valueRef.current = value;
 
@@ -73,28 +72,20 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
   function emitHtml() {
     const el = canvasRef.current;
     if (!el) return;
+    if (!el.textContent?.trim()) el.innerHTML = "";
     const md = htmlToMd(el.innerHTML);
-    skipHtml.current = true;
     valueRef.current = md;
     onChange(md);
   }
 
   useLayoutEffect(() => {
     if (mode !== "visuel") return;
-    skipHtml.current = false;
+    const el = canvasRef.current;
+    if (!el) return;
+    if (document.activeElement === el) return;
     valueRef.current = value;
     hydrate(value);
   }, [mode, value]);
-
-  useEffect(() => {
-    if (mode !== "visuel") return;
-    valueRef.current = value;
-    if (skipHtml.current) {
-      skipHtml.current = false;
-      return;
-    }
-    hydrate(value);
-  }, [value, mode]);
 
   function keepSelection(e: MouseEvent) {
     e.preventDefault();
@@ -155,7 +146,6 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
     setColorOpen(false);
     if (mode === "visuel") {
       emitHtml();
-      skipHtml.current = true;
       setMode("md");
       return;
     }
@@ -165,6 +155,8 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
   return (
     <div className="note-editor">
       <div className="note-toolbar" role="toolbar" aria-label={t("note.format")}>
+        {mode === "visuel" ? (
+          <>
         <button type="button" title={t("note.bold")} aria-label={t("note.bold")} onMouseDown={keepSelection} onClick={() => run("bold")}>
           <Bold className="size-3.5" />
         </button>
@@ -215,6 +207,8 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
         >
           <Link className="size-3.5" />
         </button>
+        </>
+          ) : null}
         <span className="note-toolbar-spacer" />
         <button
           type="button"
