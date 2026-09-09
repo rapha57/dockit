@@ -9,7 +9,7 @@ const buttonVariants = cva(
       variant: {
         default: "bg-primary text-primary-fg hover:opacity-90",
         secondary: "bg-elevated text-fg border border-border hover:bg-surface",
-        ghost: "text-muted hover:text-fg hover:bg-elevated",
+        ghost: "text-muted hover:text-fg hover:bg-elevated hover:shadow-[0_0_0_1px_var(--color-border)]",
         danger: "bg-danger/15 text-danger hover:bg-danger/25",
         outline: "border border-border bg-transparent text-fg hover:bg-elevated",
         debug: "btn-debug",

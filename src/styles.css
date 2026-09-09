@@ -1098,6 +1098,7 @@ html.dark .tag-chip {
 .fav-star:hover {
   color: #ca8a04;
   background: var(--color-elevated);
+  box-shadow: 0 0 0 1px var(--color-border);
 }
 .fav-star.is-on {
   color: #ca8a04;
@@ -1328,6 +1329,7 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
 .card-tool[aria-expanded="true"] {
   background: var(--color-elevated);
   color: var(--color-fg);
+  box-shadow: 0 0 0 1px var(--color-border);
 }
 .card-tool.is-danger:hover {
   background: color-mix(in oklab, var(--color-danger) 18%, var(--color-elevated));
@@ -1731,6 +1733,8 @@ html.dark .settings-hint.is-warn {
 }
 .settings-link:hover {
   color: var(--color-fg);
+  box-shadow: 0 0 0 1px var(--color-border);
+  border-radius: var(--radius-sm);
 }
 .settings-link:disabled {
   opacity: 0.45;
