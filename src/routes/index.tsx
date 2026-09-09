@@ -11065,7 +11065,7 @@ function CardForm({
                   <div className="flex min-w-0 flex-col gap-1" style={{ flex: "0 0 33%" }}>
                     <Label>{t("item.preview")}</Label>
                     <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
-                    <p className="text-sm tabular-nums text-muted">{colSpan} × {rowSpan}</p>
+                    <p className="text-center text-sm tabular-nums text-muted">{colSpan} × {rowSpan}</p>
                   </div>
                   <div className="flex min-w-0 flex-col gap-3" style={{ flex: "0 0 66%" }}>
                     <div className="id-field">
