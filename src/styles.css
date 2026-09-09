@@ -1328,7 +1328,6 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
 .card-tool[aria-expanded="true"] {
   background: var(--color-elevated);
   color: var(--color-fg);
-  box-shadow: 0 0 0 1px var(--color-border);
 }
 .card-tool.is-danger:hover {
   background: color-mix(in oklab, var(--color-danger) 18%, var(--color-elevated));
