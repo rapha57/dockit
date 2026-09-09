@@ -11094,7 +11094,6 @@ function CardForm({
                     </div>
                   </div>
                 </div>
-                <p className="settings-hint">{t("item.sizePreview")} — {colSpan} × {rowSpan}</p>
               </div>
             ) : null}
             {kind === "embed" ? (
