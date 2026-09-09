@@ -11061,16 +11061,18 @@ function CardForm({
             ) : null}
             {kind !== "app" ? (
               <div className="settings-card">
-                <div className="flex items-center justify-between">
-                  <p className="settings-kicker">{t("item.size")}</p>
-                  <span className="text-sm tabular-nums text-muted">{colSpan} × {rowSpan}</span>
-                </div>
-                <div className="flex items-start gap-4">
-                  <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
-                  <div className="flex shrink-0 flex-col gap-3">
-                    <Field label={t("item.width")}>
+                <p className="settings-kicker">{t("item.size")}</p>
+                <div className="id-head">
+                  <div className="id-col items-center">
+                    <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
+                    <p className="settings-hint">{t("item.sizePreview")}</p>
+                    <p className="text-sm tabular-nums text-muted">{colSpan} × {rowSpan}</p>
+                  </div>
+                  <div className="id-col">
+                    <div className="id-field">
+                      <Label>{t("item.width")}</Label>
                       <Select
-                        className="h-9 w-40 rounded-md border border-border bg-transparent px-3 text-sm"
+                        className={FIELD_SM}
                         value={colSpan}
                         onChange={(e) => setColSpan(Number(e.target.value) as 1 | 2 | 3)}
                       >
@@ -11078,10 +11080,11 @@ function CardForm({
                         <option value={2}>{t("item.col2")}</option>
                         <option value={3}>{t("item.colFull")}</option>
                       </Select>
-                    </Field>
-                    <Field label={t("item.height")}>
+                    </div>
+                    <div className="id-field">
+                      <Label>{t("item.height")}</Label>
                       <Select
-                        className="h-9 w-40 rounded-md border border-border bg-transparent px-3 text-sm"
+                        className={FIELD_SM}
                         value={rowSpan}
                         onChange={(e) => setRowSpan(Number(e.target.value) as 1 | 2 | 3)}
                       >
@@ -11089,7 +11092,7 @@ function CardForm({
                         <option value={2}>{t("item.row2")}</option>
                         <option value={3}>{t("item.row3")}</option>
                       </Select>
-                    </Field>
+                    </div>
                   </div>
                 </div>
               </div>
