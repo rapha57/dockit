@@ -11063,10 +11063,9 @@ function CardForm({
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.size")}</p>
                 <div className="id-head">
-                  <div className="id-col items-center">
+                  <div className="id-col">
+                    <Label>{t("item.size")}</Label>
                     <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
-                    <p className="settings-hint">{t("item.sizePreview")}</p>
-                    <p className="text-sm tabular-nums text-muted">{colSpan} × {rowSpan}</p>
                   </div>
                   <div className="id-col">
                     <div className="id-field">
@@ -11095,6 +11094,7 @@ function CardForm({
                     </div>
                   </div>
                 </div>
+                <p className="settings-hint">{t("item.sizePreview")} — {colSpan} × {rowSpan}</p>
               </div>
             ) : null}
             {kind === "embed" ? (
