@@ -334,11 +334,11 @@
       "urlLabel": "Link"
     },
     "embed": {
-      "option": "External link",
-      "create": "New external link",
+      "option": "Embedded link",
+      "create": "New embedded link",
       "edit": "Edit",
-      "remove": "Remove external link ?",
-      "urlLabel": "Link"
+      "remove": "Remove embedded link?",
+      "urlLabel": "Embedded link"
     },
     "general": "General",
     "link": "Link",

@@ -334,11 +334,11 @@
       "urlLabel": "Lien"
     },
     "embed": {
-      "option": "Lien externe",
-      "create": "Nouveau lien externe",
-      "edit": "Éditer",
-      "remove": "Supprimer le lien externe ?",
-      "urlLabel": "Lien"
+      "option": "Lien intégré",
+      "create": "Nouveau lien intégré",
+      "edit": "Modifier",
+      "remove": "Supprimer le lien intégré ?",
+      "urlLabel": "Lien intégré"
     },
     "general": "Général",
     "link": "Lien",

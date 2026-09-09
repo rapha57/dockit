@@ -11105,22 +11105,7 @@ function CardForm({
                 </div>
               </div>
             ) : null}
-            {kind === "embed" ? (
-              <div className="settings-card">
-                <p className="settings-kicker">{t("item.link")}</p>
-                <Field label={kindMeta.urlLabel}>
-                  <Input
-                    className={FIELD_SM}
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder="https://"
-                    required
-                  />
-                  {urlDupHint}
-                </Field>
-              </div>
-            ) : null}
-            {kind !== "note" ? (
+            {kind === "app" ? (
               <div className="settings-card">
                 <p className="settings-kicker">{t("probe.control")}</p>
               {probes === false ? (
