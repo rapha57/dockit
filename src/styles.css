@@ -939,6 +939,10 @@ html.dark select.field-input {
   padding: 0.2rem 0.48rem;
 }
 
+.tag-chip:hover {
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
 .tag-chip.is-on {
   background: var(--tag-bg, var(--color-primary));
   color: var(--tag-fg, var(--color-fg));
