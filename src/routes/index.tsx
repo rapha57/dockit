@@ -11087,12 +11087,12 @@ function CardForm({
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.size")}</p>
                 <div className="flex items-start gap-4">
-                  <div className="flex min-w-0 flex-col gap-1" style={{ flex: "0 0 33%" }}>
+                  <div className="flex min-w-0 shrink-0 flex-col gap-1" style={{ flex: "0 0 33%" }}>
                     <Label>{t("item.preview")}</Label>
                     <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
                     <p className="settings-hint text-center tabular-nums">{colSpan} × {rowSpan}</p>
                   </div>
-                  <div className="flex min-w-0 flex-col gap-3" style={{ flex: "0 0 66%" }}>
+                  <div className="flex min-w-0 flex-1 flex-col gap-3">
                     <div className="id-field">
                       <Label>{t("item.width")}</Label>
                       <Select
