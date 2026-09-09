@@ -10498,6 +10498,7 @@ function ExtraLinksField({
                     />
                     {t("item.sameWindow")}
                   </label>
+                  <p className="settings-hint">{t("item.sameWindowHint")}</p>
                 </div>
                 <div className="am-actions">
                   <button

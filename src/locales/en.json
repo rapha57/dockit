@@ -401,7 +401,8 @@
     "embedBgDefault": "Default",
     "embedBgCustom": "Custom color",
     "embedBgHint": "None keeps the page transparent. Default uses the soft neutral background. Custom sets a color of your choice.",
-    "descriptionPlaceholder": "Short description…"
+    "descriptionPlaceholder": "Short description…",
+    "sameWindowHint": "Opens the link in the current window. When unchecked, opens in a new tab (_blank)."
   },
   "space": {
     "edit": "Edit space",

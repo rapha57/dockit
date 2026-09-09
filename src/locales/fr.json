@@ -401,7 +401,8 @@
     "embedBgDefault": "Défaut",
     "embedBgCustom": "Couleur",
     "embedBgHint": "Aucun garde la page transparente. Défaut utilise le fond neutre du soft. Couleur applique la teinte de votre choix.",
-    "descriptionPlaceholder": "Description courte…"
+    "descriptionPlaceholder": "Description courte…",
+    "sameWindowHint": "Ouvre le lien dans la fenêtre courante. Si décoché, le lien s'ouvre dans un nouvel onglet (_blank)."
   },
   "space": {
     "edit": "Modifier l'espace",
