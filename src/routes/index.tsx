@@ -10436,7 +10436,7 @@ function ExtraLinksField({
     setOpenId((cur) => (cur === id ? null : id));
   }
   function addLink() {
-    if (links.length >= 4) return;
+    if (links.length >= 20) return;
     const key = crypto.randomUUID();
     setLinks((cur) => [
       ...cur,
@@ -10518,7 +10518,7 @@ function ExtraLinksField({
           ))}
         </div>
       ) : null}
-      {links.length < 5 ? (
+      {links.length < 20 ? (
         <button type="button" className="am-create shrink-0" onClick={addLink}>
           <Plus className="size-3.5" /> {t("actions.addLink")}
         </button>

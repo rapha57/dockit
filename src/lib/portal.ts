@@ -439,7 +439,7 @@ function asExtraLinks(raw: unknown): { title: string; url: string; openIn?: "_bl
 			url,
 			...(openIn ? { openIn } : {})
 		});
-		if (out.length >= 4) break;
+		if (out.length >= 20) break;
 	}
 	return out;
 }
@@ -450,7 +450,7 @@ function normalizeItem(a: any, categoryId: string, sortOrder: number): PortalApp
 		const extras = asExtraLinks(a.links);
 		const main = safeAppHref(a.url);
 		if (main && extras[0]?.url !== main) extras.unshift({ title: "", url: main });
-		linksFull = extras.slice(0, 5);
+		linksFull = extras.slice(0, 20);
 	}
 	return {
 		id: a.id || crypto.randomUUID(),
@@ -2880,7 +2880,7 @@ const itemPayload = {
 		title: z.string().max(40),
 		url: z.string().min(1).max(2e3),
 		openIn: z.enum(["_blank", "_self"]).optional()
-	})).max(5).optional().default([]),
+	})).max(20).optional().default([]),
 	linkMenu: z.boolean().optional(),
 	embedBorder: z.boolean().optional(),
 	embedBg: z.string().max(7).optional(),
