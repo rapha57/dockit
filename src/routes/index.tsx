@@ -5467,7 +5467,7 @@ function AppCard({
       onPointerDown={(e) => e.stopPropagation()}
     >
       {" "}
-      <Menu className="size-3.5" />
+      {app.linkMenu ? <LayoutGrid className="size-3.5" /> : <Menu className="size-3.5" />}
     </button>
   ) : null;
   const corner =
@@ -5765,7 +5765,6 @@ function AppCard({
           {appMark}
           {appCopy}
         </div>
-        {app.linkMenu ? <span className="card-hub-badge"><LayoutGrid className="size-3.5" /></span> : null}
         {corner}
         {tagRow}
         {linkMenu}
