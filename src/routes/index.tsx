@@ -11018,6 +11018,8 @@ function CardForm({
                           return;
                         }
                         if (e.key === "Backspace" && !tagDraft && tags.length) {
+                          e.preventDefault();
+                          removeTag(tags[tags.length - 1]);
                           setTagHi(0);
                         }
                         if (e.key === "Enter" || e.key === ",") {
