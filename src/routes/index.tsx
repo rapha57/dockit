@@ -11061,13 +11061,16 @@ function CardForm({
             ) : null}
             {kind !== "app" ? (
               <div className="settings-card">
-                <p className="settings-kicker">{t("item.size")}</p>
+                <div className="flex items-center justify-between">
+                  <p className="settings-kicker">{t("item.size")}</p>
+                  <span className="text-sm tabular-nums text-muted">{colSpan} × {rowSpan}</span>
+                </div>
                 <div className="flex items-start gap-4">
                   <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
                   <div className="flex shrink-0 flex-col gap-3">
                     <Field label={t("item.width")}>
                       <Select
-                        className={FIELD_SM}
+                        className="h-9 w-40 rounded-md border border-border bg-transparent px-3 text-sm"
                         value={colSpan}
                         onChange={(e) => setColSpan(Number(e.target.value) as 1 | 2 | 3)}
                       >
@@ -11078,7 +11081,7 @@ function CardForm({
                     </Field>
                     <Field label={t("item.height")}>
                       <Select
-                        className={FIELD_SM}
+                        className="h-9 w-40 rounded-md border border-border bg-transparent px-3 text-sm"
                         value={rowSpan}
                         onChange={(e) => setRowSpan(Number(e.target.value) as 1 | 2 | 3)}
                       >
