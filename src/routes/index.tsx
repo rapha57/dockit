@@ -11120,12 +11120,16 @@ function CardForm({
                 <p className="settings-kicker">{t("probe.control")}</p>
               {probes === false ? (
                 <p className="settings-hint">{t("item.probeDisabled")}</p>
-              ) : null}
+              ) : linkMenu ? (
+                <p className="settings-hint">{t("item.probeHubHint")}</p>
+              ) : (
+                <p className="settings-hint">{t("item.probeFirstLinkHint")}</p>
+              )}
               <Field>
                 <Select
                   className={FIELD_SM}
                   value={check}
-                  disabled={probes === false}
+                  disabled={probes === false || Boolean(linkMenu)}
                   onChange={(e) => setCheck(e.target.value as CheckMode)}
                 >
                   <option value="off">{t("item.probeNone")}</option>

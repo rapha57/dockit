@@ -407,7 +407,9 @@
     "noteLead": "Note rapide ou contenu markdown",
     "embedLead": "Intégrer une page externe",
     "spaceLead": "Grouper des cartes liées",
-    "categoryLead": "Organiser les cartes dans un espace"
+    "categoryLead": "Organiser les cartes dans un espace",
+    "probeHubHint": "La vérification est désactivée en mode hub.",
+    "probeFirstLinkHint": "Vérifie uniquement le premier lien de la carte."
   },
   "space": {
     "edit": "Modifier l'espace",

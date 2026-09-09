@@ -407,7 +407,9 @@
     "noteLead": "Quick note or markdown content",
     "embedLead": "Embed an external page",
     "spaceLead": "Group related cards together",
-    "categoryLead": "Organize cards within a space"
+    "categoryLead": "Organize cards within a space",
+    "probeHubHint": "Reachability is disabled in hub mode.",
+    "probeFirstLinkHint": "Only checks the first link of the card."
   },
   "space": {
     "edit": "Edit space",
