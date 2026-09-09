@@ -10368,7 +10368,10 @@ function ExtraLinksField({
   const dragRef = useRef<{ key: string; pointerId: number } | null>(null);
   const didDrag = useRef(false);
   const [dragKey, setDragKey] = useState<string | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(() => {
+    const first = links[0];
+    return first && !first.url ? first.key : null;
+  });
   const INPUT_SM = FIELD_SM;
   function patch(key: string, next: Partial<{ title: string; url: string }>) {
     setLinks((cur) => cur.map((r) => (r.key === key ? { ...r, ...next } : r)));
@@ -10455,20 +10458,6 @@ function ExtraLinksField({
         ) : null}
       </div>
       <p className="settings-hint">{t("item.linksHint")}</p>
-      {linkMenu !== undefined && setLinkMenu ? (
-        <div className="settings-toggles">
-          <label className={links.length > 1 ? "" : "is-disabled"}>
-            <input
-              type="checkbox"
-              checked={Boolean(linkMenu) && links.length > 1}
-              disabled={links.length < 2}
-              onChange={(e) => setLinkMenu?.(e.target.checked)}
-            />
-            {t("item.linkMenu")}
-          </label>
-          <p className="settings-hint">{t("item.linkMenuHint")}</p>
-        </div>
-      ) : null}
       {links.length ? (
         <div ref={listRef} className="am-providers" role="list">
           {links.map((row) => (
@@ -10523,6 +10512,20 @@ function ExtraLinksField({
               </div>
             </ExpandRow>
           ))}
+        </div>
+      ) : null}
+      {linkMenu !== undefined && setLinkMenu ? (
+        <div className="settings-toggles">
+          <label className={links.length > 1 ? "" : "is-disabled"}>
+            <input
+              type="checkbox"
+              checked={Boolean(linkMenu) && links.length > 1}
+              disabled={links.length < 2}
+              onChange={(e) => setLinkMenu?.(e.target.checked)}
+            />
+            {t("item.linkMenu")}
+          </label>
+          <p className="settings-hint">{t("item.linkMenuHint")}</p>
         </div>
       ) : null}
     </div>
@@ -10622,6 +10625,10 @@ function CardForm({
     const legacy = safeAppHref(initial?.url);
     if (kind0 === "app" && legacy && rows[0]?.url !== legacy)
       rows.unshift({ key: crypto.randomUUID(), title: "", url: legacy });
+    if (!rows.length && kind0 === "app") {
+      const key = crypto.randomUUID();
+      rows.push({ key, title: "", url: "" });
+    }
     return rows;
   });
   const [linkMenu, setLinkMenu] = useState(Boolean(initial?.linkMenu));
