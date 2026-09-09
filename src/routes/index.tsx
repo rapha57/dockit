@@ -70,7 +70,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/field";
 import { Label } from "@/components/ui/label";
@@ -10791,7 +10790,7 @@ function CardForm({
           categoryId: catId,
           kind,
           title: title.trim(),
-          description: kind === "embed" ? "" : description.trim(),
+          description: kind === "embed" ? "" : kind === "app" ? description.trim().slice(0, 40) : description.trim(),
           url: url.trim(),
           icon:
             icon.trim() || (kind === "note" ? "FileText" : kind === "embed" ? "AppWindow" : "Link"),
@@ -10892,11 +10891,12 @@ function CardForm({
               )}
               {kind === "app" ? (
                 <Field label={t("item.description")}>
-                  <Textarea
-                    className="min-h-14 rounded-md bg-transparent"
+                  <Input
+                    className={FIELD_SM}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder={t("item.descriptionPlaceholder")}
+                    maxLength={40}
                   />
                 </Field>
               ) : null}
