@@ -5701,7 +5701,7 @@ function AppCard({
     );
   }
   const showPrimary = Boolean((ctxOn || menuMode) && primaryHref);
-  const primaryLabel = String(extra[0]?.title || "").trim() || String(app.title || "").trim();
+  const primaryLabel = String(app.links?.[0]?.title || "").trim() || String(app.title || "").trim();
   const ctxCount = (showPrimary ? 1 : 0) + extraLinks.length;
   const ctxHeading = ctxCount === 1 ? t("annex.one") : t("annex.linksTitle");
   const linkMenu =
