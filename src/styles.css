@@ -2452,6 +2452,12 @@ button.user-row-main:hover .user-row-name {
   flex: 1;
   min-width: 0;
 }
+.id-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.3rem;
+}
 .id-head .id-field {
   display: flex;
   min-width: 0;
