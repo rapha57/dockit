@@ -1138,6 +1138,21 @@ html.dark .fav-star:hover {
   align-items: center;
   gap: 0.75rem;
 }
+.card-hub-badge {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  opacity: 0.7;
+  pointer-events: none;
+}
 .portal-card.has-corner .card-main h3 {
   padding-right: 2rem;
 }
