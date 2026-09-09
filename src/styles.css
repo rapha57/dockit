@@ -1339,6 +1339,12 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   color: var(--color-danger);
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-danger) 45%, var(--color-border));
 }
+.card-tool.is-hub,
+.card-tool.is-hub:hover,
+.card-tool.is-hub.is-open {
+  background: color-mix(in oklab, #4d9fff 18%, var(--color-elevated));
+  color: #1c5fc9;
+}
 
 .status-mark {
   position: relative;

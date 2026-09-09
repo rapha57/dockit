@@ -5451,7 +5451,7 @@ function AppCard({
   const annexBtn = extra.length ? (
     <button
       type="button"
-      className={`card-tool${menu ? " is-open" : ""}`}
+      className={`card-tool${menu ? " is-open" : ""}${app.linkMenu ? " is-hub" : ""}`}
       aria-label={extra.length > 1 ? t("annex.others") : t("annex.other")}
       aria-expanded={Boolean(menu)}
       aria-haspopup="menu"
@@ -5468,11 +5468,7 @@ function AppCard({
       onPointerDown={(e) => e.stopPropagation()}
     >
       {" "}
-      {app.linkMenu ? (
-        <SquareMenu className="size-3.5" style={{ background: "#dbeafe", borderRadius: "0.25rem", padding: "0.15rem" }} />
-      ) : (
-        <SquareMenu className="size-3.5" />
-      )}
+      <SquareMenu className="size-3.5" />
     </button>
   ) : null;
   const corner =
