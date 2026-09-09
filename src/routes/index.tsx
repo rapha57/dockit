@@ -10450,14 +10450,6 @@ function ExtraLinksField({
   }
   return (
     <div className="am-work">
-      <div className="am-toolbar">
-        {links.length < 5 ? (
-          <button type="button" className="am-create shrink-0" onClick={addLink}>
-            <Plus className="size-3.5" /> {t("actions.addLink")}
-          </button>
-        ) : null}
-      </div>
-      <p className="settings-hint">{t("item.linksHint")}</p>
       {links.length ? (
         <div ref={listRef} className="am-providers" role="list">
           {links.map((row) => (
@@ -10513,6 +10505,11 @@ function ExtraLinksField({
             </ExpandRow>
           ))}
         </div>
+      ) : null}
+      {links.length < 5 ? (
+        <button type="button" className="am-create shrink-0" onClick={addLink}>
+          <Plus className="size-3.5" /> {t("actions.addLink")}
+        </button>
       ) : null}
       {linkMenu !== undefined && setLinkMenu ? (
         <div className="settings-toggles">

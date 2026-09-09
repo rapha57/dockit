@@ -389,7 +389,6 @@
     "urlExistsN": "This link already exists on {n} cards ({list})",
     "removedBody": "“{name}” will be removed from the portal.",
     "links": "Links",
-    "linksHint": "The first row is the link opened by the card click. Reorder with the handle.",
     "linkMenu": "Open the link menu on click",
     "linkMenuHint": "Clicking the card unfolds the list of links instead of opening the first one. Needs at least two links.",
     "display": "Display",
