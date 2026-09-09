@@ -11064,7 +11064,7 @@ function CardForm({
                 <p className="settings-kicker">{t("item.size")}</p>
                 <div className="flex items-start gap-4">
                   <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
-                  <div className="flex flex-col gap-3 min-w-0">
+                  <div className="flex shrink-0 flex-col gap-3">
                     <Field label={t("item.width")}>
                       <Select
                         className={FIELD_SM}
