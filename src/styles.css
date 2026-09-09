@@ -2928,6 +2928,7 @@ html.dark .about-mark .dockit-stroke {
     var(--color-surface);
 }
 .note-swatch-custom {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -2950,10 +2951,11 @@ html.dark .about-mark .dockit-stroke {
 }
 .note-swatch-custom-input {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   opacity: 0;
-  pointer-events: none;
+  cursor: pointer;
 }
 .note-ink,
 .note-canvas .note-ink,
