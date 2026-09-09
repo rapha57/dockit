@@ -5731,7 +5731,6 @@ function AppCard({
               </p>
               <div className="menu-sep" />
               {showPrimary ? ctxRow(primaryHref, primaryLabel || t("annex.one"), "primary", app.links[0]?.openIn) : null}
-              {showPrimary && extraLinks.length ? <div className="menu-sep" /> : null}
               {extraLinks.map((row, i) =>
                 ctxRow(row.url, row.title, `x-${i}-${row.url}`, row.openIn),
               )}
