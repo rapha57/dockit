@@ -36,13 +36,14 @@ import {
   Globe,
   GripVertical,
   LayoutGrid,
+  Network,
   Link,
   History,
   ListChecks,
   Lock,
   LogIn,
   LogOut,
-  Menu,
+  GitBranch,
   Minus,
   MoreHorizontal,
   MousePointerClick,
@@ -5467,7 +5468,7 @@ function AppCard({
       onPointerDown={(e) => e.stopPropagation()}
     >
       {" "}
-      {app.linkMenu ? <LayoutGrid className="size-3.5" /> : <Menu className="size-3.5" />}
+      {app.linkMenu ? <Network className="size-3.5" /> : <GitBranch className="size-3.5" />}
     </button>
   ) : null;
   const corner =
