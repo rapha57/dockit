@@ -82,16 +82,18 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
   useLayoutEffect(() => {
     if (mode !== "visuel") return;
     skipHtml.current = false;
-    hydrate();
-  }, [mode]);
+    valueRef.current = value;
+    hydrate(value);
+  }, [mode, value]);
 
   useEffect(() => {
     if (mode !== "visuel") return;
+    valueRef.current = value;
     if (skipHtml.current) {
       skipHtml.current = false;
       return;
     }
-    hydrate();
+    hydrate(value);
   }, [value, mode]);
 
   function keepSelection(e: MouseEvent) {
