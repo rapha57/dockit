@@ -10966,7 +10966,7 @@ function CardForm({
                 <p className="settings-kicker">{t("item.tags")}</p>
                 <Field>
                   <div className="flex items-center gap-2">
-                    <div className="relative flex min-h-9 flex-1 items-center gap-1 rounded-md bg-transparent px-0">
+                    <div className="tag-input-wrap relative flex min-h-9 flex-1 items-center gap-1 rounded-md border border-border bg-transparent px-3">
                     {tags.map((tag) => {
                       const paint = tagPaint(tag, {
                         ...tagColors,
@@ -10993,7 +10993,7 @@ function CardForm({
                     })}
                     <input
                       ref={tagInputRef}
-                      className="min-w-[4rem] flex-1 rounded-md border border-border bg-transparent px-3 py-1.5 text-sm outline-none placeholder:text-subtle focus-visible:ring-2 focus-visible:ring-ring/60"
+                      className="min-w-[4rem] flex-1 bg-transparent text-sm outline-none placeholder:text-subtle"
                       value={tagDraft}
                       placeholder={tags.length >= 3 ? t("item.maxTags") : t("item.addTag")}
                       disabled={tags.length >= 3}
