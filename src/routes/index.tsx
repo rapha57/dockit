@@ -1135,13 +1135,12 @@ type CardFormPayload = {
   description: string;
   url: string;
   icon: string;
-  openIn: "_blank" | "_self";
   tags: string[];
   colSpan: 1 | 2 | 3;
   rowSpan: 1 | 2 | 3;
   check?: CheckMode;
   checkHost?: string;
-  links?: { title: string; url: string }[];
+  links?: { title: string; url: string; openIn?: "_blank" | "_self" }[];
   linkMenu?: boolean;
   embedBorder?: boolean;
   embedBg?: string;
@@ -1957,7 +1956,6 @@ function Home() {
         description: app.description || "",
         url: app.url || "",
         icon: app.icon || "Link",
-        openIn: app.openIn || "_blank",
         tags: app.tags || [],
         colSpan,
         rowSpan,
@@ -2460,7 +2458,6 @@ function Home() {
           description: app.description || "",
           url: app.url || "",
           icon: app.icon || "Link",
-          openIn: app.openIn || "_blank",
           tags: app.tags || [],
           colSpan: app.colSpan === 2 || app.colSpan === 3 ? app.colSpan : 1,
           rowSpan: app.rowSpan === 2 || app.rowSpan === 3 ? app.rowSpan : 1,
@@ -5663,16 +5660,18 @@ function AppCard({
       navigator.clipboard.writeText(href).then(() => done(true)).catch(() => done(fallback()));
     } else done(fallback());
   }
-  function ctxRow(href: string, name: string | undefined, key: string) {
+  function ctxRow(href: string, name: string | undefined, key: string, openIn?: "_blank" | "_self") {
     const safe = safeAppHref(href);
     if (!safe) return null;
     const label = String(name || "").trim() || t("annex.primary");
+    const target = openIn === "_self" ? "_self" : "_blank";
+    const rel = target === "_self" ? void 0 : "noopener noreferrer";
     return (
       <div key={key} className="card-ctx-row">
         <a
           href={safe}
-          target={app.openIn === "_self" ? "_self" : "_blank"}
-          rel={app.openIn === "_self" ? void 0 : "noopener noreferrer"}
+          target={target}
+          rel={rel}
           role="menuitem"
           title={safe}
           onClick={() => {
@@ -5728,10 +5727,10 @@ function AppCard({
                 {ctxHeading}
               </p>
               <div className="menu-sep" />
-              {showPrimary ? ctxRow(primaryHref, primaryLabel || t("annex.one"), "primary") : null}
+              {showPrimary ? ctxRow(primaryHref, primaryLabel || t("annex.one"), "primary", app.links[0]?.openIn) : null}
               {showPrimary && extraLinks.length ? <div className="menu-sep" /> : null}
               {extraLinks.map((row, i) =>
-                ctxRow(row.url, row.title, `x-${i}-${row.url}`),
+                ctxRow(row.url, row.title, `x-${i}-${row.url}`, row.openIn),
               )}
             </div>
           </>,
@@ -5745,8 +5744,8 @@ function AppCard({
         {href ? (
           <a
             href={href}
-            target={app.openIn === "_self" ? "_self" : "_blank"}
-            rel={app.openIn === "_self" ? void 0 : "noopener noreferrer"}
+            target={app.links[0]?.openIn === "_self" ? "_self" : "_blank"}
+            rel={app.links[0]?.openIn === "_self" ? void 0 : "noopener noreferrer"}
             className="card-hit"
             aria-label={menuMode ? t("item.linkMenu") : app.title}
             aria-haspopup={menuMode ? "menu" : undefined}
@@ -10359,8 +10358,8 @@ function ExtraLinksField({
   linkMenu,
   setLinkMenu,
 }: {
-  links: { key: string; title: string; url: string }[];
-  setLinks: React.Dispatch<React.SetStateAction<{ key: string; title: string; url: string }[]>>;
+  links: { key: string; title: string; url: string; openIn: "_blank" | "_self" }[];
+  setLinks: React.Dispatch<React.SetStateAction<{ key: string; title: string; url: string; openIn: "_blank" | "_self" }[]>>;
   linkMenu?: boolean;
   setLinkMenu?: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
@@ -10373,7 +10372,7 @@ function ExtraLinksField({
     return first && !first.url ? first.key : null;
   });
   const INPUT_SM = FIELD_SM;
-  function patch(key: string, next: Partial<{ title: string; url: string }>) {
+  function patch(key: string, next: Partial<{ title: string; url: string; openIn: "_blank" | "_self" }>) {
     setLinks((cur) => cur.map((r) => (r.key === key ? { ...r, ...next } : r)));
   }
   function endDrag(el: HTMLElement | null, pointerId?: number) {
@@ -10444,6 +10443,7 @@ function ExtraLinksField({
         key,
         title: "",
         url: "",
+        openIn: "_blank",
       },
     ]);
     setOpenId(key);
@@ -10489,6 +10489,16 @@ function ExtraLinksField({
                     placeholder="https://"
                   />
                 </Field>
+                <div className="settings-toggles">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={row.openIn === "_self"}
+                      onChange={(e) => patch(row.key, { openIn: e.target.checked ? "_self" : "_blank" })}
+                    />
+                    {t("item.sameWindow")}
+                  </label>
+                </div>
                 <div className="am-actions">
                   <button
                     type="button"
@@ -10512,7 +10522,7 @@ function ExtraLinksField({
         </button>
       ) : null}
       {linkMenu !== undefined && setLinkMenu ? (
-        <div className="settings-toggles">
+        <div className="settings-toggles mt-3">
           <label className={links.length > 1 ? "" : "is-disabled"}>
             <input
               type="checkbox"
@@ -10600,7 +10610,6 @@ function CardForm({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [url, setUrl] = useState(initial?.url ?? "");
   const [icon, setIcon] = useState(initial?.icon ?? "Link");
-  const [openIn, setOpenIn] = useState<"_blank" | "_self">(initial?.openIn ?? "_blank");
   const [tags, setTags] = useState(initial?.tags ?? []);
   const [tagDraft, setTagDraft] = useState("");
   const [tagHi, setTagHi] = useState(0);
@@ -10609,21 +10618,22 @@ function CardForm({
   const [rowSpan, setRowSpan] = useState<1 | 2 | 3>(initial?.rowSpan ?? 1);
   const [check, setCheck] = useState<CheckMode>(initial?.check ?? "off");
   const [checkHost, setCheckHost] = useState(initial?.checkHost ?? "");
-  const [links, setLinks] = useState<{ key: string; title: string; url: string }[]>(() => {
+  const [links, setLinks] = useState<{ key: string; title: string; url: string; openIn: "_blank" | "_self" }[]>(() => {
     const rows = (Array.isArray(initial?.links) ? initial.links : [])
       .map((r) => ({
         key: crypto.randomUUID(),
         title: String(r.title || ""),
         url: String(r.url || ""),
+        openIn: (r.openIn === "_self" ? "_self" : "_blank") as "_blank" | "_self",
       }))
       .slice(0, 5);
     const kind0 = initial?.kind || "app";
     const legacy = safeAppHref(initial?.url);
     if (kind0 === "app" && legacy && rows[0]?.url !== legacy)
-      rows.unshift({ key: crypto.randomUUID(), title: "", url: legacy });
+      rows.unshift({ key: crypto.randomUUID(), title: "", url: legacy, openIn: "_blank" });
     if (!rows.length && kind0 === "app") {
       const key = crypto.randomUUID();
-      rows.push({ key, title: "", url: "" });
+      rows.push({ key, title: "", url: "", openIn: "_blank" });
     }
     return rows;
   });
@@ -10678,11 +10688,10 @@ function CardForm({
     setTags([]);
     setTagDraft("");
     setDraftColors({});
-    setLinks(next === "app" ? [{ key: crypto.randomUUID(), title: "", url: "" }] : []);
+    setLinks(next === "app" ? [{ key: crypto.randomUUID(), title: "", url: "", openIn: "_blank" }] : []);
     setLinkMenu(false);
     setEmbedBorder(false);
     setEmbedBg("");
-    setOpenIn("_blank");
     setCheck("off");
     setCheckHost("");
     setColSpan(1);
@@ -10713,7 +10722,7 @@ function CardForm({
       return;
     if (next === "embed" && kind === "app") setUrl(links[0]?.url?.trim() || "");
     if (next === "app" && kind === "embed" && safeAppHref(url))
-      setLinks([{ key: crypto.randomUUID(), title: "", url: safeAppHref(url) || "" }]);
+      setLinks([{ key: crypto.randomUUID(), title: "", url: safeAppHref(url) || "", openIn: "_blank" }]);
     resetFieldsForKind(next);
   }
   const kindMeta = itemKind(kind);
@@ -10786,7 +10795,6 @@ function CardForm({
           url: url.trim(),
           icon:
             icon.trim() || (kind === "note" ? "FileText" : kind === "embed" ? "AppWindow" : "Link"),
-          openIn,
           tags: kind === "app" ? tags.slice(0, 3) : [],
           colSpan,
           rowSpan,
@@ -10797,9 +10805,10 @@ function CardForm({
               ? links
                   .filter((r) => safeAppHref(r.url))
                   .slice(0, 5)
-                  .map((r, i) => ({
-                    title: i === 0 ? r.title.trim().slice(0, 40) : r.title.trim().slice(0, 40),
+                  .map((r) => ({
+                    title: r.title.trim().slice(0, 40),
                     url: safeAppHref(r.url) || r.url.trim().slice(0, 2e3),
+                    openIn: r.openIn,
                   }))
               : [],
           linkMenu: kind === "app" ? linkMenu && links.length > 1 : undefined,
@@ -11108,21 +11117,6 @@ function CardForm({
                     required
                   />
                   {urlDupHint}
-                </Field>
-              </div>
-            ) : null}
-            {kind !== "note" ? (
-              <div className="settings-card">
-                <p className="settings-kicker">{t("item.openLink")}</p>
-                <Field>
-                  <Select
-                    className={FIELD_SM}
-                    value={openIn}
-                    onChange={(e) => setOpenIn(e.target.value as "_blank" | "_self")}
-                  >
-                    <option value="_blank">{t("item.newTab")}</option>
-                    <option value="_self">{t("item.sameWindow")}</option>
-                  </Select>
                 </Field>
               </div>
             ) : null}

@@ -125,7 +125,7 @@ export type PortalApp = {
   linkMenu?: boolean;
   embedBorder?: boolean;
   embedBg?: string;
-  links: { title: string; url: string }[];
+  links: { title: string; url: string; openIn?: "_blank" | "_self" }[];
 };
 
 /** Main link of a card: apps read their first link, embeds their iframe src. */
@@ -422,9 +422,9 @@ function asEmbedBg(raw: unknown): string | undefined {
 	if (/^#[0-9a-f]{6}$/.test(v)) return v;
 	return void 0;
 }
-function asExtraLinks(raw: unknown): { title: string; url: string }[] {
+function asExtraLinks(raw: unknown): { title: string; url: string; openIn?: "_blank" | "_self" }[] {
 	if (!Array.isArray(raw)) return [];
-	const out: { title: string; url: string }[] = [];
+	const out: { title: string; url: string; openIn?: "_blank" | "_self" }[] = [];
 	const seen = /* @__PURE__ */ new Set<string>();
 	for (const row of raw) {
 		const title = String((row as any)?.title ?? "").trim().slice(0, 40);
@@ -433,9 +433,11 @@ function asExtraLinks(raw: unknown): { title: string; url: string }[] {
 		const key = url.toLowerCase();
 		if (seen.has(key)) continue;
 		seen.add(key);
+		const openIn = (row as any)?.openIn === "_self" ? "_self" as const : undefined;
 		out.push({
 			title,
-			url
+			url,
+			...(openIn ? { openIn } : {})
 		});
 		if (out.length >= 4) break;
 	}
@@ -443,7 +445,7 @@ function asExtraLinks(raw: unknown): { title: string; url: string }[] {
 }
 function normalizeItem(a: any, categoryId: string, sortOrder: number): PortalApp {
 	const kind = asKind(a.kind);
-	let linksFull: { title: string; url: string }[] = [];
+	let linksFull: { title: string; url: string; openIn?: "_blank" | "_self" }[] = [];
 	if (kind === "app") {
 		const extras = asExtraLinks(a.links);
 		const main = safeAppHref(a.url);
@@ -2857,7 +2859,6 @@ const itemPayload = {
 	description: z.string().max(8e3),
 	url: z.string().max(2e3).optional(),
 	icon: z.string().min(1).max(4e5),
-	openIn: z.enum(["_blank", "_self"]),
 	tags: z.array(z.string().min(1).max(32)).max(3).default([]),
 	colSpan: z.union([
 		z.literal(1),
@@ -2877,7 +2878,8 @@ const itemPayload = {
 	checkHost: z.string().max(253).default(""),
 	links: z.array(z.object({
 		title: z.string().max(40),
-		url: z.string().min(1).max(2e3)
+		url: z.string().min(1).max(2e3),
+		openIn: z.enum(["_blank", "_self"]).optional()
 	})).max(5).optional().default([]),
 	linkMenu: z.boolean().optional(),
 	embedBorder: z.boolean().optional(),
@@ -2913,7 +2915,6 @@ export const createApp = createServerFn({ method: "POST" }).validator(z.object({
 		description: data.description,
 		url: data.url,
 		icon: data.icon,
-		openIn: data.openIn,
 		tags: data.tags,
 		colSpan: data.colSpan,
 		rowSpan: data.rowSpan,
@@ -2961,7 +2962,6 @@ export const updateApp = createServerFn({ method: "POST" }).validator(z.object({
 		description: data.description,
 		url: data.url,
 		icon: data.icon,
-		openIn: data.openIn,
 		tags: data.tags,
 		colSpan: data.colSpan,
 		rowSpan: data.rowSpan,
