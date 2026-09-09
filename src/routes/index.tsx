@@ -10957,7 +10957,8 @@ function CardForm({
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.tags")}</p>
                 <Field>
-                  <div className="relative flex min-h-9 items-center gap-1 rounded-md border border-border bg-transparent px-3">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex min-h-9 flex-1 items-center gap-1 rounded-md border border-border bg-transparent px-3">
                     {tags.map((tag) => {
                       const paint = tagPaint(tag, {
                         ...tagColors,
@@ -11066,7 +11067,8 @@ function CardForm({
                       document.body,
                     ) : null}
                   </div>
-                  <p className="theme-css-meta">{`${tags.length}/3`}</p>
+                    <p className="theme-css-meta shrink-0">{`${tags.length}/3`}</p>
+                  </div>
                 </Field>
               </div>
             ) : null}
