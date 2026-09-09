@@ -1152,6 +1152,7 @@ html.dark .fav-star:hover {
   color: var(--color-muted);
   opacity: 0.7;
   pointer-events: none;
+  z-index: 3;
 }
 .portal-card.has-corner .card-main h3 {
   padding-right: 2rem;
