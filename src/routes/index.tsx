@@ -10528,139 +10528,6 @@ function ExtraLinksField({
     </div>
   );
 }
-function SizePicker({
-  colSpan,
-  rowSpan,
-  onChange,
-}: {
-  colSpan: number;
-  rowSpan: number;
-  onChange: (cols: 1 | 2 | 3, rows: 1 | 2 | 3) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<{ cols: number; rows: number }>({ cols: colSpan, rows: rowSpan });
-  const gridRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
-  const dragStart = useRef<{ col: number; row: number } | null>(null);
-
-  function cellFromEvent(e: React.PointerEvent | PointerEvent) {
-    const grid = gridRef.current;
-    if (!grid) return null;
-    const rect = grid.getBoundingClientRect();
-    const padX = 0.7 * 16;
-    const padY = 0.7 * 16;
-    const innerW = rect.width - padX * 2;
-    const innerH = rect.height - padY * 2;
-    const colW = innerW / 3;
-    const rowH = innerH / 3;
-    const x = e.clientX - rect.left - padX;
-    const y = e.clientY - rect.top - padY;
-    const col = Math.min(3, Math.max(1, Math.floor(x / colW) + 1));
-    const row = Math.min(3, Math.max(1, Math.floor(y / rowH) + 1));
-    return { col, row };
-  }
-
-  function onPointerDown(e: React.PointerEvent) {
-    const cell = cellFromEvent(e);
-    if (!cell) return;
-    dragging.current = true;
-    dragStart.current = cell;
-    setDraft({ cols: cell.col, rows: cell.row });
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }
-
-  function onPointerMove(e: React.PointerEvent) {
-    if (!dragging.current || !dragStart.current) return;
-    const cell = cellFromEvent(e);
-    if (!cell) return;
-    const cols = Math.min(3, Math.max(dragStart.current.col, cell.col)) as 1 | 2 | 3;
-    const rows = Math.min(3, Math.max(dragStart.current.row, cell.row)) as 1 | 2 | 3;
-    setDraft({ cols, rows });
-  }
-
-  function onPointerUp() {
-    dragging.current = false;
-    dragStart.current = null;
-  }
-
-  function close() {
-    setOpen(false);
-    setDraft({ cols: colSpan, rows: rowSpan });
-  }
-
-  function confirm() {
-    onChange(draft.cols as 1 | 2 | 3, draft.rows as 1 | 2 | 3);
-    setOpen(false);
-  }
-
-  const slots = [];
-  for (let r = 1; r <= 3; r++)
-    for (let c = 1; c <= 3; c++) slots.push({ r, c });
-
-  return (
-    <>
-      <button type="button" className="settings-link" onClick={() => setOpen(true)}>
-        {colSpan} × {rowSpan}
-      </button>
-      {open ? (
-        <ModalShell onClose={close} padded={false} label={t("item.size")}>
-          <div className="icon-pick-frame">
-            <div className="icon-pick-head">
-              <h3 className="dialog-title">{t("item.size")}</h3>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={close}
-                aria-label={t("actions.close")}
-                title={t("actions.close")}
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-            <div className="flex flex-col items-center gap-4 p-6">
-              <div
-                ref={gridRef}
-                className="size-preview cursor-crosshair select-none"
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                style={{ width: "min(18rem, 100%)" }}
-              >
-                {slots.map((s) => {
-                  const active = s.c <= draft.cols && s.r <= draft.rows;
-                  return (
-                    <div
-                      key={`${s.r}-${s.c}`}
-                      className={`size-preview-slot transition-colors ${active ? "bg-primary/20 ring-1 ring-primary/40" : ""}`}
-                      style={{ gridColumn: s.c, gridRow: s.r }}
-                    />
-                  );
-                })}
-                <div
-                  className="size-preview-card"
-                  style={{
-                    gridColumn: `1 / span ${draft.cols}`,
-                    gridRow: `1 / span ${draft.rows}`,
-                  }}
-                />
-              </div>
-              <p className="text-sm text-muted tabular-nums">{draft.cols} × {draft.rows}</p>
-              <div className="flex gap-2">
-                <Button type="button" variant="ghost" size="sm" onClick={close}>
-                  {t("actions.cancel")}
-                </Button>
-                <Button type="button" size="sm" onClick={confirm}>
-                  {t("actions.save")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </ModalShell>
-      ) : null}
-    </>
-  );
-}
 function SizePreview({ colSpan, rowSpan }: { colSpan: number; rowSpan: number }) {
   const cols = Math.min(3, Math.max(1, Number(colSpan) || 1));
   const rows = Math.min(3, Math.max(1, Number(rowSpan) || 1));
@@ -11195,14 +11062,31 @@ function CardForm({
             {kind !== "app" ? (
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.size")}</p>
-                <div className="flex items-center gap-3">
-                  <SizePicker
-                    colSpan={colSpan}
-                    rowSpan={rowSpan}
-                    onChange={(c, r) => { setColSpan(c); setRowSpan(r); }}
-                  />
-                  <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label={t("item.width")}>
+                    <Select
+                      className={FIELD_SM}
+                      value={colSpan}
+                      onChange={(e) => setColSpan(Number(e.target.value) as 1 | 2 | 3)}
+                    >
+                      <option value={1}>{t("item.col1")}</option>
+                      <option value={2}>{t("item.col2")}</option>
+                      <option value={3}>{t("item.colFull")}</option>
+                    </Select>
+                  </Field>
+                  <Field label={t("item.height")}>
+                    <Select
+                      className={FIELD_SM}
+                      value={rowSpan}
+                      onChange={(e) => setRowSpan(Number(e.target.value) as 1 | 2 | 3)}
+                    >
+                      <option value={1}>{t("item.row1")}</option>
+                      <option value={2}>{t("item.row2")}</option>
+                      <option value={3}>{t("item.row3")}</option>
+                    </Select>
+                  </Field>
                 </div>
+                <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
               </div>
             ) : null}
             {kind === "embed" ? (
