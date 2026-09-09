@@ -1169,7 +1169,7 @@
     "exists": "This tag already exists",
     "tooMany": "Too many tags (80 max)",
     "back": "Back to tags",
-    "newPlaceholder": "New tag, Enter",
+    "newPlaceholder": "New tag + Enter",
     "colorOf": "Color of {name}",
     "palette": "Pastel palette",
     "pickColor": "Choose a color"
