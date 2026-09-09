@@ -11062,31 +11062,33 @@ function CardForm({
             {kind !== "app" ? (
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.size")}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label={t("item.width")}>
-                    <Select
-                      className={FIELD_SM}
-                      value={colSpan}
-                      onChange={(e) => setColSpan(Number(e.target.value) as 1 | 2 | 3)}
-                    >
-                      <option value={1}>{t("item.col1")}</option>
-                      <option value={2}>{t("item.col2")}</option>
-                      <option value={3}>{t("item.colFull")}</option>
-                    </Select>
-                  </Field>
-                  <Field label={t("item.height")}>
-                    <Select
-                      className={FIELD_SM}
-                      value={rowSpan}
-                      onChange={(e) => setRowSpan(Number(e.target.value) as 1 | 2 | 3)}
-                    >
-                      <option value={1}>{t("item.row1")}</option>
-                      <option value={2}>{t("item.row2")}</option>
-                      <option value={3}>{t("item.row3")}</option>
-                    </Select>
-                  </Field>
+                <div className="flex items-start gap-4">
+                  <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
+                  <div className="flex flex-col gap-3 min-w-0">
+                    <Field label={t("item.width")}>
+                      <Select
+                        className={FIELD_SM}
+                        value={colSpan}
+                        onChange={(e) => setColSpan(Number(e.target.value) as 1 | 2 | 3)}
+                      >
+                        <option value={1}>{t("item.col1")}</option>
+                        <option value={2}>{t("item.col2")}</option>
+                        <option value={3}>{t("item.colFull")}</option>
+                      </Select>
+                    </Field>
+                    <Field label={t("item.height")}>
+                      <Select
+                        className={FIELD_SM}
+                        value={rowSpan}
+                        onChange={(e) => setRowSpan(Number(e.target.value) as 1 | 2 | 3)}
+                      >
+                        <option value={1}>{t("item.row1")}</option>
+                        <option value={2}>{t("item.row2")}</option>
+                        <option value={3}>{t("item.row3")}</option>
+                      </Select>
+                    </Field>
+                  </div>
                 </div>
-                <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
               </div>
             ) : null}
             {kind === "embed" ? (
@@ -11104,21 +11106,24 @@ function CardForm({
                 </Field>
               </div>
             ) : null}
-            <div className="settings-card">
-              <p className="settings-kicker">{t("item.openLink")}</p>
-              <Field>
-                <Select
-                  className={FIELD_SM}
-                  value={openIn}
-                  onChange={(e) => setOpenIn(e.target.value as "_blank" | "_self")}
-                >
-                  <option value="_blank">{t("item.newTab")}</option>
-                  <option value="_self">{t("item.sameWindow")}</option>
-                </Select>
-              </Field>
-            </div>
-            <div className="settings-card">
-              <p className="settings-kicker">{t("probe.control")}</p>
+            {kind !== "note" ? (
+              <div className="settings-card">
+                <p className="settings-kicker">{t("item.openLink")}</p>
+                <Field>
+                  <Select
+                    className={FIELD_SM}
+                    value={openIn}
+                    onChange={(e) => setOpenIn(e.target.value as "_blank" | "_self")}
+                  >
+                    <option value="_blank">{t("item.newTab")}</option>
+                    <option value="_self">{t("item.sameWindow")}</option>
+                  </Select>
+                </Field>
+              </div>
+            ) : null}
+            {kind !== "note" ? (
+              <div className="settings-card">
+                <p className="settings-kicker">{t("probe.control")}</p>
               {probes === false ? (
                 <p className="settings-hint">{t("item.probeDisabled")}</p>
               ) : null}
@@ -11176,6 +11181,7 @@ function CardForm({
                 </Field>
               ) : null}
             </div>
+            ) : null}
           </div>
         </EdgeFade>
         <FormActions busy={busy} disabled={!canSave} hideCancel onCancel={onCancel} />
