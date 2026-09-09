@@ -11062,12 +11062,13 @@ function CardForm({
             {kind !== "app" ? (
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.size")}</p>
-                <div className="id-head">
-                  <div className="id-col">
+                <div className="flex items-start gap-4">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <Label>{t("item.size")}</Label>
                     <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
+                    <p className="text-sm tabular-nums text-muted">{colSpan} × {rowSpan}</p>
                   </div>
-                  <div className="id-col">
+                  <div className="flex shrink-0 flex-col gap-3">
                     <div className="id-field">
                       <Label>{t("item.width")}</Label>
                       <Select
