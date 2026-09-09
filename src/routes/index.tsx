@@ -10220,6 +10220,7 @@ function ItemForm({
         <div className="settings-head">
           <div className="settings-head-copy">
             <h3 className="dialog-title">{initial ? (isTab ? t("aria.editSpace") : t("aria.editCategory")) : (isTab ? t("space.create") : t("category.create"))}</h3>
+            <p className="settings-lead">{isTab ? t("item.spaceLead") : t("item.categoryLead")}</p>
           </div>
           <Button
             type="button"
@@ -10821,6 +10822,7 @@ function CardForm({
         <div className="settings-head">
           <div className="settings-head-copy">
             <h3 className="dialog-title">{heading}</h3>
+            {kind === "app" ? <p className="settings-lead">{t("item.appLead")}</p> : kind === "note" ? <p className="settings-lead">{t("item.noteLead")}</p> : <p className="settings-lead">{t("item.embedLead")}</p>}
           </div>
           <div className="settings-head-actions">
             {kindSelect}

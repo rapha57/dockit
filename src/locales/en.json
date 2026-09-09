@@ -402,7 +402,12 @@
     "embedBgCustom": "Custom color",
     "embedBgHint": "None keeps the page transparent. Default uses the soft neutral background. Custom sets a color of your choice.",
     "descriptionPlaceholder": "Short description…",
-    "sameWindowHint": "Opens the link in the current window. When unchecked, opens in a new tab (_blank)."
+    "sameWindowHint": "Opens the link in the current window. When unchecked, opens in a new tab (_blank).",
+    "appLead": "Link to a web tool or service",
+    "noteLead": "Quick note or markdown content",
+    "embedLead": "Embed an external page",
+    "spaceLead": "Group related cards together",
+    "categoryLead": "Organize cards within a space"
   },
   "space": {
     "edit": "Edit space",
