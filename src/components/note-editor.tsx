@@ -26,6 +26,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
   const [linkHref, setLinkHref] = useState("");
   const canvasRef = useRef<HTMLDivElement>(null);
   const linkRef = useRef<HTMLInputElement>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
   const rangeRef = useRef<Range | null>(null);
   const valueRef = useRef(value);
   valueRef.current = value;
@@ -236,13 +237,22 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
               onClick={() => applyColor(c.hex)}
             />
           ))}
-          <input
-            type="color"
-            className="note-swatch is-pick"
-            defaultValue="#188038"
+          <button
+            type="button"
+            className="note-swatch-custom"
             title={t("note.customColor")}
             aria-label={t("note.customColor")}
             onMouseDown={keepSelection}
+            onClick={() => colorInputRef.current?.click()}
+          >
+            <Palette className="size-3.5" />
+            {t("note.customColor")}
+          </button>
+          <input
+            ref={colorInputRef}
+            type="color"
+            className="note-swatch-custom-input"
+            defaultValue="#188038"
             onChange={(e) => {
               const hex = toHex(e.target.value);
               if (hex) applyColor(hex);
