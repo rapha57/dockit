@@ -385,7 +385,7 @@
     "type": "Type",
     "tags": "Tags",
     "maxTags": "3 tags maximum",
-    "addTag": "New tag…",
+    "addTag": "New tag + Enter",
     "urlExists": "This link already exists: “{title}” ({tab})",
     "urlExistsN": "This link already exists on {n} cards ({list})",
     "removedBody": "“{name}” will be removed from the portal.",
