@@ -1585,7 +1585,7 @@ html.dark .debug-row.is-warn .debug-level {
 .settings-pane {
   min-height: 0;
   flex: 1;
-  overflow-x: hidden;
+  overflow-x: visible;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
