@@ -385,7 +385,7 @@
     "type": "Type",
     "tags": "Étiquettes",
     "maxTags": "3 étiquettes maximum",
-    "addTag": "Ajouter une étiquette, Entrée",
+    "addTag": "Nouveau tag…",
     "urlExists": "Ce lien existe déjà : « {title} » ({tab})",
     "urlExistsN": "Ce lien existe déjà sur {n} cartes ({list})",
     "removedBody": "« {name} » sera retiré du portail.",
