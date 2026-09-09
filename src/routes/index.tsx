@@ -5765,7 +5765,7 @@ function AppCard({
           {appMark}
           {appCopy}
         </div>
-        {menuMode ? <span className="card-hub-badge"><LayoutGrid className="size-3" /></span> : null}
+        {app.linkMenu ? <span className="card-hub-badge"><LayoutGrid className="size-3" /></span> : null}
         {corner}
         {tagRow}
         {linkMenu}
@@ -11136,7 +11136,7 @@ function CardForm({
                   <option value="http">{t("item.probeHttp")}</option>
                   <option value="icmp">{t("item.probeIcmp")}</option>
                 </Select>
-                {check !== "off" && probes !== false ? (
+                {check !== "off" && probes !== false && !linkMenu ? (
                   <button
                     type="button"
                     className="settings-link self-start"
