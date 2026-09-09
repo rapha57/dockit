@@ -31,7 +31,6 @@ import {
   CircleUser,
   Clock,
   Download,
-  ExternalLink,
   FileText,
   Folder,
   Globe,
@@ -4596,9 +4595,7 @@ function Home() {
             modal.kind === "app" ||
             modal.kind === "history" ||
             modal.kind === "curation" ||
-            modal.kind === "users" ||
-            modal.kind === "tab" ||
-            modal.kind === "category"
+            modal.kind === "users"
           }
           onClose={() => {
             setBusy(false);
@@ -4981,11 +4978,13 @@ function Home() {
             />
           )}
           {modal.kind === "tab" && (
-            <TabForm
+            <ItemForm
+              kind="tab"
               initial={(modal.tab as MenuTab | null) ?? null}
               busy={busy}
               picker={picker}
               canAcl={session?.role === "admin"}
+              people={data.directory || []}
               onCancel={() =>
                 setModal({
                   kind: "none",
@@ -5013,7 +5012,6 @@ function Home() {
                       }),
                 )
               }
-              people={data.directory || []}
             />
           )}
           {modal.kind === "favs" && (
@@ -5039,7 +5037,8 @@ function Home() {
             />
           )}
           {modal.kind === "category" && (
-            <CategoryForm
+            <ItemForm
+              kind="category"
               initial={(modal.category as PortalCategory | null) ?? null}
               busy={busy}
               picker={picker}
@@ -10175,7 +10174,8 @@ function AclFields({
     </div>
   );
 }
-function TabForm({
+function ItemForm({
+  kind,
   initial,
   busy,
   picker,
@@ -10184,7 +10184,8 @@ function TabForm({
   onCancel,
   onSave,
 }: {
-  initial?: MenuTab | null;
+  kind: "tab" | "category";
+  initial?: MenuTab | PortalCategory | null;
   busy: boolean;
   picker: {
     token: string;
@@ -10198,71 +10199,31 @@ function TabForm({
   onCancel: () => void;
   onSave: (name: string, icon: string, access: AccessPayload) => void;
 }) {
+  const isTab = kind === "tab";
   const [name, setName] = useState(initial?.name ?? "");
-  const [icon, setIcon] = useState(initial?.icon ?? "Layers");
+  const [icon, setIcon] = useState(initial?.icon ?? (isTab ? "Layers" : "Folder"));
   const [restricted, setRestricted] = useState(Boolean(initial?.restricted));
-  const [hideLabel, setHideLabel] = useState(Boolean(initial?.hideLabel));
+  const [hideLabel, setHideLabel] = useState(Boolean(isTab && initial && "hideLabel" in initial ? (initial as MenuTab).hideLabel : false));
   const [viewers, setViewers] = useState(initial?.viewers ?? []);
   const [editors, setEditors] = useState(initial?.editors ?? []);
-  const [pane, setPane] = useState("general");
-  const sections = [
-    {
-      id: "general",
-      label: t("item.general"),
-      icon: Settings2,
-      lead: t("space.generalLead"),
-    },
-    ...(canAcl
-      ? [
-          {
-            id: "permissions",
-            label: t("item.permissions"),
-            icon: Shield,
-            lead: t("space.permLead"),
-          },
-        ]
-      : []),
-  ];
-  const current = sections.find((s) => s.id === pane) ?? sections[0];
   return (
     <form
-      className="settings-frame is-access is-item"
+      className="settings-frame is-item"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(name.trim(), icon.trim() || "Layers", {
+        onSave(name.trim(), icon.trim() || (isTab ? "Layers" : "Folder"), {
           restricted,
           viewers,
           editors,
-          hideLabel,
+          ...(isTab ? { hideLabel } : {}),
         });
       }}
     >
-      {" "}
-      <nav className="settings-nav" aria-label="Sections">
-        {" "}
-        <p className="menu-title">{initial ? t("aria.editSpace") : t("space.create")}</p>
-        {sections.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className={`settings-nav-item ${pane === s.id ? "is-on" : ""}`}
-            onClick={() => setPane(s.id)}
-          >
-            {" "}
-            <s.icon className="size-4 shrink-0" />
-            {s.label}
-          </button>
-        ))}
-      </nav>{" "}
       <div className="settings-body">
-        {" "}
         <div className="settings-head">
-          {" "}
           <div className="settings-head-copy">
-            {" "}
-            <h3 className="dialog-title">{current.label}</h3>
-            <p className="settings-lead">{current.lead}</p>
-          </div>{" "}
+            <h3 className="dialog-title">{initial ? (isTab ? t("aria.editSpace") : t("aria.editCategory")) : (isTab ? t("space.create") : t("category.create"))}</h3>
+          </div>
           <Button
             type="button"
             variant="ghost"
@@ -10271,53 +10232,37 @@ function TabForm({
             aria-label={t("actions.close")}
             title={t("actions.close")}
           >
-            {" "}
             <X className="size-4" />
           </Button>
-        </div>{" "}
+        </div>
         <EdgeFade className="settings-pane">
-          {pane === "permissions" && canAcl ? (
-            <div className="settings-stack">
-              {" "}
-              <AclFields
-                restricted={restricted}
-                setRestricted={setRestricted}
-                viewers={viewers}
-                setViewers={setViewers}
-                editors={editors}
-                setEditors={setEditors}
-                people={people}
-                seeHint={t("space.seeHint")}
-                editHint={t("space.editHint")}
-              />
-            </div>
-          ) : (
-            <div className="settings-stack">
-              <div className="settings-card">
-                <p className="settings-kicker">{t("item.general")}</p>
-                <div className="id-head">
-                  <div className="id-col">
-                    <Label>{t("item.icon")}</Label>
-                    <IconPicker
-                      value={icon}
-                      onChange={setIcon}
-                      {...picker}
-                      pictosOnly={!picker.navRichIcons}
-                      header
+          <div className="settings-stack">
+            <div className="settings-card">
+              <p className="settings-kicker">{t("item.general")}</p>
+              <div className="id-head">
+                <div className="id-col">
+                  <Label>{t("item.icon")}</Label>
+                  <IconPicker
+                    value={icon}
+                    onChange={setIcon}
+                    {...picker}
+                    pictosOnly={!picker.navRichIcons}
+                    header
+                  />
+                </div>
+                <div className="id-col">
+                  <div className="id-field">
+                    <Label>{t("item.name")}</Label>
+                    <Input
+                      className={FIELD_SM}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
                     />
                   </div>
-                  <div className="id-col">
-                    <div className="id-field">
-                      <Label>{t("item.name")}</Label>
-                      <Input
-                        className={FIELD_SM}
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
                 </div>
+              </div>
+              {isTab ? (
                 <div className="settings-toggles">
                   <p className="settings-kicker">{t("item.display")}</p>
                   <label>
@@ -10330,9 +10275,22 @@ function TabForm({
                   </label>
                   <p className="settings-hint">{t("space.hideLabelHint")}</p>
                 </div>
-              </div>
+              ) : null}
             </div>
-          )}
+            {canAcl ? (
+              <AclFields
+                restricted={restricted}
+                setRestricted={setRestricted}
+                viewers={viewers}
+                setViewers={setViewers}
+                editors={editors}
+                setEditors={setEditors}
+                people={people}
+                seeHint={isTab ? t("space.seeHint") : t("category.seeHint")}
+                editHint={isTab ? t("space.editHint") : t("category.editHint")}
+              />
+            ) : null}
+          </div>
         </EdgeFade>
         <FormActions busy={busy} hideCancel onCancel={onCancel} />
       </div>
@@ -10382,156 +10340,6 @@ function FavsForm({
         </label>
       </div>
       <FormActions busy={busy} hideCancel onCancel={onCancel} />
-    </form>
-  );
-}
-function CategoryForm({
-  initial,
-  busy,
-  picker,
-  people,
-  canAcl,
-  onCancel,
-  onSave,
-}: {
-  initial?: PortalCategory | null;
-  busy: boolean;
-  picker: {
-    token: string;
-    library: CustomIcon[];
-    online: boolean;
-    navRichIcons: boolean;
-    onLibrary: (icons: CustomIcon[]) => void;
-  };
-  people: DirectoryEntry[];
-  canAcl: boolean;
-  onCancel: () => void;
-  onSave: (name: string, icon: string, access: AccessPayload) => void;
-}) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [icon, setIcon] = useState(initial?.icon ?? "Folder");
-  const [restricted, setRestricted] = useState(Boolean(initial?.restricted));
-  const [viewers, setViewers] = useState(initial?.viewers ?? []);
-  const [editors, setEditors] = useState(initial?.editors ?? []);
-  const [pane, setPane] = useState("general");
-  const sections = [
-    {
-      id: "general",
-      label: t("item.general"),
-      icon: Settings2,
-      lead: t("category.generalLead"),
-    },
-    ...(canAcl
-      ? [
-          {
-            id: "permissions",
-            label: t("item.permissions"),
-            icon: Shield,
-            lead: t("category.permLead"),
-          },
-        ]
-      : []),
-  ];
-  const current = sections.find((s) => s.id === pane) ?? sections[0];
-  return (
-    <form
-      className="settings-frame is-access is-item"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave(name.trim(), icon.trim() || "Folder", {
-          restricted,
-          viewers,
-          editors,
-        });
-      }}
-    >
-      {" "}
-      <nav className="settings-nav" aria-label="Sections">
-        {" "}
-        <p className="menu-title">{initial ? t("aria.editCategory") : t("category.create")}</p>
-        {sections.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className={`settings-nav-item ${pane === s.id ? "is-on" : ""}`}
-            onClick={() => setPane(s.id)}
-          >
-            {" "}
-            <s.icon className="size-4 shrink-0" />
-            {s.label}
-          </button>
-        ))}
-      </nav>{" "}
-      <div className="settings-body">
-        {" "}
-        <div className="settings-head">
-          {" "}
-          <div className="settings-head-copy">
-            {" "}
-            <h3 className="dialog-title">{current.label}</h3>
-            <p className="settings-lead">{current.lead}</p>
-          </div>{" "}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={onCancel}
-            aria-label={t("actions.close")}
-            title={t("actions.close")}
-          >
-            {" "}
-            <X className="size-4" />
-          </Button>
-        </div>{" "}
-        <EdgeFade className="settings-pane">
-          {pane === "permissions" && canAcl ? (
-            <div className="settings-stack">
-              {" "}
-              <AclFields
-                restricted={restricted}
-                setRestricted={setRestricted}
-                viewers={viewers}
-                setViewers={setViewers}
-                editors={editors}
-                setEditors={setEditors}
-                people={people}
-                seeHint={t("category.seeHint")}
-                editHint={t("category.editHint")}
-              />
-            </div>
-          ) : (
-            <div className="settings-stack">
-              <div className="settings-card">
-                <p className="settings-kicker">{t("item.general")}</p>
-                <div className="id-head">
-                  <div className="id-col">
-                    <Label>{t("item.icon")}</Label>
-                    <IconPicker
-                      value={icon}
-                      onChange={setIcon}
-                      {...picker}
-                      pictosOnly={!picker.navRichIcons}
-                      header
-                    />
-                  </div>
-                  <div className="id-col">
-                    <div className="id-field">
-                      <Label>{t("item.name")}</Label>
-                      <Input
-                        className={FIELD_SM}
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </EdgeFade>
-        <FormActions busy={busy} hideCancel onCancel={onCancel} />
-      </div>
     </form>
   );
 }
@@ -10820,7 +10628,6 @@ function AppForm({
   const [embedBorder, setEmbedBorder] = useState(Boolean(initial?.embedBorder));
   const [embedBg, setEmbedBg] = useState<string>(initial?.embedBg || "");
   const [probeBusy, setProbeBusy] = useState(false);
-  const [pane, setPane] = useState("general");
   const tagInputRef = useRef<HTMLInputElement>(null);
   const catOptions = useMemo(() => categories, [categories]);
   const tagMatches = useMemo(() => {
@@ -10834,12 +10641,6 @@ function AppForm({
       )
       .slice(0, 8);
   }, [tagDraft, knownTags, tags]);
-  const paneSafe =
-    (pane === "lien" && kind !== "app") || pane === "tags"
-      ? "general"
-      : pane === "design"
-        ? "taille"
-        : pane;
   function addTag(raw: string) {
     const t = raw.trim().slice(0, 32);
     if (!t) return;
@@ -10883,7 +10684,6 @@ function AppForm({
     setCheckHost("");
     setColSpan(1);
     setRowSpan(1);
-    setPane("general");
     setIcon(next === "note" ? "FileText" : next === "embed" ? "AppWindow" : "Link");
   }
   async function changeKind(next: ItemKind) {
@@ -10915,36 +10715,6 @@ function AppForm({
   }
   const kindMeta = itemKind(kind);
   const heading = initial ? kindMeta.edit : kindMeta.create;
-  const sections = [
-    {
-      id: "general",
-      label: t("item.general"),
-      icon: Settings2,
-      lead:
-        kind === "note"
-          ? t("item.generalLeadNote")
-          : kind === "embed"
-            ? t("item.generalLeadEmbed")
-            : t("item.generalLeadApp"),
-    },
-    ...(kind === "app"
-      ? [
-          {
-            id: "lien",
-            label: t("item.link"),
-            icon: ExternalLink,
-            lead: t("item.linkLead"),
-          },
-        ]
-      : []),
-    {
-      id: "taille",
-      label: t("item.size"),
-      icon: LayoutGrid,
-      lead: t("item.sizeLead"),
-    },
-  ];
-  const current = sections.find((s) => s.id === paneSafe) ?? sections[0];
   const kindSelect = (
     <select
       className="kind-select"
@@ -10986,27 +10756,23 @@ function AppForm({
   ) : null;
   return (
     <form
-      className="settings-frame is-access is-item"
+      className="settings-frame is-item"
       onSubmit={(e) => {
         e.preventDefault();
         if (kind === "app" && !title.trim()) {
           toast.error(t("errors.nameRequired"));
-          setPane("general");
           return;
         }
         if (kind === "app" && !safeAppHref(links[0]?.url || "")) {
           toast.error(t("errors.urlRequired"));
-          setPane("lien");
           return;
         }
         if (kind === "note" && !description.trim()) {
           toast.error(t("errors.contentRequired"));
-          setPane("general");
           return;
         }
         if (kind === "embed" && !safeAppHref(url)) {
           toast.error(t("errors.embedUrlRequired"));
-          setPane("general");
           return;
         }
         onSave({
@@ -11040,32 +10806,11 @@ function AppForm({
         });
       }}
     >
-      {" "}
-      <nav className="settings-nav" aria-label="Sections">
-        {" "}
-        <p className="menu-title">{heading}</p>
-        {sections.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className={`settings-nav-item ${paneSafe === s.id ? "is-on" : ""}`}
-            onClick={() => setPane(s.id)}
-          >
-            {" "}
-            <s.icon className="size-4 shrink-0" />
-            {s.label}
-          </button>
-        ))}
-      </nav>{" "}
       <div className="settings-body">
-        {" "}
         <div className="settings-head">
-          {" "}
           <div className="settings-head-copy">
-            {" "}
-            <h3 className="dialog-title">{current.label}</h3>
-            {current.lead ? <p className="settings-lead">{current.lead}</p> : null}
-          </div>{" "}
+            <h3 className="dialog-title">{heading}</h3>
+          </div>
           <div className="settings-head-actions">
             {kindSelect}
             <Button
@@ -11076,13 +10821,12 @@ function AppForm({
               aria-label={t("actions.close")}
               title={t("actions.close")}
             >
-              {" "}
               <X className="size-4" />
             </Button>
           </div>
-        </div>{" "}
+        </div>
         <EdgeFade className="settings-pane">
-          <div className={paneSafe === "general" ? "settings-stack" : "hidden"}>
+          <div className="settings-stack">
             <div className="settings-card">
               <p className="settings-kicker">{t("item.general")}</p>
               {kind === "app" ? (
@@ -11311,8 +11055,6 @@ function AppForm({
                 </Field>
               </div>
             ) : null}
-          </div>
-          <div className={paneSafe === "taille" ? "settings-stack" : "hidden"}>
             <div className="settings-card">
               <p className="settings-kicker">{t("item.size")}</p>
               <div className="grid grid-cols-2 gap-3">
@@ -11341,8 +11083,6 @@ function AppForm({
               </div>
               <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
             </div>
-          </div>
-          <div className={paneSafe === "lien" ? "settings-stack" : "hidden"}>
             {kind === "embed" ? (
               <div className="settings-card">
                 <p className="settings-kicker">{t("item.link")}</p>
