@@ -790,6 +790,8 @@
     "navRichIconsHint": "Les espaces et catégories peuvent utiliser des icônes importées ou Iconify, pas seulement les symboles Lucide.",
     "annexFade": "Estomper le fond des menus d’autres liens",
     "annexFadeHint": "Estompe le portail derrière le menu des autres liens d’une carte.",
+    "ctxHideUrl": "Masquer les URLs dans les menus de carte",
+    "ctxHideUrlHint": "Affiche uniquement le nom du lien et le bouton copier dans les menus d’autres liens et du clic droit.",
     "showInfoBar": "Afficher la barre d’information",
     "showInfoBarHint": "Barre du bas : clics, sondes HS et statistiques. Le détail est dans Information.",
     "cardResize": "Redimensionner les cartes en tirant les bords",

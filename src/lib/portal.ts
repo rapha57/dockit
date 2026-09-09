@@ -191,6 +191,7 @@ export type PortalSettings = {
   cardIconBg: boolean;
   cardContextMenu: boolean;
   cardDragCollapse: boolean;
+  ctxHideUrl: boolean;
   infoStats: boolean;
   infoGeek: boolean;
   probeTlsVerify: boolean;
@@ -501,6 +502,7 @@ function defaultSettings(): PortalSettings {
 		cardIconBg: true,
 		cardContextMenu: true,
 		cardDragCollapse: true,
+		ctxHideUrl: false,
 		infoStats: true,
 		infoGeek: true,
 		probeTlsVerify: false,
@@ -1205,6 +1207,7 @@ function asStore(raw: any): Doc | null {
 			cardIconBg: doc.settings.cardIconBg !== false,
 			cardContextMenu: doc.settings.cardContextMenu !== false,
 			cardDragCollapse: doc.settings.cardDragCollapse !== false,
+			ctxHideUrl: Boolean(doc.settings.ctxHideUrl),
 			infoStats: doc.settings.infoStats !== false,
 			infoGeek: doc.settings.infoGeek !== false,
 			probeTlsVerify: Boolean(doc.settings.probeTlsVerify),
@@ -1863,6 +1866,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	cardIconBg: z.boolean().optional(),
 	cardContextMenu: z.boolean().optional(),
 	cardDragCollapse: z.boolean().optional(),
+	ctxHideUrl: z.boolean().optional(),
 	infoStats: z.boolean().optional(),
 	infoGeek: z.boolean().optional(),
 	probeTlsVerify: z.boolean().optional(),
@@ -1902,6 +1906,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		cardIconBg: typeof data.cardIconBg === "boolean" ? data.cardIconBg : doc.settings.cardIconBg !== false,
 		cardContextMenu: typeof data.cardContextMenu === "boolean" ? data.cardContextMenu : doc.settings.cardContextMenu !== false,
 		cardDragCollapse: typeof data.cardDragCollapse === "boolean" ? data.cardDragCollapse : doc.settings.cardDragCollapse !== false,
+		ctxHideUrl: typeof data.ctxHideUrl === "boolean" ? data.ctxHideUrl : Boolean(doc.settings.ctxHideUrl),
 		infoStats: typeof data.infoStats === "boolean" ? data.infoStats : doc.settings.infoStats !== false,
 		infoGeek: typeof data.infoGeek === "boolean" ? data.infoGeek : doc.settings.infoGeek !== false,
 		probeTlsVerify: typeof data.probeTlsVerify === "boolean" ? data.probeTlsVerify : Boolean(doc.settings.probeTlsVerify),

@@ -4025,6 +4025,7 @@ function Home() {
                           onOpen={() => bumpClick(app)}
                           dimMenu={Boolean(data.settings.annexFade)}
                           ctxMenu={data.settings.cardContextMenu !== false}
+                          ctxHideUrl={Boolean(data.settings.ctxHideUrl)}
                           onEdit={() => void 0}
                           onDelete={() => void 0}
                         />
@@ -4240,6 +4241,7 @@ function Home() {
                           onOpen={() => bumpClick(app)}
                           dimMenu={Boolean(data.settings.annexFade)}
                           ctxMenu={data.settings.cardContextMenu !== false}
+                          ctxHideUrl={Boolean(data.settings.ctxHideUrl)}
                           onEdit={() =>
                             setModal({
                               kind: "app",
@@ -4489,6 +4491,7 @@ function Home() {
                           onOpen={() => bumpClick(app)}
                           dimMenu={Boolean(data.settings.annexFade)}
                           ctxMenu={data.settings.cardContextMenu !== false}
+                          ctxHideUrl={Boolean(data.settings.ctxHideUrl)}
                           onPointerDown={(e) => {
                             if (!canDrag) return;
                             if ((e.target as HTMLElement).closest("button")) return;
@@ -5321,6 +5324,7 @@ type AppCardProps = {
   onDelete?: () => void;
   dimMenu?: boolean;
   ctxMenu?: boolean;
+  ctxHideUrl?: boolean;
   cardIconBg?: boolean;
 };
 function AppCard({
@@ -5352,6 +5356,7 @@ function AppCard({
   onDelete,
   dimMenu,
   ctxMenu,
+  ctxHideUrl,
 }: AppCardProps) {
   const extra = (app.kind || "app") === "app" ? (app.links ?? []).slice(1) : [];
   const primaryHref = safeAppHref(cardUrl(app));
@@ -5682,7 +5687,7 @@ function AppCard({
           <Link className="size-4 shrink-0" aria-hidden />
           <span className="card-ctx-copy-text min-w-0">
             <span className="card-ctx-name truncate">{label}</span>
-            <span className="card-ctx-url truncate">{safe}</span>
+            {ctxHideUrl ? null : <span className="card-ctx-url truncate">{safe}</span>}
           </span>
         </a>
         <button
@@ -7548,6 +7553,7 @@ type SettingsPayload = {
   cardIconBg?: boolean;
   cardContextMenu: boolean;
   cardDragCollapse: boolean;
+  ctxHideUrl: boolean;
   infoStats: boolean;
   infoGeek: boolean;
   probeTlsVerify: boolean;
@@ -7582,6 +7588,7 @@ function settingsBase(initial: PortalSettings): SettingsPayload {
     cardResize: initial.cardResize !== false,
     cardContextMenu: initial.cardContextMenu !== false,
     cardDragCollapse: initial.cardDragCollapse !== false,
+    ctxHideUrl: Boolean(initial.ctxHideUrl),
     infoStats: initial.infoStats !== false,
     infoGeek: initial.infoGeek !== false,
     probeTlsVerify: Boolean(initial.probeTlsVerify),
@@ -8107,6 +8114,7 @@ function PresentationForm({
   const [cardResize, setCardResize] = useState(initial.cardResize !== false);
   const [cardContextMenu, setCardContextMenu] = useState(initial.cardContextMenu !== false);
   const [cardDragCollapse, setCardDragCollapse] = useState(initial.cardDragCollapse !== false);
+  const [ctxHideUrl, setCtxHideUrl] = useState(Boolean(initial.ctxHideUrl));
   const [cardIconBg, setCardIconBg] = useState(initial.cardIconBg !== false);
   const [infoBar, setInfoBar] = useState(initial.infoBar !== false);
   return (
@@ -8127,6 +8135,7 @@ function PresentationForm({
           cardResize,
           cardContextMenu,
           cardDragCollapse,
+          ctxHideUrl,
           cardIconBg,
           infoBar,
         });
@@ -8255,6 +8264,16 @@ function PresentationForm({
             {t("pres.annexFade")}
           </label>
           <p className="settings-hint">{t("pres.annexFadeHint")}</p>
+          <label>
+            {" "}
+            <input
+              type="checkbox"
+              checked={ctxHideUrl}
+              onChange={(e) => setCtxHideUrl(e.target.checked)}
+            />
+            {t("pres.ctxHideUrl")}
+          </label>
+          <p className="settings-hint">{t("pres.ctxHideUrlHint")}</p>
         </div>
       </div>{" "}
       <div className="settings-card">

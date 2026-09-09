@@ -790,6 +790,8 @@
     "navRichIconsHint": "Spaces and categories can use imported or Iconify icons, not only Lucide symbols.",
     "annexFade": "Fade the background of extra-link menus",
     "annexFadeHint": "Dims the portal behind the extra-links menu on a card.",
+    "ctxHideUrl": "Hide URLs in card menus",
+    "ctxHideUrlHint": "Shows only the link name and the copy button in extra-links and right-click menus.",
     "showInfoBar": "Show the information bar",
     "showInfoBarHint": "Bottom bar with clicks, down probes and statistics. Details are in Information.",
     "cardResize": "Resize cards by dragging their edges",
