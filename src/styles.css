@@ -939,10 +939,6 @@ html.dark select.field-input {
   padding: 0.2rem 0.48rem;
 }
 
-.tag-chip:hover {
-  box-shadow: 0 0 0 1px var(--color-border);
-}
-
 .tag-chip.is-on {
   background: var(--tag-bg, var(--color-primary));
   color: var(--tag-fg, var(--color-fg));
@@ -1355,6 +1351,7 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   border-radius: 0.55rem;
   background: color-mix(in oklab, var(--color-elevated) 88%, transparent);
   cursor: pointer;
+  overflow: visible;
 }
 .status-mark::before {
   content: "";
