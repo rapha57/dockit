@@ -10357,11 +10357,13 @@ function ExtraLinksField({
   setLinks,
   linkMenu,
   setLinkMenu,
+  onHubEnable,
 }: {
   links: { key: string; title: string; url: string; openIn: "_blank" | "_self" }[];
   setLinks: React.Dispatch<React.SetStateAction<{ key: string; title: string; url: string; openIn: "_blank" | "_self" }[]>>;
   linkMenu?: boolean;
   setLinkMenu?: React.Dispatch<React.SetStateAction<boolean>>;
+  onHubEnable?: () => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ key: string; pointerId: number } | null>(null);
@@ -10529,7 +10531,10 @@ function ExtraLinksField({
               type="checkbox"
               checked={Boolean(linkMenu) && links.length > 1}
               disabled={links.length < 2}
-              onChange={(e) => setLinkMenu?.(e.target.checked)}
+              onChange={(e) => {
+                setLinkMenu?.(e.target.checked);
+                if (e.target.checked) onHubEnable?.();
+              }}
             />
             {t("item.linkMenu")}
           </label>
@@ -10953,6 +10958,7 @@ function CardForm({
                   setLinks={setLinks}
                   linkMenu={linkMenu}
                   setLinkMenu={setLinkMenu}
+                  onHubEnable={() => setCheck("off")}
                 />
               </div>
             ) : null}
@@ -11129,14 +11135,14 @@ function CardForm({
                 <Select
                   className={FIELD_SM}
                   value={check}
-                  disabled={probes === false || Boolean(linkMenu)}
+                  disabled={probes === false}
                   onChange={(e) => setCheck(e.target.value as CheckMode)}
                 >
                   <option value="off">{t("item.probeNone")}</option>
                   <option value="http">{t("item.probeHttp")}</option>
                   <option value="icmp">{t("item.probeIcmp")}</option>
                 </Select>
-                {check !== "off" && probes !== false && !linkMenu ? (
+                {check !== "off" && probes !== false ? (
                   <button
                     type="button"
                     className="settings-link self-start"
