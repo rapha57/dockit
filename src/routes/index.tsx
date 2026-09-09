@@ -42,7 +42,6 @@ import {
   Lock,
   LogIn,
   LogOut,
-  Menu,
   Minus,
   MoreHorizontal,
   MousePointerClick,
@@ -56,6 +55,7 @@ import {
   Shield,
   Smile,
   Sparkles,
+  SquareMenu,
   Star,
   Tags,
   Trash2,
@@ -5468,7 +5468,11 @@ function AppCard({
       onPointerDown={(e) => e.stopPropagation()}
     >
       {" "}
-      {app.linkMenu ? <LayoutGrid className="size-3.5" /> : <Menu className="size-3.5" />}
+      {app.linkMenu ? (
+        <SquareMenu className="size-3.5" style={{ background: "#dbeafe", borderRadius: "0.25rem", padding: "0.15rem" }} />
+      ) : (
+        <SquareMenu className="size-3.5" />
+      )}
     </button>
   ) : null;
   const corner =
