@@ -1158,6 +1158,7 @@ html.dark .fav-star:hover {
   inset: 0;
   z-index: 1;
   border-radius: inherit;
+  outline: none;
 }
 .portal-card:has(.card-hit) {
   cursor: pointer;
