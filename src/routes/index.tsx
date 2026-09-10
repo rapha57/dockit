@@ -881,11 +881,12 @@ function prettyLogin(name: unknown) {
   const lower = s.toLocaleLowerCase(localeTag());
   return lower.charAt(0).toLocaleUpperCase(localeTag()) + lower.slice(1);
 }
-function accountStatusLabel(loggedIn: boolean, role: string | null | undefined) {
+function accountStatusLabel(loggedIn: boolean, role: string | null | undefined, isOwner?: boolean) {
   if (!loggedIn) return t("account.guest");
+  if (isOwner || role === "owner") return t("account.owner");
   if (role === "editeur") return t("account.editor");
   if (role === "lecteur") return t("account.viewer");
-  if (role === "admin" || role === "owner") return t("account.admin");
+  if (role === "admin") return t("account.admin");
   return t("account.member") || prettyLogin(role);
 }
 function AccountMenu({
@@ -907,6 +908,7 @@ function AccountMenu({
   onOpenFavs,
   onResetLocal,
   onLogout,
+  isOwner,
 }: {
   loggedIn: boolean;
   editMode: boolean;
@@ -916,6 +918,7 @@ function AccountMenu({
   canHistory: boolean;
   canCuration: boolean;
   role: string;
+  isOwner?: boolean;
   openFavs: boolean;
   onLogin: () => void;
   onEdit: () => void;
@@ -942,7 +945,7 @@ function AccountMenu({
   const showHistory = loggedIn && canHistory;
   const showUsers = loggedIn && canManageUsers;
   const showCuration = loggedIn && canCuration;
-  const status = accountStatusLabel(loggedIn, role);
+  const status = accountStatusLabel(loggedIn, role, isOwner);
   const localPrefs = (
     <>
       {" "}
@@ -3634,6 +3637,7 @@ function Home() {
               canEdit={Boolean(session?.canEdit)}
               canOpenSettings={Boolean(session?.canManageSettings)}
               role={session?.role || ""}
+              isOwner={session?.isOwner}
               openFavs={ui.openFavs}
               onLogin={() => requestLogin()}
               onEdit={() => requestEdit()}
@@ -7755,7 +7759,7 @@ function TimeZoneField({ value, onChange }: { value: string; onChange: (v: strin
         {" "}
         <option value="">{t("lang.timezoneLocal")}</option>
         {groups.map((g) => (
-          <optgroup key={g.region} label={g.region}>
+          <optgroup key={g.region} label={g.region === "Other" ? t("lang.tzOther") : g.region}>
             {g.zones.map((z) => (
               <option key={z.id} value={z.id}>
                 {z.label}

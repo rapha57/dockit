@@ -221,7 +221,7 @@ export function resolveIconSrc(name: string): string | null {
 }
 
 export async function fileToDataUrl(file: File): Promise<string> {
-  if (file.size > 220_000) throw new Error("Fichier trop lourd (max 200 Ko)");
+  if (file.size > 220_000) throw new Error("errors.fileTooHeavy");
   const allowed = [
     "image/png",
     "image/svg+xml",
@@ -232,12 +232,12 @@ export async function fileToDataUrl(file: File): Promise<string> {
     "image/vnd.microsoft.icon",
   ];
   if (file.type && !allowed.includes(file.type) && !/\.(png|svg|webp|jpe?g|gif|ico)$/i.test(file.name)) {
-    throw new Error("Formats : PNG, SVG, WebP, JPEG, ICO");
+    throw new Error("errors.iconFormats");
   }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("Lecture impossible"));
+    reader.onerror = () => reject(new Error("errors.iconReadFail"));
     reader.readAsDataURL(file);
   });
 }

@@ -19,7 +19,7 @@ import {
 	publicTrash,
 	emptyTrash
 } from "./history";
-import { t, withLocale, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "./i18n";
+import { t, withLocale, asLocale, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "./i18n";
 import {
 	curationJobRunning,
 	curationJobSnapshot,
@@ -82,6 +82,7 @@ export type SessionInfo = {
   role?: string;
   roleId?: string;
   roleIds: string[];
+  isOwner: boolean;
   canEdit: boolean;
   canManageUsers: boolean;
   canManageGroups: boolean;
@@ -537,14 +538,16 @@ function defaultSettings(): PortalSettings {
 		timezone: ""
 	};
 }
-function blankTabs(): { lastTabId: string; tabs: DocTab[] } {
+function blankTabs(locale?: unknown): { lastTabId: string; tabs: DocTab[] } {
 	const tabId = crypto.randomUUID();
 	const catId = crypto.randomUUID();
+	const name = withLocale(locale ?? "en", () => t("seed.tab"));
+	const category = withLocale(locale ?? "en", () => t("seed.category"));
 	return {
 		lastTabId: tabId,
 		tabs: [{
 			id: tabId,
-			name: "Home",
+			name,
 			icon: "Layers",
 			sortOrder: 1,
 			restricted: false,
@@ -553,7 +556,7 @@ function blankTabs(): { lastTabId: string; tabs: DocTab[] } {
 			hideLabel: false,
 			categories: [{
 				id: catId,
-				name: "Applications",
+				name: category,
 				icon: "AppWindow",
 				sortOrder: 1,
 				restricted: false,
@@ -938,6 +941,7 @@ function sessionInfo(user: StoredUser, doc: Doc): SessionInfo {
 		role: owner ? "admin" : u.role,
 		roleId: u.roleId || (u.roleIds && u.roleIds[0]) || user.role,
 		roleIds: u.roleIds || roleIdsOf(user),
+		isOwner: owner,
 		canEdit: Boolean(owner || u._canEdit),
 		canManageUsers: Boolean(u.canManageUsers || owner),
 		canManageGroups: Boolean(u.canManageGroups || owner),
@@ -1820,8 +1824,18 @@ export const resetClicks = createServerFn({ method: "POST" }).validator(z.object
 }));
 export const resetPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	requireAdmin(doc, tok(data, request));
-	const fresh = blankTabs();
-	doc.settings = defaultSettings();
+	const keep = {
+		locale: asLocale(doc.settings.locale),
+		dateFormat: doc.settings.dateFormat,
+		timeFormat: doc.settings.timeFormat,
+		timezone: doc.settings.timezone,
+		numberFormat: doc.settings.numberFormat
+	};
+	const fresh = blankTabs(keep.locale);
+	doc.settings = {
+		...defaultSettings(),
+		...keep
+	};
 	doc.customIcons = [];
 	doc.clickDays = {};
 	doc.lastTabId = fresh.lastTabId;
