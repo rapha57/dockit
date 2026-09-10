@@ -81,11 +81,11 @@ export const PORTAL_ACTIONS = [
 	"groups.manage",
 	"roles.manage",
 	"settings",
+	"spaces.create",
+	"curation",
 	"audit",
 	"restore",
-	"purge",
-	"spaces.create",
-	"curation"
+	"purge"
 ];
 export const NODE_ACTIONS = ["view", "open", "edit", "create", "delete", "move"];
 export const TREE_ACTIONS: Record<string, string[]> = {

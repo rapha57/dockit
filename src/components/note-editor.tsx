@@ -26,6 +26,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
   const [linkHref, setLinkHref] = useState("");
   const canvasRef = useRef<HTMLDivElement>(null);
   const linkRef = useRef<HTMLInputElement>(null);
+  const mdRef = useRef<HTMLTextAreaElement>(null);
   const rangeRef = useRef<Range | null>(null);
   const valueRef = useRef(value);
   valueRef.current = value;
@@ -108,9 +109,92 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
     emitHtml();
   }
 
+  function setMd(next: string, selStart: number, selEnd: number) {
+    onChange(next);
+    requestAnimationFrame(() => {
+      const el = mdRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(selStart, selEnd);
+    });
+  }
+
+  function wrapMd(open: string, close = open) {
+    const el = mdRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const inner = value.slice(start, end);
+    const next = `${value.slice(0, start)}${open}${inner}${close}${value.slice(end)}`;
+    setMd(next, start + open.length, start + open.length + inner.length);
+  }
+
+  function tokenRange(text: string, caret: number): [number, number] {
+    let s = caret;
+    let e = caret;
+    while (s > 0 && !/\s/.test(text[s - 1])) s -= 1;
+    while (e < text.length && !/\s/.test(text[e])) e += 1;
+    return [s, e];
+  }
+
+  function stripColorMd(s: number, e: number): { next: string; s: number; e: number } | null {
+    const pre = value.slice(0, s);
+    const post = value.slice(e);
+    const pm = /\{([a-z0-9#]{3,8})\}$/.exec(pre);
+    const sm = /^\{\/([a-z0-9#]{3,8})\}/.exec(post);
+    if (!pm || !sm || pm[1] !== sm[1]) return null;
+    return {
+      next: `${pre.slice(0, pm.index)}${value.slice(s, e)}${post.slice(sm[0].length)}`,
+      s: pm.index,
+      e: pm.index + (e - s),
+    };
+  }
+
+  function unwrapMd() {
+    const el = mdRef.current;
+    if (!el) return;
+    let start = el.selectionStart;
+    let end = el.selectionEnd;
+    if (start === end) [start, end] = tokenRange(value, start);
+    const inner = value.slice(start, end);
+    for (const [open, close] of [
+      ["**", "**"],
+      ["*", "*"],
+      ["`", "`"],
+    ] as const) {
+      if (
+        value.slice(start - open.length, start) === open &&
+        value.slice(end, end + close.length) === close
+      ) {
+        setMd(
+          `${value.slice(0, start - open.length)}${inner}${value.slice(end + close.length)}`,
+          start - open.length,
+          start - open.length + inner.length,
+        );
+        return;
+      }
+    }
+    const color = stripColorMd(start, end);
+    if (color) setMd(color.next, color.s, color.e);
+  }
+
   function applyLink() {
     const href = safeHref(linkHref);
     if (!href) return;
+    if (mode === "md") {
+      const el = mdRef.current;
+      if (el) {
+        const start = el.selectionStart;
+        const end = el.selectionEnd;
+        const inner = value.slice(start, end);
+        const label = inner || (href.startsWith("mailto:") ? href.slice(7) : href);
+        const link = `[${label}](${href})`;
+        setMd(`${value.slice(0, start)}${link}${value.slice(end)}`, start + link.length, start + link.length);
+      }
+      setLinkOpen(false);
+      setLinkHref("");
+      return;
+    }
     restoreRange();
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed) {
@@ -130,6 +214,30 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
   }
 
   function applyColor(hex: string) {
+    if (mode === "md") {
+      const el = mdRef.current;
+      if (el) {
+        const start = el.selectionStart;
+        const end = el.selectionEnd;
+        if (!hex) {
+          const color = stripColorMd(start, end);
+          if (color) setMd(color.next, color.s, color.e);
+        } else {
+          const named = NOTE_COLORS.find((c) => c.id && c.hex === hex);
+          const key = named ? named.id : hex.replace(/^#/, "").toLowerCase();
+          const mark = `{${key}}`;
+          const close = named ? `{/${key}}` : `{/#}`;
+          const inner = value.slice(start, end);
+          setMd(
+            `${value.slice(0, start)}${mark}${inner}${close}${value.slice(end)}`,
+            start + mark.length,
+            start + mark.length + inner.length,
+          );
+        }
+      }
+      setColorOpen(false);
+      return;
+    }
     restoreRange();
     if (!hex) {
       document.execCommand("foreColor", false, "inherit");
@@ -155,9 +263,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
   return (
     <div className="note-editor">
       <div className="note-toolbar" role="toolbar" aria-label={t("note.format")}>
-        {mode === "visuel" ? (
-          <>
-        <button type="button" title={t("note.bold")} aria-label={t("note.bold")} onMouseDown={keepSelection} onClick={() => run("bold")}>
+        <button type="button" title={t("note.bold")} aria-label={t("note.bold")} onMouseDown={keepSelection} onClick={() => (mode === "md" ? wrapMd("**") : run("bold"))}>
           <Bold className="size-3.5" />
         </button>
         <button
@@ -165,7 +271,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
           title={t("note.italic")}
           aria-label={t("note.italic")}
           onMouseDown={keepSelection}
-          onClick={() => run("italic")}
+          onClick={() => (mode === "md" ? wrapMd("*") : run("italic"))}
         >
           <Italic className="size-3.5" />
         </button>
@@ -174,11 +280,11 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
           title={t("note.normal")}
           aria-label={t("note.normal")}
           onMouseDown={keepSelection}
-          onClick={() => run("removeFormat")}
+          onClick={() => (mode === "md" ? unwrapMd() : run("removeFormat"))}
         >
           <Eraser className="size-3.5" />
         </button>
-        <button type="button" title={t("note.code")} aria-label={t("note.code")} onMouseDown={keepSelection} onClick={wrapCode}>
+        <button type="button" title={t("note.code")} aria-label={t("note.code")} onMouseDown={keepSelection} onClick={() => (mode === "md" ? wrapMd("`") : wrapCode())}>
           <Code className="size-3.5" />
         </button>
         <button
@@ -207,8 +313,6 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
         >
           <Link className="size-3.5" />
         </button>
-        </>
-          ) : null}
         <span className="note-toolbar-spacer" />
         <button
           type="button"
@@ -221,7 +325,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
           <Code2 className="size-3.5" />
         </button>
       </div>
-      {colorOpen && mode === "visuel" ? (
+      {colorOpen ? (
         <div className="note-swatches" role="listbox" aria-label={t("note.textColor")}>
           {NOTE_COLORS.map((c) => (
             <button
@@ -253,7 +357,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
           </label>
         </div>
       ) : null}
-      {linkOpen && mode === "visuel" ? (
+      {linkOpen ? (
         <div className="note-linkbar">
           <input
             ref={linkRef}
@@ -276,6 +380,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
       ) : null}
       {mode === "md" ? (
         <textarea
+          ref={mdRef}
           className="note-md field-input"
           value={value}
           spellCheck={false}

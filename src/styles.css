@@ -1413,6 +1413,9 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
     width: min(50rem, calc(100vw - 2rem));
     height: min(88dvh, 680px);
   }
+  .settings-frame.is-item.is-narrow {
+    width: min(37.5rem, calc(100vw - 2rem));
+  }
 }
 .security-banner {
   display: flex;

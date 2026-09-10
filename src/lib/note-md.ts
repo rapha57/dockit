@@ -65,9 +65,11 @@ function wrapColorHtml(id: string, hex: string, inner: string) {
 export function mdToHtml(src: string): string {
   if (!src) return "";
   const fences: string[] = [];
-  let s = String(src).replace(/```([\s\S]*?)```/g, (_, code) => {
+  let s = String(src).replace(/```(?:([^\n]*)\n)?([\s\S]*?)```/g, (_, lang, code) => {
     const body = String(code).replace(/^\n/, "").replace(/\n$/, "");
-    fences.push(`<pre><code>${escapeHtml(body)}</code></pre>`);
+    const langClean = String(lang || "").trim();
+    const langAttr = langClean ? ` data-lang="${escapeHtml(langClean)}"` : "";
+    fences.push(`<pre><code${langAttr}>${escapeHtml(body)}</code></pre>`);
     return `${HOLD}F${fences.length - 1}${HOLD}`;
   });
   s = escapeHtml(s);
@@ -76,38 +78,51 @@ export function mdToHtml(src: string): string {
     inlines.push(html);
     return `${HOLD}I${inlines.length - 1}${HOLD}`;
   };
-  s = s.replace(/`([^`\n]+)`/g, (_, c) => hold(`<code>${c}</code>`));
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
-    const h = safeHref(String(href).replace(new RegExp(AMP, "g"), "&"));
-    if (!h) return text;
-    const extra = h.startsWith("mailto:") ? "" : ' rel="noopener noreferrer" target="_blank"';
-    return hold(`<a href="${escapeHtml(h)}"${extra}>${text}</a>`);
-  });
-  s = s.replace(/\*\*([^*]+)\*\*/g, (_, t) => hold(`<strong>${t}</strong>`));
-  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, (_, p, t) => `${p}${hold(`<em>${t}</em>`)}`);
-  s = s.replace(/\{#([0-9a-fA-F]{3,8})\}([\s\S]*?)\{\/#\}/g, (_, hex, inner) =>
-    hold(wrapColorHtml("", `#${hex}`, inner)),
-  );
-  s = s.replace(/\{(ink|dim|red|green|blue|amber)\}([\s\S]*?)\{\/\1\}/g, (_, id, inner) =>
-    hold(wrapColorHtml(id, "", inner)),
-  );
-  s = s.replace(/(^|[\s>(])(https?:\/\/[^\s<]+)/g, (_, p, u) => {
-    const trail = u.match(/[),.;!?]+$/)?.[0] || "";
-    const core = trail ? u.slice(0, -trail.length) : u;
-    const h = safeHref(core.replace(new RegExp(AMP, "g"), "&"));
-    if (!h) return `${p}${u}`;
-    return `${p}${hold(`<a href="${escapeHtml(h)}" rel="noopener noreferrer" target="_blank">${core}</a>`)}${trail}`;
-  });
-  s = s.replace(/(^|[\s>(])([^\s@<&]+@[^\s@<&]+\.[^\s@<&]+)/g, (_, p, e) => {
-    const trail = e.match(/[),.;!?]+$/)?.[0] || "";
-    const core = trail ? e.slice(0, -trail.length) : e;
-    const h = safeHref(core);
-    if (!h) return `${p}${e}`;
-    return `${p}${hold(`<a href="${escapeHtml(h)}">${core}</a>`)}${trail}`;
-  });
+  function inlineMd(src: string): string {
+    let t = src;
+    t = t.replace(/`([^`]+)`/g, (_, c) => hold(`<code>${c}</code>`));
+    t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
+      const h = safeHref(String(href).replace(new RegExp(AMP, "g"), "&"));
+      if (!h) return text;
+      const extra = h.startsWith("mailto:") ? "" : ' rel="noopener noreferrer" target="_blank"';
+      return hold(`<a href="${escapeHtml(h)}"${extra}>${text}</a>`);
+    });
+    t = t.replace(/\{#([0-9a-fA-F]{3,8})\}([\s\S]*?)\{\/#\}/g, (_, hex, inner) =>
+      hold(wrapColorHtml("", `#${hex}`, inlineMd(inner))),
+    );
+    t = t.replace(/\{(ink|dim|red|green|blue|amber)\}([\s\S]*?)\{\/\1\}/g, (_, id, inner) =>
+      hold(wrapColorHtml(id, "", inlineMd(inner))),
+    );
+    let prev = "";
+    while (prev !== t) {
+      prev = t;
+      t = t.replace(/\*\*([^*]+)\*\*/g, (_, x) => hold(`<strong>${x}</strong>`));
+      t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, (_, p, x) => `${p}${hold(`<em>${x}</em>`)}`);
+    }
+    t = t.replace(/(^|[\s>(])(https?:\/\/[^\s<]+)/g, (_, p, u) => {
+      const trail = u.match(/[),.;!?]+$/)?.[0] || "";
+      const core = trail ? u.slice(0, -trail.length) : u;
+      const h = safeHref(core.replace(new RegExp(AMP, "g"), "&"));
+      if (!h) return `${p}${u}`;
+      return `${p}${hold(`<a href="${escapeHtml(h)}" rel="noopener noreferrer" target="_blank">${core}</a>`)}${trail}`;
+    });
+    t = t.replace(/(^|[\s>(])([^\s@<&]+@[^\s@<&]+\.[^\s@<&]+)/g, (_, p, e) => {
+      const trail = e.match(/[),.;!?]+$/)?.[0] || "";
+      const core = trail ? e.slice(0, -trail.length) : e;
+      const h = safeHref(core);
+      if (!h) return `${p}${e}`;
+      return `${p}${hold(`<a href="${escapeHtml(h)}">${core}</a>`)}${trail}`;
+    });
+    return t;
+  }
+  s = inlineMd(s);
   s = s.replace(/\n/g, "<br>");
-  s = s.replace(new RegExp(`${HOLD}I(\\d+)${HOLD}`, "g"), (_, i) => inlines[Number(i)] || "");
-  s = s.replace(new RegExp(`${HOLD}F(\\d+)${HOLD}`, "g"), (_, i) => fences[Number(i)] || "");
+  const total = inlines.length + fences.length;
+  for (let i = 0; i < total; i++) {
+    s = s.replace(new RegExp(`${HOLD}([IF])(\\d+)${HOLD}`, "g"), (_, kind, idx) =>
+      kind === "I" ? inlines[Number(idx)] || "" : fences[Number(idx)] || "",
+    );
+  }
   return s;
 }
 
@@ -128,8 +143,12 @@ function serializeNode(node: Node): string {
   const tag = el.tagName.toLowerCase();
   if (tag === "br") return "\n";
   if (tag === "pre") {
+    const code = Array.from(el.childNodes).find(
+      (n) => n.nodeType === 1 && (n as HTMLElement).tagName === "CODE",
+    ) as HTMLElement | undefined;
+    const lang = code?.getAttribute("data-lang") || "";
     const text = (el.textContent || "").replace(/\n$/, "");
-    return `\n\`\`\`\n${text}\n\`\`\`\n`;
+    return `\`\`\`${lang}\n${text}\n\`\`\``;
   }
   const inner = Array.from(el.childNodes).map(serializeNode).join("");
   if (tag === "strong" || tag === "b") return inner ? `**${inner}**` : "";
@@ -156,5 +175,6 @@ export function htmlToMd(html: string): string {
     .replace(/\u00a0/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\n+/, "")
     .trimEnd();
 }

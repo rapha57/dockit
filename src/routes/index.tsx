@@ -4594,7 +4594,9 @@ function Home() {
             modal.kind === "app" ||
             modal.kind === "history" ||
             modal.kind === "curation" ||
-            modal.kind === "users"
+            modal.kind === "users" ||
+            modal.kind === "tab" ||
+            modal.kind === "category"
           }
           onClose={() => {
             setBusy(false);
@@ -6728,15 +6730,21 @@ function CurationPanel({
                         </span>
                         <span className="inline-flex items-center gap-1 text-muted">
                           <ArrowUpRight className="size-3.5" />
-                          {t("curation.countRedirect", { n: formatNumber(boxCounts.redirect) })}
+                          {tp("curation.countRedirect", boxCounts.redirect, {
+                            n: formatNumber(boxCounts.redirect),
+                          })}
                         </span>
                         <span className="inline-flex items-center gap-1 text-danger">
                           <X className="size-3.5" />
-                          {t("curation.countError", { n: formatNumber(boxCounts.error) })}
+                          {tp("curation.countError", boxCounts.error, {
+                            n: formatNumber(boxCounts.error),
+                          })}
                         </span>
                         <span className="inline-flex items-center gap-1 text-danger">
                           <Clock className="size-3.5" />
-                          {t("curation.countTimeout", { n: formatNumber(boxCounts.timeout) })}
+                          {tp("curation.countTimeout", boxCounts.timeout, {
+                            n: formatNumber(boxCounts.timeout),
+                          })}
                         </span>
                         {boxCounts.pending ? (
                           <span>{t("curation.countPending", { n: formatNumber(boxCounts.pending) })}</span>
@@ -6831,10 +6839,16 @@ function CurationPanel({
                 <span className="am-chevron-spacer" aria-hidden />
                 <div className="am-row-cells">
                   <SortLabel id="a" sort={col.sort} onToggle={col.toggle}>
-                    {t("curation.colCard")}
+                    {t("curation.colCardCount", {
+                      label: t("curation.colCard"),
+                      n: formatNumber(filteredGroups.length),
+                    })}
                   </SortLabel>
                   <SortLabel id="b" sort={col.sort} onToggle={col.toggle}>
-                    {t("curation.colLink")}
+                    {t("curation.colLinkCount", {
+                      label: t("curation.colLink"),
+                      n: formatNumber(filteredGroups.reduce((n, g) => n + g.links.length, 0)),
+                    })}
                   </SortLabel>
                   <SortLabel id="c" sort={col.sort} onToggle={col.toggle}>
                     {t("curation.colResult")}
@@ -10222,7 +10236,7 @@ function ItemForm({
   const [editors, setEditors] = useState(initial?.editors ?? []);
   return (
     <form
-      className="settings-frame is-item"
+      className="settings-frame is-item is-narrow"
       onSubmit={(e) => {
         e.preventDefault();
         onSave(name.trim(), icon.trim() || (isTab ? "Layers" : "Folder"), {
@@ -10790,7 +10804,7 @@ function CardForm({
   ) : null;
   return (
     <form
-      className="settings-frame is-item"
+      className="settings-frame is-item is-narrow"
       onSubmit={(e) => {
         e.preventDefault();
         if (kind === "app" && !title.trim()) {

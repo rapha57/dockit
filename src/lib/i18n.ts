@@ -290,6 +290,8 @@ export function td(detail: unknown): string {
 }
 
 export function tp(key: string, n: unknown, vars?: Vars): string {
-	const k = Number(n) === 1 ? key : `${key}_other`;
+	const num = Number(n);
+	const one = num === 1 || (current === "fr" && num === 0);
+	const k = one ? key : `${key}_other`;
 	return t(k, { n, ...vars });
 }
