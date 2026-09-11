@@ -66,7 +66,7 @@ function tt(doc: Doc | null | undefined, key: string, vars?: Record<string, unkn
 	return withLocale(doc?.settings?.locale, () => t(key, vars));
 }
 
-export type UserRole = "admin" | "editeur" | "lecteur";
+export type UserRole = "owner" | "admin" | "editeur" | "lecteur";
 export type TabPerm = "view" | "edit";
 
 export type PortalUser = {

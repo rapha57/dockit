@@ -3545,7 +3545,7 @@ function Home() {
                 {data.settings.title}
               </h1>{" "}
               <p className="hidden truncate text-xs text-muted sm:block">
-                {data.settings.subtitle || "Pin your URLs"}
+                {data.settings.subtitle || t("settings.defaultTagline")}
               </p>
             </div>
           </div>{" "}
@@ -4639,7 +4639,7 @@ function Home() {
               busy={busy}
               oidcEnabled={Boolean(data.settings.oidcEnabled)}
               oidcAutoRedirect={Boolean(data.settings.oidcAutoRedirect)}
-              oidcLabel={data.settings.oidcLabel || "SSO"}
+              oidcLabel={data.settings.oidcLabel || t("oidc.defaultLabel")}
               ldapEnabled={Boolean(data.settings.ldapEnabled)}
               ldapDomain={data.settings.ldapDomain || ""}
               ldapRealms={data.settings.ldapRealms || []}
@@ -7412,7 +7412,7 @@ function OidcForm({
   const [oidcIssuer, setOidcIssuer] = useState(initial.oidcIssuer || "");
   const [oidcClientId, setOidcClientId] = useState(initial.oidcClientId || "");
   const [oidcClientSecret, setOidcClientSecret] = useState("");
-  const [oidcLabel, setOidcLabel] = useState(initial.oidcLabel || "SSO");
+  const [oidcLabel, setOidcLabel] = useState(initial.oidcLabel || t("oidc.defaultLabel"));
   const [oidcAutoCreate, setOidcAutoCreate] = useState(Boolean(initial.oidcAutoCreate));
   const [oidcAutoRedirect, setOidcAutoRedirect] = useState(Boolean(initial.oidcAutoRedirect));
   const redirectUri =
@@ -7428,7 +7428,7 @@ function OidcForm({
           oidcIssuer: oidcIssuer.trim(),
           oidcClientId: oidcClientId.trim(),
           oidcClientSecret,
-          oidcLabel: oidcLabel.trim() || "SSO",
+          oidcLabel: oidcLabel.trim() || t("oidc.defaultLabel"),
           oidcAutoCreate,
           oidcAutoRedirect,
         });
@@ -7474,7 +7474,7 @@ function OidcForm({
           <Input
             value={oidcLabel}
             onChange={(e) => setOidcLabel(e.target.value)}
-            placeholder="SSO"
+            placeholder={t("oidc.defaultLabel")}
           />
         </Field>
       </div>{" "}
@@ -8069,9 +8069,8 @@ function BackupForm({
         <p className="settings-hint">{t("backup.importHint")}</p>
         <div className="settings-actions is-start">
           {" "}
-          <Button
+          <button
             type="button"
-            variant="outline"
             className="am-create"
             disabled={working}
             onClick={() => void doExport()}
@@ -8079,7 +8078,7 @@ function BackupForm({
             {" "}
             <Download className="size-3.5" />
             {t("actions.exportJson")}
-          </Button>{" "}
+          </button>{" "}
           <label className={`settings-file ${working ? "is-disabled" : ""}`}>
             {" "}
             <Upload className="size-3.5" />
@@ -8104,9 +8103,8 @@ function BackupForm({
         <p className="settings-hint">{t("backup.inventoryHint")}</p>
         <div className="settings-actions is-start">
           {" "}
-          <Button
+          <button
             type="button"
-            variant="outline"
             className="am-create"
             disabled={working}
             onClick={downloadCsv}
@@ -8114,10 +8112,9 @@ function BackupForm({
             {" "}
             <Download className="size-3.5" />
             {t("actions.exportCsv")}
-          </Button>{" "}
-          <Button
+          </button>{" "}
+          <button
             type="button"
-            variant="outline"
             className="am-create"
             disabled={working}
             onClick={downloadPdf}
@@ -8125,7 +8122,7 @@ function BackupForm({
             {" "}
             <FileText className="size-3.5" />
             {t("actions.exportPdf")}
-          </Button>
+          </button>
         </div>
       </div>
     </div>
@@ -9025,7 +9022,7 @@ function LockForm({
         onUnlock(name, password, bypass ? "local" : showDomain ? domain : "local");
       }}
     >
-      <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="settings-head">
         <div className="settings-head-copy">
           <h3 className="dialog-title">{t("account.login")}</h3>
           <p className="settings-lead">{t("lock.lead")}</p>
@@ -9098,7 +9095,7 @@ function LockForm({
             onClick={() => void onOidc?.()}
           >
             <Globe className="size-4" />
-            {oidcLabel || "SSO"}
+            {oidcLabel || t("oidc.defaultLabel")}
           </Button>
           {ssoTried ? <p className="settings-hint">{t("lock.ssoRedirect")}</p> : null}
         </>
@@ -9274,7 +9271,7 @@ function IdentitySourcesPanel({
         oidcIssuer: settings.oidcIssuer || "",
         oidcClientId: settings.oidcClientId || "",
         oidcClientSecret: "",
-        oidcLabel: settings.oidcLabel || "SSO",
+        oidcLabel: settings.oidcLabel || t("oidc.defaultLabel"),
         oidcAutoCreate: Boolean(settings.oidcAutoCreate),
       });
       setOidcDraft(false);
