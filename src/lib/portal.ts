@@ -306,7 +306,7 @@ let defaultAdminCache = {
 	value: false
 };
 async function isDefaultAdminPassword(doc: Doc) {
-	const admin = ensureUsers(doc).find((u) => u.role === "admin");
+	const admin = ensureUsers(doc).find((u) => u.id === "admin" || isOwnerUser(u));
 	if (!admin?.passHash) return true;
 	if (defaultAdminCache.hash === admin.passHash) return defaultAdminCache.value;
 	const env = envPassword();
@@ -795,7 +795,7 @@ function hydrateUser(user: StoredUser | null | undefined, doc: Doc): HydratedUse
 	const roleIds = roleIdsOf(user);
 	return {
 		...user,
-		role: owner ? "admin" : roleIds[0] || "lecteur",
+		role: owner ? "owner" : roleIds[0] || "lecteur",
 		roleId: roleIds[0] || user.role,
 		roleIds,
 		canCreateTabs,
@@ -812,9 +812,13 @@ function hydrateUser(user: StoredUser | null | undefined, doc: Doc): HydratedUse
 		_canEdit: anyEdit
 	};
 }
+function canSetNodeAcl(user: HydratedUser | null | undefined): boolean {
+	if (!user) return false;
+	return isOwnerUser(user) || Boolean(user.canManageUsers || user.canManageRoles);
+}
 function historyVisible(doc: Doc, user: HydratedUser | null | undefined, ev: HistoryEvent) {
 	if (!user) return false;
-	if (user.role === "admin" || user.canAudit) return true;
+	if (isOwnerUser(user) || user.canAudit) return true;
 	if (!user.canRestore) return false;
 	const type = String(ev?.type || "");
 	if (type === "login") return ev.actor === user.username;
@@ -938,7 +942,7 @@ function sessionInfo(user: StoredUser, doc: Doc): SessionInfo {
 	const owner = isOwnerUser(u);
 	return {
 		username: u.username,
-		role: owner ? "admin" : u.role,
+		role: owner ? "owner" : u.role,
 		roleId: u.roleId || (u.roleIds && u.roleIds[0]) || user.role,
 		roleIds: u.roleIds || roleIdsOf(user),
 		isOwner: owner,
@@ -1046,7 +1050,7 @@ function applyOidcGroups(doc: Doc, user: StoredUser | null | undefined, issuer: 
 function syncUserGroups(doc: Doc, userId: string, groupIds: unknown) {
 	ensureGroups(doc);
 	const user = doc.users.find((u) => u.id === userId);
-	if (!user || user.role === "admin") return;
+	if (!user || user.id === "admin" || isOwnerUser(user)) return;
 	const next = asIdList(groupIds).filter((id) => doc.groups.some((g) => g.id === id));
 	user.groupIds = next;
 	for (const g of doc.groups) {
@@ -1494,7 +1498,7 @@ function view(doc: Doc, tabId: string | undefined, user: HydratedUser | null) {
 	const session = user ? sessionInfo(user, doc) : null;
 	const tabs = publicTabs(doc, user);
 	const activeTabId = tabId && tabs.some((t) => t.id === tabId) && tabId || doc.lastTabId && tabs.some((t) => t.id === doc.lastTabId) && doc.lastTabId || tabs[0]?.id || "";
-	if (activeTabId && user?.role === "admin") doc.lastTabId = activeTabId;
+	if (activeTabId && user && isOwnerUser(user)) doc.lastTabId = activeTabId;
 	const stored = doc.tabs.find((t) => t.id === activeTabId);
 	const sortCats = (cats: PortalCategory[]) => [...cats].filter((c) => catCanSee(c, user, doc)).sort((a, b) => a.sortOrder - b.sortOrder).map((c) => ({
 		...c,
@@ -1722,17 +1726,17 @@ export const listHistory = createServerFn({ method: "POST" }).validator(z.object
 })).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
-	if (!user.canAudit && !user.canRestore && user.role !== "admin") throw new Error("errors.insufficient");
+	if (!user.canAudit && !user.canRestore) throw new Error("errors.insufficient");
 	const before = (doc.history || []).length;
 	pruneHistory(doc);
 	if ((doc.history || []).length !== before) await writeDocUnlocked(doc);
 	const visible = (doc.history || []).filter((ev) => historyVisible(doc, user, ev));
 	return withLocale(doc.settings, () => ({
-		audit: user.canAudit || user.role === "admin" ? publicAudit(visible) : [],
-		trash: user.canRestore || user.role === "admin" ? publicTrash(visible) : [],
-		canEmpty: Boolean(user.canPurge || user.role === "admin"),
-		canAudit: Boolean(user.canAudit || user.role === "admin"),
-		canRestore: Boolean(user.canRestore || user.role === "admin")
+		audit: user.canAudit ? publicAudit(visible) : [],
+		trash: user.canRestore ? publicTrash(visible) : [],
+		canEmpty: Boolean(user.canPurge),
+		canAudit: Boolean(user.canAudit),
+		canRestore: Boolean(user.canRestore)
 	}));
 }));
 export const restoreHistory = createServerFn({ method: "POST" }).validator(z.object({
@@ -1742,7 +1746,7 @@ export const restoreHistory = createServerFn({ method: "POST" }).validator(z.obj
 	targetId: z.string().min(1)
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireUser(doc, tok(data, request));
-	if (!user.canRestore && user.role !== "admin") throw new Error("errors.insufficient");
+	if (!user.canRestore) throw new Error("errors.insufficient");
 	const ev = (doc.history || []).find((row) => row.id === data.id);
 	if (!ev || !historyVisible(doc, user, ev)) throw new Error("errors.trashMissing");
 	const tabId = restoreHistoryItem(doc, user, data.id, data.scope, data.targetId);
@@ -1753,7 +1757,7 @@ export const purgeTrash = createServerFn({ method: "POST" }).validator(z.object(
 	token: tokenField
 })).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	const user = requireUser(doc, tok(data, request));
-	if (!user.canPurge && user.role !== "admin") throw new Error("errors.insufficient");
+	if (!user.canPurge) throw new Error("errors.insufficient");
 	emptyTrash(doc);
 	const portal = await emit(doc, user);
 	return withLocale(doc.settings, () => ({
@@ -1778,7 +1782,7 @@ export const rememberTab = createServerFn({ method: "POST" }).validator(z.object
 	} catch {
 		return;
 	}
-	if (!user || user.role !== "admin" || !tabCanSee(tab, user, doc)) return;
+	if (!user || !isOwnerUser(user) || !tabCanSee(tab, user, doc)) return;
 	doc.lastTabId = data.tabId;
 	await writeDocUnlocked(doc);
 }));
@@ -2733,7 +2737,7 @@ export const updateTab = createServerFn({ method: "POST" }).validator(z.object({
 	tab.name = data.name;
 	tab.icon = data.icon;
 	if (typeof data.hideLabel === "boolean") tab.hideLabel = data.hideLabel;
-	if (user.role === "admin") {
+	if (canSetNodeAcl(user)) {
 		if (typeof data.restricted === "boolean") tab.restricted = data.restricted;
 		if (data.viewers) tab.viewers = asIdList(data.viewers);
 		if (data.editors) tab.editors = asIdList(data.editors);
@@ -2790,7 +2794,7 @@ export const createCategory = createServerFn({ method: "POST" }).validator(z.obj
 	const tab = doc.tabs.find((t) => t.id === data.tabId);
 	if (!tab) throw new Error("errors.portalNotFound");
 	const next = Math.max(0, ...tab.categories.map((c) => c.sortOrder)) + 1;
-	const access = user.role === "admin" ? normalizeCatAccess({
+	const access = canSetNodeAcl(user) ? normalizeCatAccess({
 		restricted: data.restricted,
 		viewers: data.viewers,
 		editors: data.editors
@@ -2831,7 +2835,7 @@ export const updateCategory = createServerFn({ method: "POST" }).validator(z.obj
 	requireEdit(doc, tok(data, request), tab.id);
 	cat.name = data.name;
 	cat.icon = data.icon;
-	if (user.role === "admin" && typeof data.restricted === "boolean") Object.assign(cat, normalizeCatAccess({
+	if (canSetNodeAcl(user) && typeof data.restricted === "boolean") Object.assign(cat, normalizeCatAccess({
 		restricted: data.restricted,
 		viewers: data.viewers,
 		editors: data.editors
@@ -3311,7 +3315,7 @@ export const exportPortal = createServerFn({ method: "POST" }).validator(z.objec
 export const exportAudit = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
-	if (!user.canAudit && user.role !== "admin") throw new Error("errors.insufficient");
+	if (!user.canAudit) throw new Error("errors.insufficient");
 	const before = (doc.history || []).length;
 	pruneHistory(doc);
 	if ((doc.history || []).length !== before) await writeDocUnlocked(doc);
@@ -3338,7 +3342,7 @@ export const importPortal = createServerFn({ method: "POST" }).validator(z.objec
 	doc.tabs = parsed.tabs;
 	ensureRoles(doc);
 	ensureUsers(doc);
-	const nextUser = doc.users.find((u) => u.id === actor.id) || doc.users.find((u) => u.role === "admin") || actor;
+	const nextUser = doc.users.find((u) => u.id === actor.id) || doc.users.find((u) => isOwnerUser(u)) || actor;
 	doc.history = asHistory(parsed.history);
 	appendHistory(doc, nextUser, {
 		type: "portal.import",

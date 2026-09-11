@@ -889,6 +889,19 @@ function accountStatusLabel(loggedIn: boolean, role: string | null | undefined, 
   if (role === "admin") return t("account.admin");
   return t("account.member") || prettyLogin(role);
 }
+function sessionCanEditTab(session: SessionInfo | null | undefined, tabId: string | undefined): boolean {
+  if (!session || !tabId) return false;
+  if (session.isOwner) return true;
+  return session.tabPerms?.[tabId] === "edit";
+}
+function sessionCanManageAcl(session: SessionInfo | null | undefined): boolean {
+  if (!session) return false;
+  return Boolean(session.isOwner || session.canManageUsers || session.canManageRoles);
+}
+function sessionCanCreateSpaces(session: SessionInfo | null | undefined): boolean {
+  if (!session) return false;
+  return Boolean(session.isOwner || session.canCreateTabs);
+}
 function AccountMenu({
   loggedIn,
   editMode,
@@ -1281,10 +1294,7 @@ function Home() {
     setDragFold(null);
   }
   function canEditTabId(tabId: string) {
-    const sess = sessionRef.current;
-    if (!sess) return false;
-    if (sess.role === "admin") return true;
-    return sess.tabPerms?.[tabId] === "edit";
+    return sessionCanEditTab(sessionRef.current, tabId);
   }
   function hitMoreSlot(clientX: number, clientY: number) {
     const pad = 12;
@@ -2429,7 +2439,7 @@ function Home() {
       requestEdit();
       return;
     }
-    if (sess.role !== "admin" && sess.tabPerms?.[cur.activeTabId] !== "edit") {
+    if (!sessionCanEditTab(sess, cur.activeTabId)) {
       toast.error(t("toast.noEditTab"));
       return;
     }
@@ -2716,11 +2726,10 @@ function Home() {
     return collapsedSet.has(catId);
   }
   const onFavs = page === "favs" && !searching;
-  const canEditActive =
-    session?.role === "admin" || session?.tabPerms?.[data.activeTabId] === "edit";
-  const canEditTab = (tabId: string) => session?.role === "admin" || session?.tabPerms?.[tabId] === "edit";
+  const canEditActive = sessionCanEditTab(session, data.activeTabId);
+  const canEditTab = (tabId: string) => sessionCanEditTab(session, tabId);
   const canReorderTabs = Boolean(
-    editMode && !searching && (session?.role === "admin" || session?.canCreateTabs),
+    editMode && !searching && sessionCanCreateSpaces(session),
   );
   const canDrag = editMode && !searching && page !== "favs" && canEditActive;
   const canResize = canDrag && data.settings.cardResize !== false;
@@ -3777,7 +3786,7 @@ function Home() {
                 ) : null}
                 {editMode &&
                   tab.id === data.activeTabId &&
-                  (session?.role === "admin" || session?.tabPerms?.[tab.id] === "edit") && (
+                  canEditTab(tab.id) && (
                     <span
                       className="ml-1 flex items-center gap-[0.35rem]"
                       data-tab-action=""
@@ -3785,7 +3794,7 @@ function Home() {
                       onPointerDown={(e) => e.stopPropagation()}
                     >
                       {" "}
-                      {session?.role === "admin" || session?.canCreateTabs ? (
+                      {sessionCanCreateSpaces(session) ? (
                         <span
                           role="button"
                           className="card-tool"
@@ -3930,7 +3939,7 @@ function Home() {
                   )
                 : null}
             </div>
-            {editMode && (session?.role === "admin" || session?.canCreateTabs) && (
+            {editMode && sessionCanCreateSpaces(session) && (
               <button
                 type="button"
                 data-tab-slot="plus"
@@ -4988,7 +4997,7 @@ function Home() {
               initial={(modal.tab as MenuTab | null) ?? null}
               busy={busy}
               picker={picker}
-              canAcl={session?.role === "admin"}
+              canAcl={sessionCanManageAcl(session)}
               people={data.directory || []}
               onCancel={() =>
                 setModal({
@@ -5047,7 +5056,7 @@ function Home() {
               initial={(modal.category as PortalCategory | null) ?? null}
               busy={busy}
               picker={picker}
-              canAcl={session?.role === "admin"}
+              canAcl={sessionCanManageAcl(session)}
               people={data.directory || []}
               onCancel={() =>
                 setModal({
@@ -7193,7 +7202,7 @@ function AdminPanel({
               <div className="settings-card">
                 <p className="settings-kicker">{t("sections.reset.label")}</p>
                 <p className="settings-hint">{t("settings.resetBody")}</p>
-                {session?.role === "admin" ? (
+                {session?.isOwner ? (
                   <Button
                     type="button"
                     variant="danger"
@@ -9710,10 +9719,9 @@ function AccessFrame({
   const canAccess = Boolean(
     session?.canManageUsers ||
     session?.canManageGroups ||
-    session?.canManageRoles ||
-    session?.role === "admin",
+    session?.canManageRoles,
   );
-  const canSettings = Boolean(session?.canManageSettings || session?.role === "admin");
+  const canSettings = Boolean(session?.canManageSettings);
   const pane = canAccess || canSettings ? section : "users";
   const current =
     pane === "auth"

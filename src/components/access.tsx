@@ -813,6 +813,7 @@ function PermBlocks({
           { id: "effective", label: t("access.effective") },
         ]}
       />
+      <p className="am-meta">{t("access.permHint")}</p>
       {pane === "direct" ? (
         <>
           {editing && !hideDirectEdit ? (
@@ -946,7 +947,7 @@ export function AccessUsers({
   const [confirm, setConfirm] = useState<User | null>(null);
   const creating = expand.openId === NEW_ROW;
   const people = dir.users;
-  const canCreate = actor?.role === "admin" || actor?.canManageUsers;
+  const canCreate = Boolean(actor?.canManageUsers);
   const lockedOwner = draft?.id === "admin";
   const current = people.find((u) => u.id === expand.openId);
 
@@ -1461,7 +1462,7 @@ export function AccessGroups({
       }),
     [filtered, col, dir.roles],
   );
-  const canCreate = actor?.role === "admin" || actor?.canManageGroups || actor?.canManageUsers;
+  const canCreate = Boolean(actor?.canManageGroups || actor?.canManageUsers);
   const people = dir.users.filter((u) => u.id !== "admin");
   const current = dir.groups.find((g) => g.id === expand.openId);
   const readyDirs = (directories || []).filter(
