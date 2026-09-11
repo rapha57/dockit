@@ -1001,7 +1001,7 @@ function AccountMenu({
       {" "}
       <Button
         variant="ghost"
-        size="icon-sm"
+        size="icon"
         aria-label={t("aria.account")}
         title={t("aria.account")}
         aria-haspopup="menu"
@@ -3664,7 +3664,6 @@ function Home() {
             {editMode ? (
               <Button
                 variant="default"
-                size="sm"
                 title={t("nav.done")}
                 aria-label={t("nav.done")}
                 onClick={() => requestEdit()}
@@ -4354,7 +4353,7 @@ function Home() {
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon"
                         aria-label={collapsed ? t("cat.expand") : t("cat.collapse")}
                         title={collapsed ? t("cat.expand") : t("cat.collapse")}
                         aria-expanded={!collapsed}
@@ -6147,7 +6146,7 @@ function HistoryPanel({
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={onClose}
             aria-label={t("actions.close")}
             title={t("actions.close")}
@@ -6189,7 +6188,6 @@ function HistoryPanel({
               {pane === "recovery" && canPurge ? (
                 <Button
                   type="button"
-                  size="sm"
                   variant="danger"
                   className="am-create shrink-0 ml-auto"
                   disabled={busy || trash.length === 0}
@@ -6326,7 +6324,7 @@ function StatsPanel({
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           onClick={onClose}
           aria-label={t("actions.close")}
             title={t("actions.close")}
@@ -6701,7 +6699,7 @@ function CurationPanel({
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={onClose}
             aria-label={t("actions.close")}
             title={t("actions.close")}
@@ -6799,12 +6797,12 @@ function CurationPanel({
               </div>
               <div className="am-actions is-center">
                 {job?.running ? (
-                  <Button type="button" size="sm" variant="danger" onClick={() => void stopScan()}>
+                  <Button type="button" variant="danger" onClick={() => void stopScan()}>
                     <X className="size-3.5" />
                     {t("curation.cancel")}
                   </Button>
                 ) : (
-                  <Button type="button" size="sm" disabled={!ready || !total} onClick={() => void runScan()}>
+                  <Button type="button" disabled={!ready || !total} onClick={() => void runScan()}>
                     <ScanSearch className="size-3.5" />
                     {t("curation.run")}
                   </Button>
@@ -7093,7 +7091,7 @@ function AdminPanel({
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={onCancel}
             aria-label={t("actions.close")}
             title={t("actions.close")}
@@ -7179,7 +7177,6 @@ function AdminPanel({
                 <p className="settings-hint">{t("info.resetHint")}</p>
                 <Button
                   type="button"
-                  size="sm"
                   variant="danger"
                   className="am-create self-start"
                   disabled={busy || !onResetClicks}
@@ -7206,7 +7203,6 @@ function AdminPanel({
                   <Button
                     type="button"
                     variant="danger"
-                    size="sm"
                     className="am-create self-start"
                     disabled={busy}
                     onClick={async () => {
@@ -7675,7 +7671,7 @@ function SettingsForm({
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={onCancel}
             aria-label={t("actions.close")}
             title={t("actions.close")}
@@ -8058,7 +8054,6 @@ function BackupForm({
           {" "}
           <Button
             type="button"
-            size="sm"
             variant="outline"
             className="am-create"
             disabled={working}
@@ -8094,7 +8089,6 @@ function BackupForm({
           {" "}
           <Button
             type="button"
-            size="sm"
             variant="outline"
             className="am-create"
             disabled={working}
@@ -8106,7 +8100,6 @@ function BackupForm({
           </Button>{" "}
           <Button
             type="button"
-            size="sm"
             variant="outline"
             className="am-create"
             disabled={working}
@@ -9020,7 +9013,7 @@ function LockForm({
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           onClick={onCancel}
           aria-label={t("actions.close")}
           title={t("actions.close")}
@@ -9402,7 +9395,7 @@ function IdentitySourcesPanel({
               >
                 {t("access.idpRemove")}
               </button>
-              <Button type="submit" form="oidc-form" size="sm" disabled={busy}>
+              <Button type="submit" form="oidc-form"  disabled={busy}>
                 {t("actions.save")}
               </Button>
             </div>
@@ -9462,7 +9455,7 @@ function IdentitySourcesPanel({
               >
                 {t("access.idpRemove")}
               </button>
-              <Button type="submit" size="sm" disabled={busy}>
+              <Button type="submit" disabled={busy}>
                 {t("actions.save")}
               </Button>
             </div>
@@ -9805,7 +9798,7 @@ function AccessFrame({
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={onClose}
             aria-label={t("actions.close")}
             title={t("actions.close")}
@@ -10053,7 +10046,7 @@ function IconPicker({
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               onClick={close}
               aria-label={t("actions.close")}
               title={t("actions.close")}
@@ -10268,7 +10261,7 @@ function ItemForm({
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={onCancel}
             aria-label={t("actions.close")}
             title={t("actions.close")}
@@ -10362,7 +10355,7 @@ function FavsForm({
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           onClick={onCancel}
           aria-label={t("actions.close")}
             title={t("actions.close")}
@@ -10776,16 +10769,18 @@ function CardForm({
   const kindMeta = itemKind(kind);
   const heading = initial ? kindMeta.edit : kindMeta.create;
   const kindSelect = (
-    <select
-      className="kind-select"
-      value={kind}
-      aria-label={t("item.type")}
-      onChange={(e) => void changeKind(e.target.value as ItemKind)}
-    >
-      <option value="app">{itemKind("app").option}</option>
-      <option value="note">{itemKind("note").option}</option>
-      <option value="embed">{itemKind("embed").option}</option>
-    </select>
+    <span className="select-wrap">
+      <select
+        className="kind-select"
+        value={kind}
+        aria-label={t("item.type")}
+        onChange={(e) => void changeKind(e.target.value as ItemKind)}
+      >
+        <option value="app">{itemKind("app").option}</option>
+        <option value="note">{itemKind("note").option}</option>
+        <option value="embed">{itemKind("embed").option}</option>
+      </select>
+    </span>
   );
   const mainLink = kind === "app" ? links[0]?.url || "" : url;
   const canSave =
@@ -10877,7 +10872,7 @@ function CardForm({
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               onClick={onCancel}
               aria-label={t("actions.close")}
               title={t("actions.close")}
@@ -11608,7 +11603,7 @@ function FormActions({
       <Button
         type="submit"
         form={form}
-        size={hideCancel ? "sm" : "default"}
+        size="default"
         disabled={busy || disabled}
       >
         {label}

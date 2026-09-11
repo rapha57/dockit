@@ -112,7 +112,7 @@ export function ThemeToggle() {
   return (
     <Button
       variant="ghost"
-      size="icon-sm"
+      size="icon"
       className="theme-toggle"
       aria-label={label}
       title={label}

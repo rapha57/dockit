@@ -55,17 +55,17 @@ When this file and the code disagree, the code wins — update this file.
 
 | Class / variant | Height | Use |
 | --- | --- | --- |
-| `Button` (all sizes: default, sm, icon, icon-sm) | **36px** (`h-9`) | Primary actions, dialog footers, header icons |
+| `Button` (`default` and `icon`) | **36px** (`h-9` / `size-9`) | Primary actions, dialog footers, header icons |
 | `search-box` (header search) | **36px** (2.25rem) | Header search, hosts tag filter chips |
 | `am-create` | **32px** (2rem) | Toolbar secondary actions (Access/History/Tags, « New », « Export ») |
 | `am-text-btn` | **32px** | Text links under fields (Save key, delete link) |
 | `card-tool` | **1.85rem**, icon `size-3.5` (14px) | Row actions everywhere: cards, categories, tags, history restore |
 
-**Button variants.** `default` (bg-primary/primary-fg), `secondary` (elevated + border), `ghost` (muted → fg on hover), `danger` (danger/15 bg, danger text — destructive confirm OK), `debug`. Sizes: `default`/`sm`/`icon`/`icon-sm` are all `h-9`/`size-9` (sm only shrinks font).
+**Button variants.** `default` (bg-primary/primary-fg), `secondary` (elevated + border), `ghost` (muted → fg on hover), `danger` (danger/15 bg, danger text — destructive confirm OK), `outline`, `debug`. Sizes: `default` (`h-9 px-3`) and `icon` (`size-9`) only.
 **Focus.** `focus-visible:ring-2 ring-ring/60`; active `scale-[0.98]`.
 
-**Do.** Use `variant="secondary"` for Cancel, `danger` for destructive OK. Busy state = `disabled={busy}`.
-**Don't.** Put `Button` (36px) inline with `am-create` (32px) in the same toolbar row; create a 40px+ button; add a new height.
+**Do.** Use `variant="secondary"` for Cancel, `danger` for destructive OK. Close / header icon buttons: `size="icon"`. Busy state = `disabled={busy}`.
+**Don't.** Put `Button` (36px) inline with `am-create` (32px) in the same toolbar row; create a 40px+ button; add a new height or a `sm` / `icon-sm` alias.
 
 ---
 
@@ -73,7 +73,7 @@ When this file and the code disagree, the code wins — update this file.
 
 **Rule.** One shared field class: `inputClass` (`src/components/ui/input.tsx`) — `field-input h-9 rounded-md border border-border bg-transparent px-3 text-sm`, focus ring like buttons. `Input`, `Select`, `Textarea` all build on it.
 
-**Canonical.** `src/components/ui/input.tsx` (`inputClass`), `ui/select.tsx` (adds custom chevron via data-URI, `appearance-none`), `ui/textarea.tsx`. Icon inside a field: `.field-ico-wrap` wrapper. Size constants in forms: `FIELD_SM` (= `h-9`) in `index.tsx`, `.am-field` in Access.
+**Canonical.** `src/components/ui/input.tsx` (`inputClass`), `ui/select.tsx` (wraps native `<select>` in `.select-wrap`; chevron is a CSS mask tinted with `--color-subtle`), `ui/textarea.tsx`. Icon inside a field: `.field-ico-wrap` wrapper. Size constants in forms: `FIELD_SM` (= `h-9`) in `index.tsx`, `.am-field` in Access. Raw card-type selects use `.kind-select` inside `.select-wrap` the same way.
 
 **Field wrapper.** `Field` (`src/components/field.tsx`): optional `Label`, control, `hint` (`.theme-css-meta`), `error` (`.theme-css-meta.is-warn`). Label-less controls use `.settings-label` / first-span styling.
 
@@ -99,10 +99,10 @@ When this file and the code disagree, the code wins — update this file.
 ```
 settings-frame (is-wide, is-access for Access/History) 
 └─ settings-body
-   ├─ settings-head: title (dialog-title) + lead (settings-lead) + close Button (ghost icon-sm)
+   ├─ settings-head: title (dialog-title) + lead (settings-lead) + close Button (ghost icon)
    └─ EdgeFade.settings-pane (scroll area)
       └─ form > settings-stack
-         ├─ settings-card × n (one concern each; separated by top border)
+         ├─ settings-card × n (one concern each; name is historical — divider-separated blocks, no card chrome)
          │   ├─ settings-kicker (section label)
          │   ├─ settings-toggles (checkbox rows, min-height 2rem)
          │   └─ field-row (two Fields side by side ≥ 40rem)
@@ -278,12 +278,8 @@ am-work
 
 ## Known inconsistencies (do not "fix" silently)
 
-1. **Dead `ui/` primitives**: `alert.tsx`, `badge.tsx`, `switch.tsx`, `checkbox.tsx`, `separator.tsx` have zero consumers; `ui/dialog.tsx` is an unused re-export shim of `ConfirmDialog`. → *Decision needed: delete or adopt.*
-2. **`Button` variants `sm`/`icon-sm`** are identical to `default`/`icon` (all `h-9`/`size-9`). Redundant, kept for API stability.
-3. **`danger` vs `destructive`** Button variants are identical classes — duplication, not a distinction.
-4. **`Button` + `className="am-create"`** — resolved: plain `<button className="am-create">` is canonical for toolbar/secondary actions (32px); `Button` (36px) is for primary/dialog actions only. `Empty trash`-style destructive actions may use `Button variant="danger" + am-create` (32px soft-danger).
-5. **Select chevron** color is baked into the data-URI (`%236b7280`), not token-driven — does not follow theme ink.
-6. **`settings-card`** is transparent/borderless (divider-separated) despite the name — the "card" look comes from the pane, don't add borders.
+1. **`Button` + `className="am-create"`** — plain `<button className="am-create">` is canonical for toolbar/secondary actions (32px); `Button` (36px) is for primary/dialog actions only. `Empty trash`-style destructive actions may use `Button variant="danger" + am-create` (32px soft-danger).
+2. **`settings-card`** is transparent/borderless (divider-separated) despite the name — the "card" look comes from the pane, don't add borders.
 
 ---
 

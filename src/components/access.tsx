@@ -893,7 +893,7 @@ function RowActions({
   if (editing) {
     return (
       <div className="am-actions">
-        <Button type="button" size="sm" disabled={saveDisabled} onClick={onSave}>
+        <Button type="button" disabled={saveDisabled} onClick={onSave}>
           {t("actions.save")}
         </Button>
         <button type="button" className="am-text-btn" onClick={onCancel}>
@@ -905,7 +905,7 @@ function RowActions({
   return (
     <div className="am-actions">
       {onEdit ? (
-        <Button type="button" size="sm" onClick={onEdit}>
+        <Button type="button" onClick={onEdit}>
           {t("actions.edit")}
         </Button>
       ) : null}
@@ -1186,7 +1186,7 @@ export function AccessUsers({
           text={t("access.empty")}
           action={
             canCreate ? (
-              <Button type="button" size="sm" onClick={openCreate}>
+              <Button type="button" onClick={openCreate}>
                 {t("access.create")}
               </Button>
             ) : null
@@ -1662,7 +1662,7 @@ export function AccessGroups({
           text={t("access.noGroups")}
           action={
             canCreate ? (
-              <Button type="button" size="sm" onClick={openCreate}>
+              <Button type="button" onClick={openCreate}>
                 {t("access.createGroup")}
               </Button>
             ) : null
@@ -2048,7 +2048,7 @@ export function AccessRoles({
           icon={Shield}
           text={t("access.noCustomRoles")}
           action={
-            <Button type="button" size="sm" onClick={() => openCreate()}>
+            <Button type="button" onClick={() => openCreate()}>
               {t("access.createRole")}
             </Button>
           }

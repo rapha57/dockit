@@ -50,7 +50,7 @@
     --drop-fill-hot: #d4e9f8;
     --drop-line: #b7d4ee;
     --drop-ink: #3e6f96;
-    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238c8c90' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    --select-chevron-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 
   html.light {
@@ -80,7 +80,6 @@
     --drop-fill-hot: color-mix(in oklab, #7db4e8 30%, var(--color-surface));
     --drop-line: color-mix(in oklab, #7db4e8 42%, var(--color-border));
     --drop-ink: #b7d6f2;
-    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2378818d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 
   button:not(:disabled),
@@ -625,14 +624,41 @@ select.field-input {
   padding-bottom: 0;
   line-height: 1.25;
   appearance: none;
-  background-image: var(--select-chevron);
-  background-repeat: no-repeat;
-  background-position: right 0.65rem center;
-  background-size: 1rem;
+  background-image: none;
   padding-right: 2.25rem;
 }
-html.dark select.field-input {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+.select-wrap {
+  position: relative;
+  display: block;
+  min-width: 0;
+  width: 100%;
+}
+.select-wrap:has(.kind-select) {
+  width: 11rem;
+}
+.settings-field .select-wrap:has(.kind-select) {
+  width: 100%;
+}
+.access-perm-row .select-wrap:has(.kind-select) {
+  width: auto;
+  min-width: 7.5rem;
+}
+.select-wrap::after {
+  content: "";
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  z-index: 1;
+  width: 1rem;
+  height: 1rem;
+  pointer-events: none;
+  translate: 0 -50%;
+  background-color: var(--color-subtle);
+  -webkit-mask: var(--select-chevron-mask) center / 1rem no-repeat;
+  mask: var(--select-chevron-mask) center / 1rem no-repeat;
+}
+.select-wrap:has(select:disabled)::after {
+  opacity: 0.5;
 }
 .field-input:focus,
 .field-input:focus-visible {
@@ -1566,15 +1592,12 @@ html.dark .debug-row.is-warn .debug-level {
 }
 .kind-select {
   height: 2.25rem;
-  width: 11rem;
+  width: 100%;
   padding: 0 1.75rem 0 0.7rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background-color: transparent;
-  background-image: var(--select-chevron);
-  background-repeat: no-repeat;
-  background-position: right 0.65rem center;
-  background-size: 1rem;
+  background-image: none;
   appearance: none;
   color: var(--color-fg);
   font-size: 0.8125rem;

@@ -313,7 +313,6 @@ export function EntityPicker<T extends PickerRow = PickerRow>({
               </button>
               <Button
                 type="button"
-                size="sm"
                 disabled={(remote && !canSearch) || remoteBusy || !picked.length}
                 onClick={addPicked}
               >
