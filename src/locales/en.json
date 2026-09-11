@@ -123,11 +123,15 @@
     "deleteRole": "Delete role “{name}”? People on it become Viewers.",
     "deleteTag": "Delete tag “{name}”?",
     "resetClicks": "Reset click counters?",
+    "resetProbes": "Reset probes?",
     "resetPortal": "Reset the portal to its original state?",
     "changeKind": "Changing type resets the fields — All changes will be lost.",
     "emptyTrash": "Empty the trash? Items can no longer be restored. The audit log is kept.",
     "importPortal": "Replace the whole portal with this file? Spaces, cards, themes, tags, statistics, accounts and the journal will be overwritten.",
     "deleteSpaceBody": "“{name}” and all of its content will be removed."
+  },
+  "sort": {
+    "counted": "{label} ({n})"
   },
   "actions": {
     "save": "Save",
@@ -146,6 +150,7 @@
     "importJson": "Import JSON",
     "addLink": "Add a link",
     "addCard": "Add a card",
+    "addSpace": "Add a space",
     "addCategory": "Add a category",
     "saved": "Saved",
     "continue": "Continue"
@@ -168,13 +173,26 @@
     "title": "Statistics",
     "lead": "Top 10 most opened cards",
     "leadVisible": "Top 10 among the cards you can see",
-    "clicksTip": "Openings recorded across the whole portal.",
-    "clicksTipVisible": "Top 10 among the cards you can see.",
     "topApps": "Top cards",
     "showAll": "Show all cards",
     "showDown": "Show only probes that are down",
     "openings": "{n} opening",
     "openings_other": "{n} openings"
+  },
+  "legend": {
+    "title": "Legend",
+    "lead": "Meaning of the icons on cards.",
+    "hub": "Link hub",
+    "hubHint": "Presents every link on the card.",
+    "annex": "Extra links",
+    "annexHint": "Presents the card’s other links.",
+    "probe": "Probe",
+    "probeHint": "Link status: reachable, down, or pending.",
+    "fav": "Favorite",
+    "favHint": "Pins the card to Favorites.",
+    "tags": "Tags",
+    "tagSample": "prod",
+    "tagsHint": "Filters the portal by this tag."
   },
   "history": {
     "title": "History",
@@ -227,10 +245,10 @@
     "linkCount_other": "{n} links",
     "logEmpty": "Run an analysis to fill this log.",
     "colCard": "Card",
-    "colCardCount": "{label} ({n})",
     "colLink": "Links",
-    "colLinkCount": "{label} ({n})",
     "colResult": "Result",
+    "probeHttp": "HTTP probe",
+    "probeIcmp": "ICMP probe",
     "statusValid": "OK",
     "statusRedirect": "Redirect",
     "statusError": "Host unreachable",
@@ -273,59 +291,59 @@
   "sections": {
     "general": {
       "label": "General",
-      "lead": "Name, logo, favicon and browser tab title."
+      "lead": "Portal identity."
     },
     "locales": {
       "label": "Language",
-      "lead": "Interface language, date, time and time zone for this instance."
+      "lead": "Language and formats for this instance."
     },
     "themes": {
       "label": "Themes",
-      "lead": "Background, card and header colors, plus optional CSS."
+      "lead": "Colors and CSS."
     },
     "presentation": {
       "label": "Presentation",
-      "lead": "Look of cards, menus and the information bar."
+      "lead": "Look of the portal."
     },
     "reachability": {
       "label": "Reachability",
-      "lead": "HTTP / ICMP probes and availability alert."
+      "lead": "Link availability."
     },
     "tags": {
       "label": "Tags",
-      "lead": "Colors, names, and keeping tags with no card."
+      "lead": "Tag management."
     },
     "users": {
       "label": "Access",
-      "lead": "Accounts, roles and space permissions."
+      "lead": "Accounts and permissions."
     },
     "oidc": {
       "label": "Sign-in",
-      "lead": "OpenID Connect (Keycloak, Authentik…). Local login remains available."
+      "lead": "Sign-in sources."
     },
     "security": {
       "label": "Security",
-      "lead": "Optional limits: stricter probes, HttpOnly cookie, passwordless admin in dev."
+      "lead": "Hardening options."
     },
     "debug": {
       "label": "Debug",
-      "lead": "Watch points detected on this instance."
+      "lead": "Issues on this instance."
     },
     "info": {
       "label": "Information",
-      "lead": "Information bar at the bottom of the portal, with cumulative clicks and statistics."
+      "lead": "Information bar."
     },
     "backup": {
       "label": "Import / Export",
-      "lead": "JSON backup of the portal, and CSV / PDF inventory of links."
+      "lead": "Backup and inventory."
     },
     "about": {
       "label": "About",
-      "lead": "Give access, from one place, to every listed tool."
+      "lead": "Version and project."
     },
     "reset": {
       "label": "Reset",
-      "lead": "Restore the portal to its original state."
+      "lead": "Reset the portal."
     }
   },
   "item": {
@@ -400,7 +418,7 @@
     "urlExistsN": "This link already exists on {n} cards ({list})",
     "removedBody": "“{name}” will be removed from the portal.",
     "links": "Links",
-    "linkMenu": "Hub mode",
+    "linkMenu": "Link hub",
     "linkMenuHint": "Clicking the card opens a menu showing all its links. This lets you group multiple links on a single card.",
     "display": "Display",
     "embedStyle": "Appearance",
@@ -479,6 +497,7 @@
     "categoryDuplicated": "Category duplicated",
     "prefsReset": "This device’s preferences were reset",
     "clicksReset": "Click counters reset",
+    "probeReset": "Probes reset",
     "tagsUpdated": "Tags updated",
     "themesSaved": "Themes saved",
     "portalReset": "Portal reset",
@@ -626,6 +645,7 @@
       "settings": "Settings",
       "themes": "Themes",
       "reset": "Reset",
+      "probeOff": "Probes",
       "import": "Import",
       "auth": "Sign-in list"
     },
@@ -663,12 +683,16 @@
     "statsIcon": "Usage statistics icon",
     "statsHint": "The icon opens the top 10 most clicked cards. The day is always shown in the bar. The week appears after more than one day of history, the month after a week, the year after a month.",
     "statsHintHidden": "The information bar is hidden in Presentation.",
-    "geek": "Geek tooltip",
-    "geekHint": "Shows a short note when you hover the click icon in the information bar.",
+    "legendIcon": "Legend icon",
+    "legendHint": "The icon opens the legend for card icons (link hub, extra links, probe, favorite, tags).",
     "resetKicker": "Counters",
     "resetHint": "Clears every card click counter. The information bar and the top 10 start again from zero.",
     "resetAction": "Reset counters",
-    "resetConfirm": "Reset all click counters?"
+    "resetConfirm": "Reset all click counters?",
+    "probeResetKicker": "Probes",
+    "probeResetHint": "Sets every card with a probe (HTTP or ICMP) to None.",
+    "probeResetAction": "Reset probes",
+    "probeResetConfirm": "Reset every probe (HTTP and ICMP)?"
   },
   "banner": {
     "dev": "Development mode (npm run dev) — Do not expose as-is",

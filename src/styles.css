@@ -768,7 +768,6 @@ select.field-input {
   }
 }
 .info-metrics {
-  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -783,43 +782,6 @@ select.field-input {
   margin-right: 0.4rem;
   color: var(--color-subtle);
   flex-shrink: 0;
-}
-.info-tip {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 0.45rem);
-  z-index: 40;
-  display: none;
-  align-items: flex-start;
-  gap: 0.4rem;
-  box-sizing: border-box;
-  width: max-content;
-  max-width: min(22rem, calc(100vw - 2rem));
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  background: var(--color-surface);
-  color: var(--color-muted);
-  font-size: 0.75rem;
-  line-height: 1.45;
-  white-space: normal;
-  box-shadow: 0 8px 20px -14px color-mix(in oklab, #050505 28%, transparent);
-  pointer-events: none;
-}
-.info-tip-text {
-  min-width: 0;
-  flex: 1;
-}
-.info-tip-smile {
-  width: 0.9rem;
-  height: 0.9rem;
-  margin-top: 0.1rem;
-  flex-shrink: 0;
-  color: var(--color-muted);
-}
-.info-metrics:hover .info-tip,
-.info-metrics:focus-visible .info-tip {
-  display: flex;
 }
 .info-metric {
   display: inline-flex;
@@ -3445,6 +3407,10 @@ html.dark .dockit-mark {
   align-items: center;
   gap: 0.45rem;
 }
+.is-curation-card .status-mark {
+  flex-shrink: 0;
+  cursor: default;
+}
 .is-curation-card .curation-card-name {
   min-width: 0;
   overflow: hidden;
@@ -3530,6 +3496,31 @@ html.dark .dockit-mark {
   height: 100%;
   border-radius: inherit;
   background: var(--color-fg);
+}
+.legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.legend-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.85rem;
+}
+.legend-sample {
+  display: inline-flex;
+  min-width: 1.85rem;
+  height: 1.85rem;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.legend-sample .card-tool,
+.legend-sample .fav-star,
+.legend-sample .status-mark,
+.legend-sample .tag-chip {
+  cursor: default;
 }
 
 @media (prefers-reduced-motion: reduce) {

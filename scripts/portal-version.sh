@@ -3,7 +3,7 @@
 set -e
 export TZ=Europe/Paris
 
-FILE="${1:-src/routes/index.tsx}"
+FILE="${1:-src/lib/portal-version.ts}"
 if [ ! -f "$FILE" ]; then
 	echo "portal-version: fichier introuvable: $FILE" >&2
 	exit 1
@@ -19,12 +19,12 @@ fi
 iter=$((count + 1))
 version="${stamp}.${iter}"
 
-if grep -q "var PORTAL_VERSION = \"$version\"" "$FILE"; then
+if grep -Eq "(export )?const PORTAL_VERSION = \"$version\"" "$FILE"; then
 	echo "$version"
 	exit 0
 fi
 
 tmp="${FILE}.version.$$"
-sed -E "s/var PORTAL_VERSION = \"[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+\";/var PORTAL_VERSION = \"$version\";/" "$FILE" >"$tmp"
+sed -E "s/(export )?const PORTAL_VERSION = \"[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+\";/\1const PORTAL_VERSION = \"$version\";/" "$FILE" >"$tmp"
 mv "$tmp" "$FILE"
 echo "$version"

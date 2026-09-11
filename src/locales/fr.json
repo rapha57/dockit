@@ -123,11 +123,15 @@
     "deleteRole": "Supprimer le rôle « {name} » ? Les personnes assignées redeviennent lecteurs.",
     "deleteTag": "Supprimer l’étiquette « {name} » ?",
     "resetClicks": "Remettre les compteurs de clics à zéro ?",
+    "resetProbes": "Réinitialiser les sondes ?",
     "resetPortal": "Remettre le portail dans son état d’origine ?",
     "changeKind": "Changer de type réinitialise les champs — Tous les changements seront perdus.",
     "emptyTrash": "Vider la corbeille ? Les éléments ne pourront plus être restaurés. L’audit est conservé.",
     "importPortal": "Remplacer tout le portail par ce fichier ? Espaces, cartes, thèmes, étiquettes, statistiques, comptes et journal seront écrasés.",
     "deleteSpaceBody": "« {name} » et tout son contenu seront retirés."
+  },
+  "sort": {
+    "counted": "{label} ({n})"
   },
   "actions": {
     "save": "Enregistrer",
@@ -146,6 +150,7 @@
     "importJson": "Importer JSON",
     "addLink": "Ajouter un lien",
     "addCard": "Ajouter une carte",
+    "addSpace": "Ajouter un espace",
     "addCategory": "Ajouter une catégorie",
     "saved": "Enregistré",
     "continue": "Continuer"
@@ -168,13 +173,26 @@
     "title": "Statistiques",
     "lead": "Top 10 des cartes les plus ouvertes",
     "leadVisible": "Top 10 parmi les cartes visibles",
-    "clicksTip": "Ouvertures enregistrées sur tout le portail.",
-    "clicksTipVisible": "Top 10 parmi les cartes visibles.",
     "topApps": "Top des cartes",
     "showAll": "Afficher toutes les cartes",
     "showDown": "Afficher uniquement les sondes hors service",
     "openings": "{n} ouverture",
     "openings_other": "{n} ouvertures"
+  },
+  "legend": {
+    "title": "Légende",
+    "lead": "Signification des icônes sur les cartes.",
+    "hub": "Hub de liens",
+    "hubHint": "Propose tous les liens de la carte.",
+    "annex": "Liens annexes",
+    "annexHint": "Propose les autres liens de la carte.",
+    "probe": "Sonde",
+    "probeHint": "État du lien : joignable, hors service ou en cours.",
+    "fav": "Favori",
+    "favHint": "Épingle la carte dans Favoris.",
+    "tags": "Tags",
+    "tagSample": "prod",
+    "tagsHint": "Filtre le portail sur ce tag."
   },
   "history": {
     "title": "Historique",
@@ -227,10 +245,10 @@
     "linkCount_other": "{n} liens",
     "logEmpty": "Lancer une analyse pour remplir ce journal.",
     "colCard": "Carte",
-    "colCardCount": "{label} ({n})",
     "colLink": "Liens",
-    "colLinkCount": "{label} ({n})",
     "colResult": "Résultat",
+    "probeHttp": "Sonde HTTP",
+    "probeIcmp": "Sonde ICMP",
     "statusValid": "OK",
     "statusRedirect": "Redirection",
     "statusError": "Hôte injoignable",
@@ -273,59 +291,59 @@
   "sections": {
     "general": {
       "label": "Général",
-      "lead": "Nom, logo, favicon et titre de l’onglet du navigateur."
+      "lead": "Identité du portail."
     },
     "locales": {
       "label": "Langue",
-      "lead": "Langue de l’interface, date, heure et fuseau de l’instance."
+      "lead": "Langue et formats de l’instance."
     },
     "themes": {
       "label": "Thèmes",
-      "lead": "Couleurs du fond, des cartes et du bandeau, plus un CSS optionnel."
+      "lead": "Couleurs et CSS."
     },
     "presentation": {
       "label": "Présentation",
-      "lead": "Apparence des cartes, des menus et de la barre d’information."
+      "lead": "Apparence du portail."
     },
     "reachability": {
       "label": "Joignabilité",
-      "lead": "Sondes HTTP / ICMP et alerte de disponibilité."
+      "lead": "Disponibilité des liens."
     },
     "tags": {
       "label": "Étiquettes",
-      "lead": "Couleurs, noms, et conservation des étiquettes sans carte."
+      "lead": "Gestion des étiquettes."
     },
     "users": {
       "label": "Accès",
-      "lead": "Comptes, rôles et droits sur les espaces."
+      "lead": "Comptes et droits."
     },
     "oidc": {
       "label": "Connexion",
-      "lead": "OpenID Connect (Keycloak, Authentik…). L’identifiant local reste utilisable."
+      "lead": "Sources d’identification."
     },
     "security": {
       "label": "Sécurité",
-      "lead": "Limitations optionnelles : sondes plus strictes, cookie HttpOnly, accès admin sans mot de passe en dev."
+      "lead": "Options de durcissement."
     },
     "debug": {
       "label": "Debug",
-      "lead": "Points de vigilance détectés sur cette instance."
+      "lead": "Anomalies de l’instance."
     },
     "info": {
       "label": "Information",
-      "lead": "Barre d’information en bas du portail, avec les clics cumulés et l’accès aux statistiques."
+      "lead": "Barre d’information."
     },
     "backup": {
       "label": "Import / Export",
-      "lead": "Sauvegarde JSON du portail, et inventaire CSV / PDF des liens."
+      "lead": "Sauvegarde et inventaire."
     },
     "about": {
       "label": "À propos",
-      "lead": "Donner accès, depuis un seul endroit, à tous les outils listés."
+      "lead": "Version et projet."
     },
     "reset": {
       "label": "Réinitialisation",
-      "lead": "Remettre le portail dans son état d’origine."
+      "lead": "Remettre le portail à zéro."
     }
   },
   "item": {
@@ -400,7 +418,7 @@
     "urlExistsN": "Ce lien existe déjà sur {n} cartes ({list})",
     "removedBody": "« {name} » sera retiré du portail.",
     "links": "Liens",
-    "linkMenu": "Mode hub",
+    "linkMenu": "Hub de liens",
     "linkMenuHint": "Le clic sur la carte ouvre un menu présentant tous ses liens. Permet de regrouper plusieurs liens sur une seule carte.",
     "display": "Affichage",
     "embedStyle": "Habillage",
@@ -479,6 +497,7 @@
     "categoryDuplicated": "Catégorie dupliquée",
     "prefsReset": "Préférences de cet appareil réinitialisées",
     "clicksReset": "Compteurs de clics remis à zéro",
+    "probeReset": "Sondes réinitialisées",
     "tagsUpdated": "Étiquettes mises à jour",
     "themesSaved": "Thèmes enregistrés",
     "portalReset": "Portail réinitialisé",
@@ -626,6 +645,7 @@
       "settings": "Réglages",
       "themes": "Thèmes",
       "reset": "Réinitialisation",
+      "probeOff": "Sondes",
       "import": "Import",
       "auth": "Liste de connexion"
     },
@@ -663,12 +683,16 @@
     "statsIcon": "Icône d’ouverture des statistiques d’usage",
     "statsHint": "L’icône ouvre le top 10 des cartes les plus cliquées. Le jour est toujours affiché dans la barre. La semaine apparaît dès qu’il y a plus d’un jour d’historique, le mois après une semaine, l’année après un mois.",
     "statsHintHidden": "La barre d’information est masquée dans Présentation.",
-    "geek": "Bulle geek",
-    "geekHint": "Affiche une courte note au survol de l’icône de clics, dans la barre d’information.",
+    "legendIcon": "Icône de légende",
+    "legendHint": "L’icône ouvre la légende des icônes des cartes (hub de liens, liens annexes, sonde, favori, tags).",
     "resetKicker": "Compteurs",
     "resetHint": "Vide tous les compteurs de clics des cartes. La barre d’information et le top 10 repartent de zéro.",
     "resetAction": "Réinitialiser les compteurs",
-    "resetConfirm": "Remettre tous les compteurs de clics à zéro ?"
+    "resetConfirm": "Remettre tous les compteurs de clics à zéro ?",
+    "probeResetKicker": "Sondes",
+    "probeResetHint": "Passe à Aucune toutes les cartes qui ont une sonde (HTTP ou ICMP).",
+    "probeResetAction": "Réinitialiser les sondes",
+    "probeResetConfirm": "Réinitialiser toutes les sondes (HTTP et ICMP) ?"
   },
   "banner": {
     "dev": "Mode développement (npm run dev) — Ne pas exposer tel quel",

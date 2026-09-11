@@ -19,7 +19,7 @@ import {
 	publicTrash,
 	emptyTrash
 } from "./history";
-import { t, withLocale, asLocale, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "./i18n";
+import { t, withLocale, asLocale, asNumberFormat, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "./i18n";
 import {
 	curationJobRunning,
 	curationJobSnapshot,
@@ -93,7 +93,9 @@ export type SessionInfo = {
   canRestore: boolean;
   canCuration: boolean;
   canPurge: boolean;
+  canMove: boolean;
   tabPerms: Record<string, TabPerm>;
+  tabMoves: Record<string, boolean>;
   exp?: number;
   mustChangePassword?: boolean;
 };
@@ -194,7 +196,7 @@ export type PortalSettings = {
   cardDragCollapse: boolean;
   ctxHideUrl: boolean;
   infoStats: boolean;
-  infoGeek: boolean;
+  infoLegend: boolean;
   probeTlsVerify: boolean;
   probeAuthOnly: boolean;
   sessionHttpOnly: boolean;
@@ -505,7 +507,7 @@ function defaultSettings(): PortalSettings {
 		cardDragCollapse: true,
 		ctxHideUrl: false,
 		infoStats: true,
-		infoGeek: true,
+		infoLegend: false,
 		probeTlsVerify: false,
 		probeAuthOnly: false,
 		sessionHttpOnly: false,
@@ -535,7 +537,8 @@ function defaultSettings(): PortalSettings {
 		locale: "en",
 		dateFormat: "ymd",
 		timeFormat: "24h",
-		timezone: ""
+		timezone: "",
+		numberFormat: "auto"
 	};
 }
 function blankTabs(locale?: unknown): { lastTabId: string; tabs: DocTab[] } {
@@ -753,6 +756,10 @@ function tabCanEdit(tab: Tab | DocTab | null | undefined, user: User | null | un
 	if (!tab || !user) return false;
 	return can(user, "edit", { res: "tab", id: tab.id }, doc);
 }
+function tabCanMove(tab: Tab | DocTab | null | undefined, user: User | null | undefined, doc: AclDoc) {
+	if (!tab || !user) return false;
+	return can(user, "move", { res: "tab", id: tab.id }, doc);
+}
 function catCanSee(cat: PortalCategory | null | undefined, user: User | null | undefined, doc: AclDoc) {
 	if (!cat) return false;
 	return can(user, "view", { res: "cat", id: cat.id }, doc);
@@ -772,6 +779,7 @@ type HydratedUser = StoredUser & {
 	groupIds: string[];
 	_ids: string[];
 	_canEdit: boolean;
+	_canMove: boolean;
 };
 function hydrateUser(user: StoredUser | null | undefined, doc: Doc): HydratedUser | null | undefined {
 	if (!user) return user;
@@ -792,6 +800,7 @@ function hydrateUser(user: StoredUser | null | undefined, doc: Doc): HydratedUse
 	const canManageGroups = owner || can(user, "groups.manage", portal, doc);
 	const canManageRoles = owner || can(user, "roles.manage", portal, doc);
 	const anyEdit = owner || canCreateTabs || (doc.tabs || []).some((t) => can(user, "edit", { res: "tab", id: t.id }, doc));
+	const anyMove = owner || (doc.tabs || []).some((t) => can(user, "move", { res: "tab", id: t.id }, doc));
 	const roleIds = roleIdsOf(user);
 	return {
 		...user,
@@ -809,7 +818,8 @@ function hydrateUser(user: StoredUser | null | undefined, doc: Doc): HydratedUse
 		canManageRoles,
 		groupIds: groups.map((g) => g.id),
 		_ids: ids,
-		_canEdit: anyEdit
+		_canEdit: anyEdit,
+		_canMove: anyMove
 	};
 }
 function canSetNodeAcl(user: HydratedUser | null | undefined): boolean {
@@ -935,9 +945,11 @@ function latestSessionExp(userId: string) {
 function sessionInfo(user: StoredUser, doc: Doc): SessionInfo {
 	const u = hydrateUser(user, doc)!;
 	const tabPerms: Record<string, TabPerm> = {};
+	const tabMoves: Record<string, boolean> = {};
 	for (const tab of doc.tabs) {
 		const perm = tabAccess(tab, u, doc);
 		if (perm) tabPerms[tab.id] = perm;
+		if (tabCanSee(tab, u, doc) && tabCanMove(tab, u, doc)) tabMoves[tab.id] = true;
 	}
 	const owner = isOwnerUser(u);
 	return {
@@ -947,6 +959,7 @@ function sessionInfo(user: StoredUser, doc: Doc): SessionInfo {
 		roleIds: u.roleIds || roleIdsOf(user),
 		isOwner: owner,
 		canEdit: Boolean(owner || u._canEdit),
+		canMove: Boolean(owner || u._canMove),
 		canManageUsers: Boolean(u.canManageUsers || owner),
 		canManageGroups: Boolean(u.canManageGroups || owner),
 		canManageRoles: Boolean(u.canManageRoles || owner),
@@ -957,6 +970,7 @@ function sessionInfo(user: StoredUser, doc: Doc): SessionInfo {
 		canCuration: Boolean(u.canCuration || owner),
 		canPurge: Boolean(u.canPurge || owner),
 		tabPerms,
+		tabMoves,
 		exp: latestSessionExp(u.id)
 	};
 }
@@ -1217,7 +1231,7 @@ function asStore(raw: any): Doc | null {
 			cardDragCollapse: doc.settings.cardDragCollapse !== false,
 			ctxHideUrl: Boolean(doc.settings.ctxHideUrl),
 			infoStats: doc.settings.infoStats !== false,
-			infoGeek: doc.settings.infoGeek !== false,
+			infoLegend: Boolean(doc.settings.infoLegend),
 			probeTlsVerify: Boolean(doc.settings.probeTlsVerify),
 			probeAuthOnly: Boolean(doc.settings.probeAuthOnly),
 			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly),
@@ -1239,7 +1253,8 @@ function asStore(raw: any): Doc | null {
 			locale: doc.settings.locale === "fr" ? "fr" : "en",
 			dateFormat: DATE_FORMATS.includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd",
 			timeFormat: asTimeFormat(doc.settings.timeFormat),
-			timezone: asTimeZone(doc.settings.timezone)
+			timezone: asTimeZone(doc.settings.timezone),
+			numberFormat: asNumberFormat(doc.settings.numberFormat)
 		},
 		customIcons: (Array.isArray(doc.customIcons) ? doc.customIcons : []).slice(0, MAX_CUSTOM_ICONS),
 		lastTabId: typeof doc.lastSpaceId === "string" ? doc.lastSpaceId : typeof doc.lastTabId === "string" ? doc.lastTabId : void 0,
@@ -1826,6 +1841,25 @@ export const resetClicks = createServerFn({ method: "POST" }).validator(z.object
 	doc.clickDays = {};
 	return emit(doc, user, data.tabId);
 }));
+export const resetProbes = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	tabId: z.string().optional()
+})).handler(async ({ data, request }: any) => mutate((doc) => {
+	const user = requireAdmin(doc, tok(data, request));
+	for (const tab of doc.tabs)
+		for (const cat of tab.categories)
+			for (const app of cat.apps) {
+				if ((app.kind || "app") !== "app") continue;
+				if (asCheck(app.check) === "off") continue;
+				app.check = "off";
+				app.checkHost = "";
+			}
+	appendHistory(doc, user, {
+		type: "settings.probeOff",
+		label: tt(doc, "audit.item.probeOff")
+	});
+	return emit(doc, user, data.tabId);
+}));
 export const resetPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	requireAdmin(doc, tok(data, request));
 	const keep = {
@@ -1886,7 +1920,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	cardDragCollapse: z.boolean().optional(),
 	ctxHideUrl: z.boolean().optional(),
 	infoStats: z.boolean().optional(),
-	infoGeek: z.boolean().optional(),
+	infoLegend: z.boolean().optional(),
 	probeTlsVerify: z.boolean().optional(),
 	probeAuthOnly: z.boolean().optional(),
 	sessionHttpOnly: z.boolean().optional(),
@@ -1926,7 +1960,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		cardDragCollapse: typeof data.cardDragCollapse === "boolean" ? data.cardDragCollapse : doc.settings.cardDragCollapse !== false,
 		ctxHideUrl: typeof data.ctxHideUrl === "boolean" ? data.ctxHideUrl : Boolean(doc.settings.ctxHideUrl),
 		infoStats: typeof data.infoStats === "boolean" ? data.infoStats : doc.settings.infoStats !== false,
-		infoGeek: typeof data.infoGeek === "boolean" ? data.infoGeek : doc.settings.infoGeek !== false,
+		infoLegend: typeof data.infoLegend === "boolean" ? data.infoLegend : Boolean(doc.settings.infoLegend),
 		probeTlsVerify: typeof data.probeTlsVerify === "boolean" ? data.probeTlsVerify : Boolean(doc.settings.probeTlsVerify),
 		probeAuthOnly: typeof data.probeAuthOnly === "boolean" ? data.probeAuthOnly : Boolean(doc.settings.probeAuthOnly),
 		sessionHttpOnly: typeof data.sessionHttpOnly === "boolean" ? data.sessionHttpOnly : Boolean(doc.settings.sessionHttpOnly),
@@ -3396,6 +3430,7 @@ async function requireEditorSession(token: string) {
 }
 
 export type CurationLink = { key: string; label: string; url: string };
+export type CurationProbe = { mode: "http" | "icmp"; host?: string };
 export type CurationItem = {
 	cardId: string;
 	tabId: string;
@@ -3407,6 +3442,7 @@ export type CurationItem = {
 	kind: ItemKind;
 	testable: boolean;
 	links: CurationLink[];
+	probe?: CurationProbe;
 };
 export type CurationScanRef = { cardId: string; key: string; url: string };
 export type CurationView = {
@@ -3440,8 +3476,14 @@ function curationItemsOf(doc: Doc, user: HydratedUser | null): CurationItem[] {
 		for (const cat of [...tab.categories].sort((a, b) => a.sortOrder - b.sortOrder)) {
 			if (!catCanSee(cat, user, doc)) continue;
 			for (const app of cat.apps) {
+				if ((app.kind || "app") === "note") continue;
 				if (!can(user, "view", { res: "card", id: app.id }, doc)) continue;
 				const links = curationLinksOf(app);
+				const check = asCheck(app.check);
+				const probe: CurationProbe | undefined =
+					(app.kind || "app") === "app" && check !== "off"
+						? { mode: check, host: check === "icmp" ? asCheckHost(app.checkHost) : undefined }
+						: undefined;
 				items.push({
 					cardId: app.id,
 					tabId: tab.id,
@@ -3451,8 +3493,9 @@ function curationItemsOf(doc: Doc, user: HydratedUser | null): CurationItem[] {
 					categoryName: cat.name || "",
 					icon: app.icon || "Link",
 					kind: app.kind || "app",
-					testable: links.length > 0,
-					links
+					testable: links.length > 0 || probe?.mode === "icmp",
+					links,
+					probe
 				});
 				if (items.length >= 800) return items;
 			}
@@ -3463,7 +3506,11 @@ function curationItemsOf(doc: Doc, user: HydratedUser | null): CurationItem[] {
 
 function curationQueueOf(items: CurationItem[]): CurationScanRef[] {
 	const queue: CurationScanRef[] = [];
-	for (const item of items) for (const link of item.links) queue.push({ cardId: item.cardId, key: link.key, url: link.url });
+	for (const item of items) {
+		for (const link of item.links) queue.push({ cardId: item.cardId, key: link.key, url: link.url });
+		if (item.probe?.mode === "icmp" && item.probe.host)
+			queue.push({ cardId: item.cardId, key: "icmp", url: item.probe.host });
+	}
 	return queue.slice(0, CURATION_MAX_LINKS);
 }
 
@@ -3521,8 +3568,21 @@ export const curationStart = createServerFn({ method: "POST" }).validator(z.obje
 	const targets: CurationJobTarget[] = [];
 	for (const ref of curationQueueOf(items)) {
 		const item = byCard.get(ref.cardId);
-		const link = item?.links.find((row) => row.key === ref.key);
-		if (item && link) targets.push({ cardId: ref.cardId, key: ref.key, url: link.url, label: link.label, title: item.title });
+		if (!item) continue;
+		if (ref.key === "icmp") {
+			targets.push({
+				cardId: ref.cardId,
+				key: "icmp",
+				url: ref.url,
+				label: tt(doc, "curation.probeIcmp"),
+				title: item.title,
+				mode: "icmp",
+				host: ref.url
+			});
+			continue;
+		}
+		const link = item.links.find((row) => row.key === ref.key);
+		if (link) targets.push({ cardId: ref.cardId, key: ref.key, url: link.url, label: link.label, title: item.title, mode: "http" });
 	}
 	void startCurationJob({
 		targets,

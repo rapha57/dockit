@@ -56,7 +56,27 @@ export function curationCheckOf(url: string, trace: import("./probe-runtime").Ht
 	return check;
 }
 
-export type CurationJobTarget = { cardId: string; key: string; url: string; label: string; title: string };
+export type CurationJobTarget = {
+	cardId: string;
+	key: string;
+	url: string;
+	label: string;
+	title: string;
+	mode?: "http" | "icmp";
+	host?: string;
+};
+
+export function curationCheckFromIcmp(host: string, result: { ok: boolean; ms: number | null; detail: string }): CurationCheck {
+	const detail = String(result.detail || "");
+	const timeout = /timeout/i.test(detail);
+	return {
+		status: result.ok ? "valid" : timeout ? "timeout" : "error",
+		checkedAt: Date.now(),
+		responseTimeMs: result.ms == null ? null : Math.max(0, Math.round(result.ms)),
+		url: host,
+		detail: detail.slice(0, 120)
+	};
+}
 
 export type CurationJobView = {
 	running: boolean;
@@ -86,6 +106,7 @@ function jobLine(target: CurationJobTarget, check: CurationCheck, locale: unknow
 	return withLocale(locale, () => {
 		const where = jobWhere(target);
 		if (check.status === "valid") {
+			if (target.mode === "icmp") return `✓ ICMP · ${check.responseTimeMs ?? 0} ms · ${where}`;
 			return `✓ ${check.httpStatus || 200} · ${check.responseTimeMs ?? 0} ms · ${where}`;
 		}
 		if (check.status === "redirect") {
@@ -159,7 +180,7 @@ export async function startCurationJob(opts: {
 	};
 	const known = new Set(opts.known);
 	const store = await readCurationStore();
-	const { probeHttpTrace } = await import("./probe-runtime");
+	const { probeHttpTrace, probeIcmp } = await import("./probe-runtime");
 	const dnsCache = new Map<string, string>();
 	if (isDevRuntime()) {
 		const { appendFileSync } = await import("node:fs");
@@ -177,6 +198,10 @@ export async function startCurationJob(opts: {
 		}
 		const results = await Promise.all(
 			slice.map(async (target) => {
+				if (target.mode === "icmp") {
+					const result = await probeIcmp(target.cardId, target.host || target.url);
+					return { target, check: curationCheckFromIcmp(target.host || target.url, result) };
+				}
 				const trace = await probeHttpTrace(target.url, opts.tlsVerify, dnsCache);
 				return { target, check: curationCheckOf(target.url, trace) };
 			})

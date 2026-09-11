@@ -33,7 +33,7 @@ import {
   type Tab,
   type User,
 } from "@/lib/acl";
-import { t, te, tp, localeTag } from "@/lib/i18n";
+import { t, te, tp, localeTag, formatNumber } from "@/lib/i18n";
 import { PASSWORD_MAX, PASSWORD_MIN, passwordMeter, passwordPolicyError } from "@/lib/security";
 import {
   deleteGroup,
@@ -297,14 +297,20 @@ export function SortLabel({
   onToggle,
   children,
   className,
+  count,
 }: {
   id: string;
   sort: ColSort;
   onToggle: (id: string) => void;
   children?: ReactNode;
   className?: string;
+  count?: number;
 }) {
   const on = sort.key === id;
+  const label =
+    on && count != null && (typeof children === "string" || typeof children === "number")
+      ? t("sort.counted", { label: String(children), n: formatNumber(count) })
+      : children;
   return (
     <button
       type="button"
@@ -315,7 +321,7 @@ export function SortLabel({
         onToggle(id);
       }}
     >
-      {children}
+      {label}
       {on ? (
         <span className="am-sort-dir" aria-hidden>
           {sort.dir === "asc" ? "↑" : "↓"}
@@ -1165,13 +1171,13 @@ export function AccessUsers({
         empty ? null : (
           <ListHead
             cells={[
-              <SortLabel key="u" id="user" sort={col.sort} onToggle={col.toggle}>
+              <SortLabel key="u" id="user" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("access.colUser")}
               </SortLabel>,
-              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle}>
+              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("users.role")}
               </SortLabel>,
-              <SortLabel key="s" id="status" sort={col.sort} onToggle={col.toggle}>
+              <SortLabel key="s" id="status" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("access.colStatus")}
               </SortLabel>,
             ]}
@@ -1641,13 +1647,13 @@ export function AccessGroups({
         empty ? null : (
           <ListHead
             cells={[
-              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle}>
+              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("access.groupName")}
               </SortLabel>,
-              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle}>
+              <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("users.role")}
               </SortLabel>,
-              <SortLabel key="m" id="members" sort={col.sort} onToggle={col.toggle} className="am-row-end">
+              <SortLabel key="m" id="members" sort={col.sort} onToggle={col.toggle} className="am-row-end" count={filtered.length}>
                 {t("access.members")}
               </SortLabel>,
             ]}
@@ -2028,13 +2034,13 @@ export function AccessRoles({
         empty ? null : (
           <ListHead
             cells={[
-              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle}>
+              <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle} count={filteredRoles.length}>
                 {t("access.roleName")}
               </SortLabel>,
-              <SortLabel key="h" id="holders" sort={col.sort} onToggle={col.toggle}>
+              <SortLabel key="h" id="holders" sort={col.sort} onToggle={col.toggle} count={filteredRoles.length}>
                 {t("access.roleHolders")}
               </SortLabel>,
-              <SortLabel key="t" id="type" sort={col.sort} onToggle={col.toggle}>
+              <SortLabel key="t" id="type" sort={col.sort} onToggle={col.toggle} count={filteredRoles.length}>
                 {t("access.colType")}
               </SortLabel>,
             ]}

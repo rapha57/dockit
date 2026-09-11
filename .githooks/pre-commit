@@ -8,6 +8,6 @@ npm run typecheck
 echo "pre-commit: lint..."
 npm run lint -- --max-warnings 0
 
-version=$("$root/scripts/portal-version.sh" "$root/src/routes/index.tsx")
-git add "$root/src/routes/index.tsx"
+version=$("$root/scripts/portal-version.sh" "$root/src/lib/portal-version.ts")
+git add "$root/src/lib/portal-version.ts"
 echo "build $version"
