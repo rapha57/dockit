@@ -881,13 +881,24 @@ function prettyLogin(name: unknown) {
   const lower = s.toLocaleLowerCase(localeTag());
   return lower.charAt(0).toLocaleUpperCase(localeTag()) + lower.slice(1);
 }
-function accountStatusLabel(loggedIn: boolean, role: string | null | undefined, isOwner?: boolean) {
-  if (!loggedIn) return t("account.guest");
+function accountRoleLabel(role: string | null | undefined, isOwner?: boolean) {
   if (isOwner || role === "owner") return t("account.owner");
   if (role === "editeur") return t("account.editor");
   if (role === "lecteur") return t("account.viewer");
   if (role === "admin") return t("account.admin");
-  return t("account.member") || prettyLogin(role);
+  return t("account.member");
+}
+function accountStatusLabel(
+  loggedIn: boolean,
+  role: string | null | undefined,
+  isOwner?: boolean,
+  username?: string,
+) {
+  if (!loggedIn) return t("account.guest");
+  const who = prettyLogin(username);
+  const rank = accountRoleLabel(role, isOwner);
+  if (!who) return rank;
+  return t("account.who", { name: who, role: rank });
 }
 function sessionCanEditTab(session: SessionInfo | null | undefined, tabId: string | undefined): boolean {
   if (!session || !tabId) return false;
@@ -911,6 +922,7 @@ function AccountMenu({
   canHistory,
   canCuration,
   role,
+  username,
   openFavs,
   onLogin,
   onEdit,
@@ -931,6 +943,7 @@ function AccountMenu({
   canHistory: boolean;
   canCuration: boolean;
   role: string;
+  username?: string;
   isOwner?: boolean;
   openFavs: boolean;
   onLogin: () => void;
@@ -958,7 +971,8 @@ function AccountMenu({
   const showHistory = loggedIn && canHistory;
   const showUsers = loggedIn && canManageUsers;
   const showCuration = loggedIn && canCuration;
-  const status = accountStatusLabel(loggedIn, role, isOwner);
+  const showInstance = showSettings || showUsers || showHistory || showCuration;
+  const status = accountStatusLabel(loggedIn, role, isOwner, username);
   const localPrefs = (
     <>
       {" "}
@@ -1043,6 +1057,8 @@ function AccountMenu({
               {t("account.edit")}
             </button>
           ) : null}
+          {showEdit && showInstance ? <div className="menu-sep" /> : null}
+          {showInstance ? <p className="menu-kicker">{t("account.instance")}</p> : null}
           {showSettings ? (
             <button
               type="button"
@@ -1099,22 +1115,22 @@ function AccountMenu({
               {t("curation.title")}
             </button>
           ) : null}
-          {loggedIn && (showEdit || showSettings || showHistory || showUsers || showCuration) ? (
-            <div className="menu-sep" />
-          ) : null}
           {loggedIn ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                onLogout();
-              }}
-            >
-              {" "}
-              <LogOut className="size-4 shrink-0" />
-              {t("account.logout")}
-            </button>
+            <>
+              <div className="menu-sep" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onLogout();
+                }}
+              >
+                {" "}
+                <LogOut className="size-4 shrink-0" />
+                {t("account.logout")}
+              </button>
+            </>
           ) : null}
           {localPrefs}
         </div>
@@ -3646,6 +3662,7 @@ function Home() {
               canEdit={Boolean(session?.canEdit)}
               canOpenSettings={Boolean(session?.canManageSettings)}
               role={session?.role || ""}
+              username={session?.username || ""}
               isOwner={session?.isOwner}
               openFavs={ui.openFavs}
               onLogin={() => requestLogin()}
@@ -9008,8 +9025,11 @@ function LockForm({
         onUnlock(name, password, bypass ? "local" : showDomain ? domain : "local");
       }}
     >
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="dialog-title">{t("account.login")}</h3>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="settings-head-copy">
+          <h3 className="dialog-title">{t("account.login")}</h3>
+          <p className="settings-lead">{t("lock.lead")}</p>
+        </div>
         <Button
           type="button"
           variant="ghost"
