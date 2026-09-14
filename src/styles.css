@@ -3524,6 +3524,41 @@ html.dark .dockit-mark {
 .legend-sample .tag-chip {
   cursor: default;
 }
+.legend-kicker {
+  margin-top: 1.35rem;
+}
+.legend-keys {
+  display: inline-flex;
+  min-width: 1.85rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+}
+.legend-keys-bit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+.legend-kbd {
+  display: inline-flex;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-elevated);
+  font-family: inherit;
+  font-size: 0.6875rem;
+  font-weight: 550;
+  line-height: 1;
+  color: var(--color-fg);
+}
+.legend-kbd-plus {
+  font-size: 0.6875rem;
+  color: var(--color-subtle);
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,

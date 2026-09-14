@@ -98,6 +98,25 @@ function LegendSample({ children }: { children: ReactNode }) {
   );
 }
 
+function modKey() {
+  if (typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent))
+    return t("legend.modCmd");
+  return t("legend.modCtrl");
+}
+
+function LegendKeys({ keys }: { keys: string[] }) {
+  return (
+    <span className="legend-keys" aria-hidden>
+      {keys.map((key, i) => (
+        <span key={`${key}-${i}`} className="legend-keys-bit">
+          {i > 0 ? <span className="legend-kbd-plus">+</span> : null}
+          <kbd className="legend-kbd">{key}</kbd>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function LegendPanel({ onClose }: { onClose: () => void }) {
   const tagSample = t("legend.tagSample");
   const tag = tagPaint(tagSample, null);
@@ -171,6 +190,24 @@ export function LegendPanel({ onClose }: { onClose: () => void }) {
         {rows.map((row) => (
           <li key={row.id} className="legend-row">
             <LegendSample>{row.sample}</LegendSample>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{row.title}</p>
+              <p className="text-xs text-muted">{row.hint}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="settings-kicker legend-kicker">{t("legend.shortcuts")}</p>
+      <ul className="legend-list">
+        {[
+          { id: "search", keys: ["/"], title: t("legend.keySearch"), hint: t("legend.keySearchHint") },
+          { id: "type", keys: ["A–Z"], title: t("legend.keyType"), hint: t("legend.keyTypeHint") },
+          { id: "edit", keys: [modKey(), "E"], title: t("legend.keyEdit"), hint: t("legend.keyEditHint") },
+          { id: "new", keys: [modKey(), "N"], title: t("legend.keyNew"), hint: t("legend.keyNewHint") },
+          { id: "esc", keys: ["Esc"], title: t("legend.keyEsc"), hint: t("legend.keyEscHint") },
+        ].map((row) => (
+          <li key={row.id} className="legend-row">
+            <LegendKeys keys={row.keys} />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{row.title}</p>
               <p className="text-xs text-muted">{row.hint}</p>

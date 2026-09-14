@@ -75,6 +75,14 @@ function roleTitle(id: string, roles: Role[]): string {
   return roles.find((r) => r.id === id)?.name || id;
 }
 
+function systemRoleDesc(id: string): string | null {
+  if (id === "owner") return t("access.roleDescOwner");
+  if (id === "admin") return t("access.roleDescAdmin");
+  if (id === "editeur") return t("access.roleDescEditor");
+  if (id === "lecteur") return t("access.roleDescViewer");
+  return null;
+}
+
 function actionLabel(a: string): string {
   const key = `access.act.${a}`;
   const s = t(key);
@@ -96,14 +104,14 @@ function sourceLabel(src: Source | null | undefined): string {
   return t("access.whyDirect");
 }
 
-function accountSource(src: unknown): string {
+function remoteSourceLabel(src: unknown): string | null {
   if (src === "ad") return t("access.sourceAd");
   if (src === "oidc") return t("access.sourceOidc");
-  return t("access.sourceLocal");
+  return null;
 }
 
 function pickerProviders(directories: LdapDirectory[] | null | undefined): Provider[] {
-  const list: Provider[] = [{ id: "local", label: t("access.sourceLocal"), kind: "local" }];
+  const list: Provider[] = [{ id: "local", label: t("access.idpTypeLocal"), kind: "local" }];
   for (const d of directories || []) {
     list.push({ id: d.id, label: d.domain || t("ldap.directory"), kind: "ad" });
   }
@@ -414,11 +422,11 @@ function PermWord({
   const label = actionLabel(action);
   const title =
     state === "allow"
-      ? t("access.direct")
+      ? t("access.permException")
       : state === "deny"
         ? t("access.denied")
         : inheritedOn
-          ? t("access.inherited")
+          ? t("access.permFromRole")
           : t("access.none");
   if (readOnly) {
     if (state === "deny")
@@ -811,12 +819,18 @@ function PermBlocks({
         value={pane}
         onChange={setPane}
         items={[
-          { id: "direct", label: t("access.direct") },
-          { id: "inherited", label: t("access.inherited") },
-          { id: "effective", label: t("access.effective") },
+          { id: "direct", label: t("access.paneDirect") },
+          { id: "inherited", label: t("access.paneInherited") },
+          { id: "effective", label: t("access.paneEffective") },
         ]}
       />
-      <p className="am-meta">{t("access.permHint")}</p>
+      <p className="am-note">
+        {pane === "direct"
+          ? t("access.paneDirectHint")
+          : pane === "inherited"
+            ? t("access.paneInheritedHint")
+            : t("access.paneEffectiveHint")}
+      </p>
       {pane === "direct" ? (
         <>
           {editing && !hideDirectEdit ? (
@@ -1201,6 +1215,7 @@ export function AccessUsers({
             const open = expand.openId === u.id || (u.phantom && creating);
             const rowDraft = open ? draft : null;
             const view = current?.id === u.id && !u.phantom ? current : u;
+            const remoteSrc = remoteSourceLabel(u.source);
             return (
               <ExpandRow
                 key={u.id}
@@ -1210,6 +1225,7 @@ export function AccessUsers({
                 cells={[
                   <span key="n" className="am-row-title">
                     {prettyLogin(rowDraft?.username || u.username) || t("access.newUser")}
+                    {remoteSrc ? <span className="am-dim"> · {remoteSrc}</span> : null}
                   </span>,
                   <span key="c" className="am-dim">
                     {bits(
@@ -1302,9 +1318,9 @@ export function AccessUsers({
                           </>
                         )}
                       </Section>
-                    ) : (
-                      <p className="am-meta">{accountSource(view.source || rowDraft.source)}</p>
-                    )}
+                    ) : lockedOwner ? (
+                      <p className="am-meta">{t("access.adminAccountHint")}</p>
+                    ) : null}
                     {!lockedOwner ? (
                       <>
                         {expand.editing ? (
@@ -1318,7 +1334,7 @@ export function AccessUsers({
                                   selectedIds={rowDraft.roleIds || []}
                                   labelOf={(r) => roleTitle(r.id, dir.roles)}
                                   providers={[
-                                    { id: "local", label: t("access.sourceLocal"), kind: "local" },
+                                    { id: "local", label: t("access.idpTypeLocal"), kind: "local" },
                                   ]}
                                   readOnly={false}
                                   onChange={(ids) =>
@@ -1333,7 +1349,7 @@ export function AccessUsers({
                                   items={dir.groups}
                                   selectedIds={rowDraft.groupIds || []}
                                   labelOf={(g) => g.name}
-                                  providers={[{ id: "local", label: t("access.sourceLocal"), kind: "local" }]}
+                                  providers={[{ id: "local", label: t("access.idpTypeLocal"), kind: "local" }]}
                                   readOnly={false}
                                   onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
                                 />
@@ -1712,9 +1728,7 @@ export function AccessGroups({
                           />
                         </label>
                       </Section>
-                    ) : (
-                      <p className="am-meta">{accountSource(view.source || rowDraft.source)}</p>
-                    )}
+                    ) : null}
                     {expand.editing ? (
                       <Section>
                         <Pair>
@@ -1726,7 +1740,7 @@ export function AccessGroups({
                               selectedIds={rowDraft.roleIds || []}
                               labelOf={(r) => roleTitle(r.id, dir.roles)}
                               providers={[
-                                { id: "local", label: t("access.sourceLocal"), kind: "local" },
+                                { id: "local", label: t("access.idpTypeLocal"), kind: "local" },
                               ]}
                               readOnly={false}
                               onChange={(ids) =>
@@ -2062,6 +2076,7 @@ export function AccessRoles({
             const open = expand.openId === r.id || (("phantom" in r && r.phantom) && creating);
             const rowDraft = open ? draft : null;
             const view: RoleTableRow = current?.id === r.id && !("phantom" in r) ? current : r;
+            const roleLead = (rowDraft?.description || "").trim() || systemRoleDesc(view.id);
             return (
               <ExpandRow
                 key={r.id}
@@ -2141,12 +2156,9 @@ export function AccessRoles({
                           </label>
                         ) : null}
                       </Section>
-                    ) : (
-                      <p className="am-meta">
-                        {rowDraft.description ||
-                          (view.system ? t("access.systemHint") : t("access.noDesc"))}
-                      </p>
-                    )}
+                    ) : roleLead ? (
+                      <p className="am-meta">{roleLead}</p>
+                    ) : null}
                     {expand.editing ? (
                       <Section>
                         <Pair>
@@ -2170,7 +2182,7 @@ export function AccessRoles({
                               selectedIds={rowDraft.groupIds || []}
                               labelOf={(g) => g.name}
                               providers={[
-                                { id: "local", label: t("access.sourceLocal"), kind: "local" },
+                                { id: "local", label: t("access.idpTypeLocal"), kind: "local" },
                               ]}
                               readOnly={holdersLocked}
                               onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}

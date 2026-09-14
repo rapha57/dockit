@@ -423,11 +423,17 @@ export function ItemForm({
 }) {
   const isSpace = kind === "space";
   const [name, setName] = useState(initial?.name ?? "");
+  const nameRef = useRef<HTMLInputElement>(null);
   const [icon, setIcon] = useState(initial?.icon ?? (isSpace ? "Layers" : "Folder"));
   const [restricted, setRestricted] = useState(Boolean(initial?.restricted));
   const [hideLabel, setHideLabel] = useState(Boolean(isSpace && initial && "hideLabel" in initial ? (initial as MenuSpace).hideLabel : false));
   const [viewers, setViewers] = useState(initial?.viewers ?? []);
   const [editors, setEditors] = useState(initial?.editors ?? []);
+  useEffect(() => {
+    if (initial) return;
+    const id = window.requestAnimationFrame(() => nameRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+  }, [initial]);
   return (
     <form
       className="settings-frame is-item is-narrow"
@@ -477,6 +483,7 @@ export function ItemForm({
                   <div className="id-field">
                     <Label>{t("item.name")}</Label>
                     <Input
+                      ref={nameRef}
                       className={FIELD_SM}
                       value={name}
                       onChange={(e) => setName(e.target.value)}
@@ -826,6 +833,7 @@ export function CardForm({
   const [kind, setKind] = useState(initial?.kind ?? "app");
   const [catId, setCatId] = useState(initial?.categoryId ?? categoryId);
   const [title, setTitle] = useState(initial?.title ?? "");
+  const titleRef = useRef<HTMLInputElement>(null);
   const [description, setDescription] = useState(initial?.description ?? "");
   const [url, setUrl] = useState(initial?.url ?? "");
   const [icon, setIcon] = useState(initial?.icon ?? "Link");
@@ -861,6 +869,11 @@ export function CardForm({
   const [embedBg, setEmbedBg] = useState<string>(initial?.embedBg || "");
   const [probeBusy, setProbeBusy] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (initial) return;
+    const id = window.requestAnimationFrame(() => titleRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+  }, [initial]);
   const catOptions = useMemo(() => categories, [categories]);
   const tagMatches = useMemo(() => {
     const s = fold(tagDraft.trim());
@@ -1079,6 +1092,7 @@ export function CardForm({
                     <div className="id-field">
                       <Label>{t("item.name")}</Label>
                       <Input
+                        ref={titleRef}
                         className={FIELD_SM}
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
@@ -1105,6 +1119,7 @@ export function CardForm({
               ) : (
                 <Field label={t("item.titleOptional")}>
                   <Input
+                    ref={titleRef}
                     className={FIELD_SM}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}

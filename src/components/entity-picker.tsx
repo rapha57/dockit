@@ -89,7 +89,7 @@ export function EntityPicker<T extends PickerRow = PickerRow>({
   const [remoteBusy, setRemoteBusy] = useState(false);
   const [remoteErr, setRemoteErr] = useState("");
   const selected = selectedIds || [];
-  const dirs = providers || [{ id: "local", label: t("access.sourceLocal"), kind: "local" }];
+  const dirs = providers || [{ id: "local", label: t("access.idpTypeLocal"), kind: "local" }];
   const current = dirs.find((p) => p.id === provider) || dirs[0];
   const remote = current?.kind === "ad";
   const canSearch = Boolean(remote && searchRemote);
