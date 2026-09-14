@@ -1,72 +1,64 @@
 <p align="center">
-  <img src="public/logo.svg" width="72" alt="Dockit" />
+  <img src="public/logo.svg" width="64" alt="Dockit" />
 </p>
 
 <h1 align="center">Dockit</h1>
 
-<p align="center">
-  <strong>The shared home page for your IT tools.</strong>
-</p>
+<p align="center"><strong>Pin your URLs.</strong></p>
 
-<p align="center">
-  One dashboard for the tools your team uses every day.
-</p>
+<p align="center">One page for the tools the team actually opens.<br />
+Self-hosted. One JSON file. No database.</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111" alt="React 19" />
   <img src="https://img.shields.io/badge/TanStack_Start-FF4154?style=flat-square&logo=reactquery&logoColor=white" alt="TanStack Start" />
   <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite 8" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4" />
-  <img src="https://img.shields.io/badge/Nitro-00DC82?style=flat-square&logo=nitro&logoColor=white" alt="Nitro" />
-  <img src="https://img.shields.io/badge/build-passing-2EA043?style=flat-square&logo=githubactions&logoColor=white" alt="Build passing" />
+  <img src="https://img.shields.io/badge/license-MIT-2EA043?style=flat-square" alt="MIT" />
 </p>
-
----
 
 ## Why Dockit?
 
-IT engineers use dozens of tools every day: infrastructure consoles, monitoring, ticketing, IAM, cloud platforms, internal applications, documentation and more.
+IT engineers live in dozens of tools: consoles, monitoring, ticketing, IAM, cloud, internal apps, docs. The links scatter across bookmarks, tabs, chat and mail.
 
-Those links tend to end up scattered across bookmarks, browser tabs, chat messages and emails.
-
-**Dockit brings them together in one shared, structured dashboard.**
+**Dockit pins them on one shared page.**
 
 A new engineer joining the team doesn't need to ask:
 
-> "Where's the link to Grafana?"
-> "What's the URL for the Kubernetes console?"
-> "Where do I find the ITSM?"
+> “Where's the link to Grafana?”  
+> “What's the URL for the Kubernetes console?”  
+> “Where do I find the ITSM?”
 
-It's already there.
+It's already there. Use it as the browser start page, or push it to workstations (Windows GPO, and the like).
 
-Dockit can be used as a team's browser start page, or deployed centrally and pushed to workstations through tools such as **Windows GPO**.
+One place to start. Everything already organised.
 
-**One place to start. Everything already organised.**
+## Architecture
 
----
+```text
+Space  →  Category  →  Card  →  Link | Note | Embed
+```
 
-## Features
+A **space** is a home page. A **category** groups **cards**. A card is an app, a note, or an embedded page.
 
-* **Spaces** — Organise tools by team or domain: Infrastructure, Systems, Security, Development…
-* **Cards** — Applications, Markdown notes and embeds
-* **Drag & drop** — Keep spaces and categories organised
-* **Probes** — HTTP and ICMP availability directly on cards
-* **Curation** — Server-side link checking with live progress and one-click fixes
-* **Access control** — Users, groups, roles and granular ACLs
-* **Audit & recovery** — Full change history with restore for spaces, categories and cards
-* **Reports** — Audit trail as CSV; card inventory as CSV and PDF
-* **Authentication** — Local accounts, LDAP / Active Directory and OIDC
-* **Themes** — Light / dark mode, logo, favicon and tags
-* **Import / export** — Move or back up the entire portal as one JSON file
-* **Icons** — Built-in and custom icons
+```text
+ Browser
+    │
+    ▼
+ Dockit
+    │
+    ├── Spaces · cards · Access · Settings
+    │
+    └── Server functions
+            │
+            ├── data/portal.json
+            ├── data/curation.json
+            ├── data/assets/
+            ├── Local · LDAP · OIDC
+            └── HTTP / ICMP probes
+```
 
----
-
-## A shared front door for your tools
-
-Dockit doesn't replace your existing systems.
-
-It sits in front of them:
+Dockit does not replace the tools. It sits in front of them:
 
 ```text
                          Dockit
@@ -81,158 +73,97 @@ It sits in front of them:
    Cloud                DNS                ...
 ```
 
-The tools stay where they are.
+## Features
 
-**Dockit gives your team one consistent way to reach them.**
+| | What it does |
+| --- | --- |
+| **Spaces / categories / cards** | Drag and drop |
+| **Link hub** | Several URLs on one card (`https://`, `ssh://`, `ftp://`…) |
+| **Probes** | HTTP and ICMP on cards |
+| **Curation** | Server-side check of every link |
+| **Access** | Users, groups, roles, grants |
+| **History** | Audit and restore |
+| **Reports** | Audit CSV · inventory CSV / PDF |
+| **Auth** | Local accounts, LDAP / AD, OIDC — local login always stays |
+| **Look** | Light / dark, logo, favicon, tags |
+| **Import / export** | Whole portal, or one space |
+| **Icons** | Built-in and custom |
 
----
+## Curation
 
-## Curation — be sure your links still work
+A portal that is never cleaned rots. Services get renamed, hosts get retired, paths move behind a proxy — the bookmark stays. Past a certain volume, nobody opens every link every day. The day someone needs the Kubernetes console or the DNS panel, the link may be dead.
 
-A portal that is never cleaned rots quietly. Services get renamed, hosts get retired, paths move behind a reverse proxy — and the bookmark stays.
+**Curation answers one question: do the card links still work?**
 
-Past a certain volume, nobody opens every link every day. The day someone actually needs the Kubernetes console or the DNS panel, the link may be dead.
+From the account menu it checks every card link (primary and extras):
 
-**Curation answers one simple question: do the links of my cards still work?**
+- Live progress and a step-by-step log
+- OK, redirect (with target), HTTP error, timeout, unreachable
+- Per-card breakdown — spot the broken cards, then **Edit** to fix
 
-From the user menu, **Curation** runs a server-side check of every card link — the main URL and the extra links of each card:
+Checks run on the server (no CORS, shared timeouts, SSRF guards, rate limits). Results live in `data/curation.json` next to `portal.json`. Admins and editors.
 
-* Live progress with a step-by-step log
-* Clear statuses: OK, redirect (with target), HTTP error, timeout, unreachable
-* A per-card breakdown in **Applications** — spot the broken cards at a glance
-* One click on **Edit card** to fix the link, through the regular card editor
+## Run
 
-Checks run server-side (no CORS, shared timeouts, SSRF guards and rate limiting), and results are kept in `data/curation.json` next to `portal.json`.
-
-Available to **admins and editors**.
-
----
-
-## Data
-
-No database.
-
-The complete portal is stored in:
-
-```text
-data/portal.json
-```
-
-This makes the portal easy to back up, version, move or restore.
-
-Override the location with:
-
-```bash
-PORTAL_DATA_FILE=/path/to/portal.json
-```
-
----
-
-## Getting started
+**Dev** — Node 22. http://localhost:8080 — `admin` / `admin` (dev only).
 
 ```bash
 npm ci
 npm run dev
 ```
 
-The development server listens on `http://localhost:8080`.
+The pre-commit hook runs `typecheck` and `lint` (zero warnings).
 
-A pre-commit hook runs `typecheck` and `lint` (zero warnings) on every commit, and the TypeScript build is expected to pass clean.
-
-Default development credentials:
-
-```text
-admin / admin
-```
-
-> Development only. Production requires `PORTAL_EDIT_PASSWORD` with a minimum of 12 characters.
-
----
-
-## Docker
-
-Configure `PORTAL_EDIT_PASSWORD` in `docker-compose.yml`, then:
+**Docker** — set `PORTAL_EDIT_PASSWORD` (≥ 12 characters) in `docker-compose.yml`. Port **3000**. Data in the `portal-data` volume.
 
 ```bash
 docker compose up -d --build
 ```
 
-Dockit listens on port `3000`.
-
-For a reverse proxy deployment:
+Behind a proxy:
 
 ```bash
 PORTAL_PUBLIC_ORIGIN=https://portal.example
 PORTAL_TRUST_PROXY=1
 ```
 
-Persistent data is stored in the `portal-data` Docker volume.
-
----
-
-## Production
-
-Requires **Node.js 22**.
+**Production** — `PORTAL_EDIT_PASSWORD` required, no default. Intranet + reverse proxy. HTTPS.
 
 ```bash
 npm ci
-
-export PORTAL_EDIT_USER="admin"
 export PORTAL_EDIT_PASSWORD="a-real-password"
 export NITRO_PRESET=node-server
-
 npm run build
 node .output/server/index.mjs
 ```
 
----
+## Data
+
+No database. The whole portal is one file: `data/portal.json`. Backup, move, restore = copy it.
+
+```bash
+PORTAL_DATA_FILE=/path/to/portal.json
+```
+
+Treat it as a secret (password hashes, OIDC secret, LDAP bind).
+
+| Path | What |
+| --- | --- |
+| `data/portal.json` | Portal |
+| `data/curation.json` | Link checks |
+| `public/icons/` | Built-in icons |
 
 ## Security
 
-Dockit is designed for internal environments and trusted networks, typically behind a reverse proxy.
+Built for internal networks, typically behind a reverse proxy.
 
-Production deployments should use:
+- Strong `PORTAL_EDIT_PASSWORD`, HTTPS, protected `portal.json`
+- scrypt, login rate limiting, ACL, OIDC PKCE
+- Security headers, iframes without `allow-same-origin`
+- Bounded probes, HttpOnly session cookie, non-root Docker image
 
-* A strong `PORTAL_EDIT_PASSWORD`
-* HTTPS
-* A protected `data/portal.json`
-
-Security features include:
-
-* scrypt password hashing
-* Login rate limiting
-* Roles and ACLs
-* OIDC with PKCE and ID token verification
-* Security HTTP headers
-* Restricted iframe handling
-* Bounded probes
-* Non-root Docker image
-* HttpOnly session cookies
-
-Additional options are available under **Settings → Security**.
-
----
+More under **Settings → Security**.
 
 ## Stack
 
-| Layer                 | Technology     |
-| --------------------- | -------------- |
-| UI                    | React 19       |
-| Application / routing | TanStack Start |
-| Build                 | Vite 8         |
-| Styling               | Tailwind CSS 4 |
-| Runtime               | Nitro          |
-| Validation            | Zod            |
-| Icons                 | Lucide         |
-| Persistence           | JSON           |
-
----
-
-## Useful paths
-
-| Path                 | Purpose               |
-| -------------------- | --------------------- |
-| `data/portal.json`   | Complete portal data  |
-| `data/curation.json` | Link check results    |
-| `public/icons/`      | Built-in icon library |
-| `public/logo.svg`    | Dockit logo           |
+React 19 · TanStack Start · Vite 8 · Tailwind CSS 4 · Nitro · JSON file
