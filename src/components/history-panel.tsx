@@ -18,7 +18,7 @@ export function formatHistoryWhen(at: number) {
   return formatWhen(at);
 }
 export function historyScopeLabel(scope: string | undefined, kind: string | undefined) {
-  if (scope === "space" || kind === "space" || scope === "tab" || kind === "tab") return t("nav.space");
+  if (scope === "space" || kind === "space") return t("nav.space");
   if (scope === "category" || kind === "category") return t("item.category");
   if (kind === "note") return t("history.scopeNote");
   if (kind === "embed") return t("history.scopeEmbed");
@@ -277,7 +277,7 @@ export function HistoryPanel({
                   ["all", t("access.filterAll")],
                   ["card", t("history.cards")],
                   ["category", t("history.categories")],
-                  ["tab", t("history.spaces")],
+                  ["space", t("history.spaces")],
                 ].map(([id, label]) => (
                   <button
                     key={id}

@@ -136,8 +136,7 @@ export function asGrants(raw: unknown): Grant[] {
 	if (!Array.isArray(raw)) return [];
 	const out: Grant[] = [];
 	for (const row of raw.slice(0, 200)) {
-		const rawRes = row?.res === "tab" ? "space" : row?.res;
-		const res = RES.includes(rawRes) ? (rawRes as ResKind) : undefined;
+		const res = RES.includes(row?.res) ? (row.res as ResKind) : undefined;
 		if (!res) continue;
 		const id = String(row?.id || "*").slice(0, 80) || "*";
 		const allow = asActions(row?.allow);
@@ -222,12 +221,6 @@ export function grantsFromLegacyRole(r: any): Grant[] {
 	if (p.access) portalAllow.push("users.manage", "groups.manage");
 	if (p.createSpaces) portalAllow.push("spaces.create");
 	if (portalAllow.length) mergeGrant(grants, { res: "portal", id: "*", allow: portalAllow });
-	if (r?.tabs && typeof r.tabs === "object") {
-		for (const [tid, lv] of Object.entries(r.tabs)) {
-			if (lv === "edit") mergeGrant(grants, { res: "space", id: String(tid), allow: ["view", "open", "edit", "move"] });
-			else if (lv === "view") mergeGrant(grants, { res: "space", id: String(tid), allow: ["view", "open"] });
-		}
-	}
 	if (r?.cats && typeof r.cats === "object") {
 		for (const [cid, on] of Object.entries(r.cats)) {
 			if (on) mergeGrant(grants, { res: "cat", id: String(cid), allow: ["view", "open"] });
@@ -270,24 +263,24 @@ export function locate(doc: AclDoc, res: ResKind, id: string | null | undefined)
 			chain: [{ res: "portal", id: "*", restricted: false }]
 		};
 	}
-	for (const tab of doc.spaces || []) {
-		if (res === "space" && tab.id === id) {
+	for (const space of doc.spaces || []) {
+		if (res === "space" && space.id === id) {
 			return {
-				space: tab,
+				space: space,
 				chain: [
-					{ res: "space", id: tab.id, name: tab.name, restricted: Boolean(tab.restricted) },
+					{ res: "space", id: space.id, name: space.name, restricted: Boolean(space.restricted) },
 					{ res: "portal", id: "*", restricted: false }
 				]
 			};
 		}
-		for (const cat of tab.categories || []) {
+		for (const cat of space.categories || []) {
 			if (res === "cat" && cat.id === id) {
 				return {
-					space: tab,
+					space: space,
 					cat,
 					chain: [
 						{ res: "cat", id: cat.id, name: cat.name, restricted: Boolean(cat.restricted) },
-						{ res: "space", id: tab.id, name: tab.name, restricted: Boolean(tab.restricted) },
+						{ res: "space", id: space.id, name: space.name, restricted: Boolean(space.restricted) },
 						{ res: "portal", id: "*", restricted: false }
 					]
 				};
@@ -296,13 +289,13 @@ export function locate(doc: AclDoc, res: ResKind, id: string | null | undefined)
 				const app = (cat.cards || []).find((a) => a.id === id);
 				if (app) {
 					return {
-						space: tab,
+						space: space,
 						cat,
 						app,
 						chain: [
 							{ res: "card", id: app.id, name: app.title, restricted: false },
 							{ res: "cat", id: cat.id, name: cat.name, restricted: Boolean(cat.restricted) },
-							{ res: "space", id: tab.id, name: tab.name, restricted: Boolean(tab.restricted) },
+							{ res: "space", id: space.id, name: space.name, restricted: Boolean(space.restricted) },
 							{ res: "portal", id: "*", restricted: false }
 						]
 					};
@@ -311,7 +304,7 @@ export function locate(doc: AclDoc, res: ResKind, id: string | null | undefined)
 		}
 	}
 	return {
-		chain: [{ res: "portal", id: "*", restricted: false }]
+		chain: [{ res, id, restricted: true }]
 	};
 }
 
@@ -457,11 +450,11 @@ export type EffectiveAccess = { portal: string[]; spaces: AccessSpace[] };
 export function effectiveAccess(user: User | null | undefined, doc: AclDoc): EffectiveAccess {
 	const portal = PORTAL_ACTIONS.filter((a) => can(user, a, { res: "portal" }, doc));
 	const spaces: AccessSpace[] = [];
-	for (const tab of doc.spaces || []) {
-		const tabActs = NODE_ACTIONS.filter((a) => can(user, a, { res: "space", id: tab.id }, doc));
-		if (!tabActs.includes("view")) continue;
+	for (const space of doc.spaces || []) {
+		const spaceActs = NODE_ACTIONS.filter((a) => can(user, a, { res: "space", id: space.id }, doc));
+		if (!spaceActs.includes("view")) continue;
 		const cats: AccessCategory[] = [];
-		for (const cat of tab.categories || []) {
+		for (const cat of space.categories || []) {
 			const catActs = NODE_ACTIONS.filter((a) => can(user, a, { res: "cat", id: cat.id }, doc));
 			if (!catActs.includes("view")) continue;
 			const cards: AccessCard[] = [];
@@ -470,7 +463,7 @@ export function effectiveAccess(user: User | null | undefined, doc: AclDoc): Eff
 				if (!cardActs.includes("view")) continue;
 				const extra = cardActs.filter((a) => a !== "view" && a !== "open");
 				if (extra.length === 0 && !appHasOwnGrant(user, doc, app.id) && catActs.includes("view")) {
-					if (cardActs.length <= 2 && !tab.restricted && !cat.restricted) continue;
+					if (cardActs.length <= 2 && !space.restricted && !cat.restricted) continue;
 				}
 				cards.push({
 					res: "card",
@@ -491,10 +484,10 @@ export function effectiveAccess(user: User | null | undefined, doc: AclDoc): Eff
 		}
 		spaces.push({
 			res: "space",
-			id: tab.id,
-			name: tab.name,
-			restricted: Boolean(tab.restricted),
-			actions: tabActs,
+			id: space.id,
+			name: space.name,
+			restricted: Boolean(space.restricted),
+			actions: spaceActs,
 			cats
 		});
 	}
@@ -517,18 +510,18 @@ export function syntheticUserFromGroup(group: Group): User {
 
 export function absorbResourceAcl(doc: AclDoc): boolean {
 	let moved = false;
-	for (const tab of doc.spaces || []) {
-		const editors = asIdList(tab.editors);
-		const viewers = asIdList(tab.viewers);
+	for (const space of doc.spaces || []) {
+		const editors = asIdList(space.editors);
+		const viewers = asIdList(space.viewers);
 		if (editors.length || viewers.length) moved = true;
-		for (const id of editors) addGrantToPrincipal(doc, id, { res: "space", id: tab.id, allow: ["view", "open", "edit", "move"] });
+		for (const id of editors) addGrantToPrincipal(doc, id, { res: "space", id: space.id, allow: ["view", "open", "edit", "move"] });
 		for (const id of viewers) {
 			if (editors.includes(id)) continue;
-			addGrantToPrincipal(doc, id, { res: "space", id: tab.id, allow: ["view", "open"] });
+			addGrantToPrincipal(doc, id, { res: "space", id: space.id, allow: ["view", "open"] });
 		}
-		tab.editors = [];
-		tab.viewers = [];
-		for (const cat of tab.categories || []) {
+		space.editors = [];
+		space.viewers = [];
+		for (const cat of space.categories || []) {
 			const cEditors = asIdList(cat.editors);
 			const cViewers = asIdList(cat.viewers);
 			if (cEditors.length || cViewers.length) moved = true;
@@ -596,10 +589,10 @@ export function stripRole(doc: AclDoc, roleId: string) {
 	setRoleHolders(doc, roleId, [], []);
 }
 
-export function findCategory(doc: AclDoc, catId: string): { tab: Space; cat: Category } | null {
-	for (const tab of doc.spaces || []) {
-		const cat = (tab.categories || []).find((c) => c.id === catId);
-		if (cat) return { tab, cat };
+export function findCategory(doc: AclDoc, catId: string): { space: Space; cat: Category } | null {
+	for (const space of doc.spaces || []) {
+		const cat = (space.categories || []).find((c) => c.id === catId);
+		if (cat) return { space, cat };
 	}
 	return null;
 }
@@ -609,15 +602,15 @@ export function moveCategoryInDoc(
 	catId: string,
 	destSpaceId: string,
 	insertAt?: unknown,
-): { fromTab: Space; dest: Space; cat: Category } | null {
+): { fromSpace: Space; dest: Space; cat: Category } | null {
 	const found = findCategory(doc, catId);
 	const dest = (doc.spaces || []).find((t) => t.id === destSpaceId);
 	if (!found || !dest) return null;
-	if (found.tab.id === dest.id && insertAt == null) return null;
-	const fromTab = found.tab;
+	if (found.space.id === dest.id && insertAt == null) return null;
+	const fromSpace = found.space;
 	const cat = found.cat;
-	fromTab.categories = (fromTab.categories || []).filter((c) => c.id !== catId);
-	fromTab.categories.forEach((c, i) => {
+	fromSpace.categories = (fromSpace.categories || []).filter((c) => c.id !== catId);
+	fromSpace.categories.forEach((c, i) => {
 		c.sortOrder = i + 1;
 	});
 	const destCategories = dest.categories || [];
@@ -627,7 +620,7 @@ export function moveCategoryInDoc(
 	dest.categories.forEach((c, i) => {
 		c.sortOrder = i + 1;
 	});
-	return { fromTab, dest, cat };
+	return { fromSpace, dest, cat };
 }
 
 function roleHolderCounts(doc: AclDoc, roleId: string): { users: number; groups: number; people: number } {
@@ -694,8 +687,8 @@ export function categoryMoveImpact(doc: AclDoc, catId: string, destSpaceId: stri
 	return {
 		categoryId: catId,
 		categoryName: found.cat.name,
-		fromId: found.tab.id,
-		fromName: found.tab.name,
+		fromId: found.space.id,
+		fromName: found.space.name,
 		toId: dest.id,
 		toName: dest.name,
 		lost,

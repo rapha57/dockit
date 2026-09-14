@@ -378,7 +378,7 @@ html.is-dragging .empty-well {
   accent-color: var(--color-primary);
 }
 
-.tab-row {
+.space-row {
   display: flex;
   align-items: stretch;
   width: 100%;
@@ -390,7 +390,7 @@ html.is-dragging .empty-well {
   overflow: hidden;
   padding: 0 1rem 0.15rem;
 }
-.tab-strip {
+.space-strip {
   display: flex;
   min-width: 0;
   flex: 1;
@@ -398,25 +398,25 @@ html.is-dragging .empty-well {
   gap: inherit;
   overflow: hidden;
 }
-.tab-row-end {
+.space-row-end {
   display: flex;
   flex-shrink: 0;
   align-items: stretch;
   gap: inherit;
 }
-.tab-item-name {
+.space-item-name {
   min-width: 0;
   max-width: 10rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 @media (min-width: 40rem) {
-  .tab-row {
+  .space-row {
     padding-left: 1.5rem;
     padding-right: 1.5rem;
   }
 }
-.tab-item {
+.space-item {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
@@ -432,23 +432,23 @@ html.is-dragging .empty-well {
   white-space: nowrap;
   box-sizing: border-box;
 }
-.tab-item:hover {
+.space-item:hover {
   color: var(--color-fg);
 }
-.tab-item.is-on {
+.space-item.is-on {
   border-bottom-color: var(--color-primary);
   color: var(--color-fg);
 }
-.tab-item.is-src {
+.space-item.is-src {
   border: 1px dashed var(--drop-line);
   border-radius: var(--radius-md);
   background: var(--drop-fill);
   color: var(--drop-ink);
 }
-.tab-item.is-src.is-on {
+.space-item.is-src.is-on {
   border-bottom-color: var(--drop-line);
 }
-.tab-item.is-drop {
+.space-item.is-drop {
   border: 1px dashed var(--drop-line);
   border-bottom-color: var(--drop-line);
   border-radius: var(--radius-md);
@@ -457,30 +457,30 @@ html.is-dragging .empty-well {
   font-weight: 600;
   box-shadow: 0 0 0 3px var(--drop-fill);
 }
-.tab-item .tab-ico {
+.space-item .space-ico {
   width: 1rem;
   height: 1rem;
   flex-shrink: 0;
 }
-.tab-item.is-icon {
+.space-item.is-icon {
   padding-left: 0.65rem;
   padding-right: 0.65rem;
 }
-.tab-item.is-overflow {
+.space-item.is-overflow {
   display: none;
 }
-.tab-more-wrap {
+.space-more-wrap {
   position: relative;
   display: inline-flex;
   flex-shrink: 0;
   align-items: stretch;
 }
-.tab-more.is-off {
+.space-more.is-off {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
 }
-.tab-more-panel {
+.space-more-panel {
   position: fixed;
   z-index: 90;
   min-width: 14rem;
@@ -488,26 +488,26 @@ html.is-dragging .empty-well {
   max-height: min(24rem, 70vh);
   overflow-y: auto;
 }
-.tab-more-panel button .tab-ico {
+.space-more-panel button .space-ico {
   width: 1rem;
   height: 1rem;
   flex-shrink: 0;
 }
-.tab-more-panel button.is-drop {
+.space-more-panel button.is-drop {
   background: var(--drop-fill-hot);
   color: var(--drop-ink);
 }
-.tab-more-panel button.is-src {
+.space-more-panel button.is-src {
   border: 1px dashed var(--drop-line);
   background: var(--drop-fill);
   color: var(--drop-ink);
 }
-.tab-more-gap {
+.space-more-gap {
   min-height: 2.4rem;
   margin: 0.15rem 0;
   border-radius: 0.5rem;
 }
-.tab-gap {
+.space-gap {
   align-self: stretch;
   min-width: 2.75rem;
   height: 2.5rem;
@@ -516,7 +516,6 @@ html.is-dragging .empty-well {
   border-radius: 0.5rem;
   flex-shrink: 0;
 }
-.tab-count,
 .count-chip {
   display: inline-flex;
   align-items: center;
@@ -604,6 +603,9 @@ html.is-dragging .empty-well {
 }
 .cat-head.is-collapsed {
   margin-bottom: 0;
+}
+.cat-head.is-collapsed + .cat-body {
+  display: none !important;
 }
 .cat-head-main {
   display: flex;

@@ -23,12 +23,12 @@ export type InventoryRow = {
 
 export function collectInventory(catalog: InventorySpace[] | null | undefined): InventoryRow[] {
 	const rows: InventoryRow[] = [];
-	for (const tab of catalog ?? []) {
-		for (const cat of tab.categories ?? []) {
+	for (const space of catalog ?? []) {
+		for (const cat of space.categories ?? []) {
 			for (const app of cat.cards ?? cat.cards ?? []) {
 				const kind = app.kind || "app";
 				rows.push({
-					space: tab.name || "",
+					space: space.name || "",
 					category: cat.name || "",
 					kind: kind === "embed" ? t("inventory.kindEmbed") : kind === "note" ? t("inventory.kindNote") : t("inventory.kindApp"),
 					title: String(app.title || "").trim(),

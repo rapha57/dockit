@@ -497,7 +497,7 @@ export function AppCard({
   const href = safeAppHref(cardUrl(app));
   if (kind === "app" && !editMode)
     return (
-      <div data-card-id={app.id} className={shell} onContextMenu={onCtx}>
+      <div data-card-id={app.id} className={shell} onContextMenu={onCtx} onPointerDown={canDrag ? onPointerDown : undefined}>
         {href ? (
           <a
             href={href}

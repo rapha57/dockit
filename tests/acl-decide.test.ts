@@ -64,11 +64,17 @@ describe("decide", () => {
 		expect(decide(owner, "delete", { res: "space", id: "s-locked" }, doc()).winner?.kind).toBe("system");
 	});
 
-	it("migrates a stored grant res=tab to space", () => {
-		const grants = asGrants([{ res: "tab", id: "s-locked", allow: ["view", "open"] }]);
+	it("keeps a stored grant on a space", () => {
+		const grants = asGrants([{ res: "space", id: "s-locked", allow: ["view", "open"] }]);
 		expect(grants[0]?.res).toBe("space");
 		const user: User = { id: "u3", roleIds: ["lecteur"], grants };
 		expect(can(user, "view", { res: "space", id: "s-locked" }, doc())).toBe(true);
+	});
+
+	it("denies view on an unknown id instead of falling back to public", () => {
+		expect(can(viewer, "view", { res: "card", id: "ghost" }, doc())).toBe(false);
+		expect(can(null, "view", { res: "space", id: "missing" }, doc())).toBe(false);
+		expect(can(owner, "view", { res: "card", id: "ghost" }, doc())).toBe(true);
 	});
 });
 

@@ -49,7 +49,7 @@ describe("fromDisk / toDisk", () => {
 		expect("apps" in out.spaces[0].categories[0]).toBe(false);
 	});
 
-	it("loads a legacy tabs / apps / lastTabId file and writes spaces / cards", () => {
+	it("rejects a tabs / apps / lastTabId file instead of migrating it", () => {
 		const raw = {
 			settings,
 			lastTabId: "s1",
@@ -67,15 +67,7 @@ describe("fromDisk / toDisk", () => {
 				},
 			],
 		};
-		const doc = fromDisk(raw);
-		expect(doc).not.toBeNull();
-		expect(doc!.spaces[0].id).toBe("s1");
-		expect(doc!.spaces[0].categories[0].cards[0].id).toBe("a1");
-		expect(doc!.lastSpaceId).toBe("s1");
-		const out = toDisk(doc!);
-		expect(out.spaces[0].categories[0].cards[0].id).toBe("a1");
-		expect(out.lastSpaceId).toBe("s1");
-		expect("tabs" in out).toBe(false);
+		expect(fromDisk(raw)).toBeNull();
 	});
 
 	it("keeps an empty catalog instead of treating it as missing", () => {
@@ -87,5 +79,27 @@ describe("fromDisk / toDisk", () => {
 	it("rejects unreadable JSON instead of coercing it", () => {
 		expect(() => parseStoreText("{")).toThrow("errors.storeUnreadable");
 		expect(() => parseStoreText("{}")).toThrow("errors.storeUnreadable");
+	});
+
+	it("absorbs leftover viewers/editors into grants once", () => {
+		const doc = fromDisk({
+			settings,
+			spaces: [
+				{
+					id: "s1",
+					name: "Home",
+					viewers: ["u1"],
+					editors: [],
+					categories: [],
+				},
+			],
+			users: [{ id: "u1", username: "bob", roleIds: ["lecteur"] }],
+		});
+		expect(doc).not.toBeNull();
+		expect(doc!.spaces[0].viewers).toEqual([]);
+		expect(doc!.spaces[0].editors).toEqual([]);
+		const bob = doc!.users[0];
+		expect(bob).toBeTruthy();
+		expect((bob!.grants || []).some((g) => g.res === "space" && g.id === "s1" && (g.allow || []).includes("view"))).toBe(true);
 	});
 });

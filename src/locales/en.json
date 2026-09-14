@@ -166,7 +166,7 @@
     "editCategory": "Edit category",
     "deleteCategory": "Delete category",
     "addBlock": "Add a category",
-    "restrictedTab": "Restricted space",
+    "restrictedSpace": "Restricted space",
     "favorites": "Favorites"
   },
   "stats": {
@@ -414,7 +414,7 @@
     "tags": "Tags",
     "maxTags": "3 tags maximum",
     "addTag": "Search or create a tag ↵",
-    "urlExists": "This link already exists: “{title}” ({tab})",
+    "urlExists": "This link already exists: “{title}” ({space})",
     "urlExistsN": "This link already exists on {n} cards ({list})",
     "removedBody": "“{name}” will be removed from the portal.",
     "links": "Links",
@@ -506,7 +506,7 @@
     "needSpaceForCard": "Switch to a space to add a card",
     "needCategory": "Create a category first",
     "readonly": "Read-only account",
-    "noEditTab": "No permission to edit this space",
+    "noEditSpace": "No permission to edit this space",
     "probeUnavailable": "Probe unavailable",
     "ssoUnavailable": "SSO unavailable",
     "generic": "Error",
@@ -532,7 +532,7 @@
     "sessionExpired": "Session expired. Sign in again.",
     "userNotFound": "User not found",
     "readonly": "Read-only account",
-    "noEditTab": "No permission to edit this space",
+    "noEditSpace": "No permission to edit this space",
     "insufficient": "Insufficient permissions",
     "adminOnly": "Admin only",
     "noManageSpaces": "No permission to manage spaces",
@@ -620,11 +620,6 @@
     "category.resetLayout": "Card sizes reset",
     "category.delete": "Category deleted",
     "category.restore": "Category restored",
-    "tab.create": "Space created",
-    "tab.update": "Space modified",
-    "tab.delete": "Space deleted",
-    "tab.restore": "Space restored",
-    "tab.duplicate": "Space duplicated",
     "space.create": "Space created",
     "space.update": "Space modified",
     "space.delete": "Space deleted",
@@ -662,7 +657,7 @@
     "csvAccount": "Account"
   },
   "seed": {
-    "tab": "Home",
+    "space": "Home",
     "category": "Applications",
     "cardTitle": "Sample card",
     "cardDesc": "Replace this example with a real card."

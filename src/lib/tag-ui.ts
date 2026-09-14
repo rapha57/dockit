@@ -17,8 +17,8 @@ export function collectTags(
   match?: (app: PortalCard) => boolean,
 ) {
   const map = new Map<string, { name: string; count: number }>();
-  for (const tab of catalog ?? [])
-    for (const cat of tab.categories)
+  for (const space of catalog ?? [])
+    for (const cat of space.categories)
       for (const app of cat.cards) {
         if ((app.kind || "app") !== "app") continue;
         if (match && !match(app)) continue;

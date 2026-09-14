@@ -544,7 +544,7 @@ function defaultSettings(): PortalSettings {
 function blankSpaces(locale?: unknown): { lastSpaceId: string; spaces: DocSpace[] } {
 	const spaceId = crypto.randomUUID();
 	const catId = crypto.randomUUID();
-	const name = withLocale(locale ?? "en", () => t("seed.tab"));
+	const name = withLocale(locale ?? "en", () => t("seed.space"));
 	const category = withLocale(locale ?? "en", () => t("seed.category"));
 	return {
 		lastSpaceId: spaceId,
@@ -654,9 +654,33 @@ function asUsers(raw: unknown): StoredUser[] {
 			groupIds: asIdList(row.groupIds),
 			grants: asGrants(row.grants),
 			disabled: id === "admin" ? false : Boolean(row.disabled),
-			source: row.source === "ad" || row.source === "oidc" ? row.source : "local"
+			source: asAuthSource(row.source),
+			externalId: String(row.externalId || "").slice(0, 400)
 		};
 	}).filter((u) => u.username);
+}
+export type AuthSource = "local" | "ad" | "oidc" | "proxy";
+function asAuthSource(raw: unknown): AuthSource {
+	if (raw === "ad" || raw === "oidc" || raw === "proxy") return raw;
+	return "local";
+}
+export function authExternalId(source: AuthSource, ...parts: string[]): string {
+	return [source, ...parts.map((p) => String(p || "").trim())].filter(Boolean).join(":").slice(0, 400);
+}
+export function findUserForAuth<T extends { username?: string; source?: string; externalId?: string }>(
+	users: T[] | null | undefined,
+	username: string,
+	source: AuthSource,
+	externalId?: string,
+): T | undefined {
+	const name = String(username || "").trim().toLowerCase();
+	if (!name) return undefined;
+	const list = users || [];
+	if (externalId) {
+		const byExt = list.find((u) => asAuthSource(u.source) === source && u.externalId === externalId);
+		if (byExt) return byExt;
+	}
+	return list.find((u) => String(u.username || "").toLowerCase() === name && asAuthSource(u.source) === source);
 }
 function asIdList(raw: unknown): string[] {
 	if (!Array.isArray(raw)) return [];
@@ -724,18 +748,17 @@ function ensureRoles(doc: Doc) {
 		}
 	}
 	doc.roles = [...byId.values()].slice(0, 40);
-	absorbResourceAcl(doc);
 	return doc.roles;
 }
-function normalizeSpaceAccess(tab: any) {
-	const editors = asIdList(tab.editors);
-	const viewers = asIdList(tab.viewers);
+function normalizeSpaceAccess(space: any) {
+	const editors = asIdList(space.editors);
+	const viewers = asIdList(space.viewers);
 	for (const id of editors) if (!viewers.includes(id)) viewers.push(id);
 	return {
-		restricted: Boolean(tab.restricted),
+		restricted: Boolean(space.restricted),
 		viewers,
 		editors,
-		hideLabel: Boolean(tab.hideLabel)
+		hideLabel: Boolean(space.hideLabel)
 	};
 }
 function normalizeCatAccess(cat: any) {
@@ -748,17 +771,17 @@ function normalizeCatAccess(cat: any) {
 		editors
 	};
 }
-function spaceCanSee(tab: Space | DocSpace | null | undefined, user: User | null | undefined, doc: AclDoc) {
-	if (!tab) return false;
-	return can(user, "view", { res: "space", id: tab.id }, doc);
+function spaceCanSee(space: Space | DocSpace | null | undefined, user: User | null | undefined, doc: AclDoc) {
+	if (!space) return false;
+	return can(user, "view", { res: "space", id: space.id }, doc);
 }
-function spaceCanEdit(tab: Space | DocSpace | null | undefined, user: User | null | undefined, doc: AclDoc) {
-	if (!tab || !user) return false;
-	return can(user, "edit", { res: "space", id: tab.id }, doc);
+function spaceCanEdit(space: Space | DocSpace | null | undefined, user: User | null | undefined, doc: AclDoc) {
+	if (!space || !user) return false;
+	return can(user, "edit", { res: "space", id: space.id }, doc);
 }
-function spaceCanMove(tab: Space | DocSpace | null | undefined, user: User | null | undefined, doc: AclDoc) {
-	if (!tab || !user) return false;
-	return can(user, "move", { res: "space", id: tab.id }, doc);
+function spaceCanMove(space: Space | DocSpace | null | undefined, user: User | null | undefined, doc: AclDoc) {
+	if (!space || !user) return false;
+	return can(user, "move", { res: "space", id: space.id }, doc);
 }
 function catCanSee(cat: PortalCategory | null | undefined, user: User | null | undefined, doc: AclDoc) {
 	if (!cat) return false;
@@ -831,10 +854,10 @@ function historyVisible(doc: Doc, user: HydratedUser | null | undefined, ev: His
 	const type = String(ev?.type || "");
 	if (type === "login") return ev.actor === user.username;
 	if (/^(user|group|role|settings|theme|oidc|ldap|auth|portal)\./.test(type)) return false;
-	const tabMeta = ev?.snapshot?.tab;
-	if (!tabMeta) return false;
-	const live = doc.spaces.find((t) => t.id === tabMeta.id);
-	return spaceCanEdit(live || tabMeta, user, doc);
+	const spaceMeta = ev?.snapshot?.space;
+	if (!spaceMeta) return false;
+	const live = doc.spaces.find((t) => t.id === spaceMeta.id);
+	return spaceCanEdit(live || spaceMeta, user, doc);
 }
 function ensureUsers(doc: Doc) {
 	if (!Array.isArray(doc.users)) doc.users = [];
@@ -855,9 +878,9 @@ function ensureUsers(doc: Doc) {
 	if (!admin.passHash) admin.passHash = hashPasswordSync(envPassword());
 	return doc.users;
 }
-function spaceAccess(tab: DocSpace, user: User | null | undefined, doc: AclDoc): SpacePerm | null {
-	if (!spaceCanSee(tab, user, doc)) return null;
-	if (spaceCanEdit(tab, user, doc)) return "edit";
+function spaceAccess(space: DocSpace, user: User | null | undefined, doc: AclDoc): SpacePerm | null {
+	if (!spaceCanSee(space, user, doc)) return null;
+	if (spaceCanEdit(space, user, doc)) return "edit";
 	return "view";
 }
 function readSession(token: string) {
@@ -882,8 +905,8 @@ function requireEdit(doc: Doc, token: string, spaceId?: string): HydratedUser {
 	const user = requireUser(doc, token);
 	if (isOwnerUser(user)) return user;
 	if (spaceId) {
-		const tab = doc.spaces.find((t) => t.id === spaceId);
-		if (!tab || !spaceCanEdit(tab, user, doc)) throw new Error("errors.noEditTab");
+		const space = doc.spaces.find((t) => t.id === spaceId);
+		if (!space || !spaceCanEdit(space, user, doc)) throw new Error("errors.noEditSpace");
 		return user;
 	}
 	if (user.canCreateSpaces || user._canEdit || doc.spaces.some((t) => spaceCanEdit(t, user, doc))) return user;
@@ -915,7 +938,8 @@ function publicUser(u: StoredUser, _doc: AclDoc) {
 		roleIds,
 		grants: asGrants(u.grants),
 		disabled: Boolean(u.disabled),
-		source: u.source === "ad" || u.source === "oidc" ? u.source : "local",
+		source: asAuthSource(u.source),
+		externalId: String(u.externalId || ""),
 		groupIds: asIdList(u.groupIds)
 	};
 }
@@ -944,10 +968,10 @@ function sessionInfo(user: StoredUser, doc: Doc): SessionInfo {
 	const u = hydrateUser(user, doc)!;
 	const spacePerms: Record<string, SpacePerm> = {};
 	const spaceMoves: Record<string, boolean> = {};
-	for (const tab of doc.spaces) {
-		const perm = spaceAccess(tab, u, doc);
-		if (perm) spacePerms[tab.id] = perm;
-		if (spaceCanSee(tab, u, doc) && spaceCanMove(tab, u, doc)) spaceMoves[tab.id] = true;
+	for (const space of doc.spaces) {
+		const perm = spaceAccess(space, u, doc);
+		if (perm) spacePerms[space.id] = perm;
+		if (spaceCanSee(space, u, doc) && spaceCanMove(space, u, doc)) spaceMoves[space.id] = true;
 	}
 	const owner = isOwnerUser(u);
 	return {
@@ -1101,10 +1125,10 @@ function directoryPayload(doc: Doc, actor: User) {
 	};
 }
 function stripUserAccess(doc: Doc, userId: string) {
-	for (const tab of doc.spaces) {
-		tab.editors = (tab.editors || []).filter((id) => id !== userId);
-		tab.viewers = (tab.viewers || []).filter((id) => id !== userId);
-		for (const cat of tab.categories || []) {
+	for (const space of doc.spaces) {
+		space.editors = (space.editors || []).filter((id) => id !== userId);
+		space.viewers = (space.viewers || []).filter((id) => id !== userId);
+		for (const cat of space.categories || []) {
 			cat.editors = (cat.editors || []).filter((id) => id !== userId);
 			cat.viewers = (cat.viewers || []).filter((id) => id !== userId);
 		}
@@ -1125,9 +1149,9 @@ function dayKey(d = /* @__PURE__ */ new Date(), tz?: unknown) {
 }
 function seesFullCatalog(doc: Doc, user: User | null | undefined) {
 	if (user && isOwnerUser(user)) return true;
-	for (const tab of doc.spaces || []) {
-		if (!can(user, "view", { res: "space", id: tab.id }, doc)) return false;
-		for (const cat of tab.categories || []) {
+	for (const space of doc.spaces || []) {
+		if (!can(user, "view", { res: "space", id: space.id }, doc)) return false;
+		for (const cat of space.categories || []) {
 			if (!can(user, "view", { res: "cat", id: cat.id }, doc)) return false;
 			for (const app of cat.cards || []) {
 				if (!can(user, "view", { res: "card", id: app.id }, doc)) return false;
@@ -1151,7 +1175,7 @@ function clickStatsFor(doc: Doc, user: User | null | undefined): ClickStats {
 }
 function computeClickStats(doc: Doc) {
 	let all = 0;
-	for (const tab of doc.spaces) for (const cat of tab.categories) for (const app of cat.cards) if (app.kind === "app") all += app.clicks || 0;
+	for (const space of doc.spaces) for (const cat of space.categories) for (const app of cat.cards) if (app.kind === "app") all += app.clicks || 0;
 	const days = doc.clickDays ?? {};
 	const now = Date.now();
 	const tz = doc.settings?.timezone;
@@ -1215,9 +1239,9 @@ function isMissingStoreFile(err: unknown): boolean {
 function asStore(raw: any): Doc | null {
 	if (!raw || typeof raw !== "object") return null;
 	const doc = raw;
-	const spaces = Array.isArray(doc.spaces) ? doc.spaces : doc.tabs;
-	if (!doc.settings || !Array.isArray(spaces)) return null;
-	return {
+	const spaces = Array.isArray(doc.spaces) ? doc.spaces : null;
+	if (!doc.settings || !spaces) return null;
+	const parsed: Doc = {
 		settings: {
 			title: String(doc.settings.title || "Dockit"),
 			subtitle: String(doc.settings.subtitle || ""),
@@ -1272,7 +1296,7 @@ function asStore(raw: any): Doc | null {
 			numberFormat: asNumberFormat(doc.settings.numberFormat)
 		},
 		customIcons: (Array.isArray(doc.customIcons) ? doc.customIcons : []).slice(0, MAX_CUSTOM_ICONS),
-		lastSpaceId: typeof doc.lastSpaceId === "string" ? doc.lastSpaceId : typeof doc.lastTabId === "string" ? doc.lastTabId : void 0,
+		lastSpaceId: typeof doc.lastSpaceId === "string" ? doc.lastSpaceId : void 0,
 		clickDays: asClickDays(doc.clickDays),
 		users: asUsers(doc.users),
 		groups: asGroups(doc.groups),
@@ -1288,10 +1312,12 @@ function asStore(raw: any): Doc | null {
 				...c,
 				sortOrder: Number(c.sortOrder ?? j + 1),
 				...normalizeCatAccess(c),
-				cards: (c.cards ?? c.apps ?? []).map((a: any, k: number) => normalizeItem(a, c.id, Number(a.sortOrder ?? k + 1)))
+				cards: (Array.isArray(c.cards) ? c.cards : []).map((a: any, k: number) => normalizeItem(a, c.id, Number(a.sortOrder ?? k + 1)))
 			}))
 		}))
 	};
+	absorbResourceAcl(parsed);
+	return parsed;
 }
 function historyToDisk(row: any): any {
 	if (!row || typeof row !== "object") return row;
@@ -1299,9 +1325,9 @@ function historyToDisk(row: any): any {
 	return {
 		...row,
 		restored: {
-			space: Boolean(restored.tab || restored.space),
+			space: Boolean(restored.space),
 			categories: Array.isArray(restored.categories) ? restored.categories : [],
-			cards: Array.isArray(restored.cards) ? restored.cards : Array.isArray(restored.apps) ? restored.apps : []
+			cards: Array.isArray(restored.cards) ? restored.cards : []
 		},
 		snapshot: snapshotToDisk(row.snapshot)
 	};
@@ -1522,15 +1548,15 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 }
 function view(doc: Doc, spaceId: string | undefined, user: HydratedUser | null) {
 	const session = user ? sessionInfo(user, doc) : null;
-	const tabs = publicSpaces(doc, user);
-	const activeSpaceId = spaceId && tabs.some((t) => t.id === spaceId) && spaceId || doc.lastSpaceId && tabs.some((t) => t.id === doc.lastSpaceId) && doc.lastSpaceId || tabs[0]?.id || "";
+	const spaces = publicSpaces(doc, user);
+	const activeSpaceId = spaceId && spaces.some((s) => s.id === spaceId) && spaceId || doc.lastSpaceId && spaces.some((s) => s.id === doc.lastSpaceId) && doc.lastSpaceId || spaces[0]?.id || "";
 	const stored = doc.spaces.find((t) => t.id === activeSpaceId);
 	const sortCats = (cats: PortalCategory[]) => [...cats].filter((c) => catCanSee(c, user, doc)).sort((a, b) => a.sortOrder - b.sortOrder).map((c) => ({
 		...c,
 		cards: [...c.cards].filter((a) => can(user, "view", { res: "card", id: a.id }, doc)).sort((a, b) => a.sortOrder - b.sortOrder)
 	}));
 	const stripAcl = (cats: PortalCategory[]) => sortCats(cats).map((c) => ({ ...c, viewers: [] as string[], editors: [] as string[] }));
-	const visibleIds = new Set(tabs.map((t) => t.id));
+	const visibleIds = new Set(spaces.map((s) => s.id));
 	const catalog = [...doc.spaces].sort((a, b) => a.sortOrder - b.sortOrder).filter((t) => visibleIds.has(t.id)).map((t) => ({
 		id: t.id,
 		name: t.name,
@@ -1548,7 +1574,7 @@ function view(doc: Doc, spaceId: string | undefined, user: HydratedUser | null) 
 			...ic,
 			dataUrl: toClientAsset(ic.dataUrl)
 		})),
-		spaces: tabs,
+		spaces: spaces,
 		activeSpaceId,
 		categories: sortCats(stored?.categories ?? []),
 		catalog,
@@ -1563,25 +1589,25 @@ function view(doc: Doc, spaceId: string | undefined, user: HydratedUser | null) 
 	};
 }
 function spaceOfCategory(doc: Doc, categoryId: string): DocSpace {
-	const tab = doc.spaces.find((t) => t.categories!.some((c) => c.id === categoryId));
-	if (!tab) throw new Error("errors.categoryNotFound");
-	return tab;
+	const space = doc.spaces.find((t) => t.categories!.some((c) => c.id === categoryId));
+	if (!space) throw new Error("errors.categoryNotFound");
+	return space;
 }
-function categoryOf(doc: Doc, categoryId: string): { tab: DocSpace; cat: PortalCategory } {
-	for (const tab of doc.spaces) {
-		const cat = tab.categories!.find((c) => c.id === categoryId);
+function categoryOf(doc: Doc, categoryId: string): { space: DocSpace; cat: PortalCategory } {
+	for (const space of doc.spaces) {
+		const cat = space.categories!.find((c) => c.id === categoryId);
 		if (cat) return {
-			tab,
+			space,
 			cat
 		};
 	}
 	throw new Error("errors.categoryNotFound");
 }
-function cardOf(doc: Doc, appId: string): { tab: DocSpace; cat: PortalCategory; app: PortalCard } {
-	for (const tab of doc.spaces) for (const cat of tab.categories!) {
+function cardOf(doc: Doc, appId: string): { space: DocSpace; cat: PortalCategory; app: PortalCard } {
+	for (const space of doc.spaces) for (const cat of space.categories!) {
 		const app = cat.cards.find((a) => a.id === appId);
 		if (app) return {
-			tab,
+			space,
 			cat,
 			app
 		};
@@ -1589,17 +1615,17 @@ function cardOf(doc: Doc, appId: string): { tab: DocSpace; cat: PortalCategory; 
 	throw new Error("errors.appNotFound");
 }
 function liveCardId(doc: Doc, id: string) {
-	for (const tab of doc.spaces) for (const cat of tab.categories!) if (cat.cards.some((a) => a.id === id)) return true;
+	for (const space of doc.spaces) for (const cat of space.categories!) if (cat.cards.some((a) => a.id === id)) return true;
 	return false;
 }
-type MetaShape = { id?: string; name?: string; icon?: string; restricted?: boolean; viewers?: string[]; editors?: string[]; hideLabel?: boolean; sortOrder?: number; apps?: any[]; cards?: any[]; categories?: any[]; [key: string]: any };
+type MetaShape = { id?: string; name?: string; icon?: string; restricted?: boolean; viewers?: string[]; editors?: string[]; hideLabel?: boolean; sortOrder?: number; cards?: any[]; categories?: any[]; [key: string]: any };
 function ensureRestoredSpace(doc: Doc, meta: MetaShape | null | undefined): DocSpace {
 	if (!meta) throw new Error("errors.historySpaceMissing");
 	const byId = doc.spaces.find((t) => t.id === meta.id);
 	if (byId) return byId;
 	const byName = doc.spaces.find((t) => t.name.toLowerCase() === String(meta.name || "").toLowerCase());
 	if (byName) return byName;
-	const tab: DocSpace = {
+	const space: DocSpace = {
 		id: meta.id && !doc.spaces.some((t) => t.id === meta.id) ? meta.id : crypto.randomUUID(),
 		name: meta.name || "Space",
 		icon: meta.icon || "Layers",
@@ -1610,12 +1636,12 @@ function ensureRestoredSpace(doc: Doc, meta: MetaShape | null | undefined): DocS
 		hideLabel: Boolean(meta.hideLabel),
 		categories: []
 	};
-	doc.spaces.push(tab);
-	return tab;
+	doc.spaces.push(space);
+	return space;
 }
-function ensureRestoredCat(tab: DocSpace, meta: MetaShape | null | undefined): PortalCategory {
+function ensureRestoredCat(space: DocSpace, meta: MetaShape | null | undefined): PortalCategory {
 	if (!meta) throw new Error("errors.historyCategoryMissing");
-	const cats = tab.categories ?? (tab.categories = []);
+	const cats = space.categories ?? (space.categories = []);
 	const byId = cats.find((c) => c.id === meta.id);
 	if (byId) return byId;
 	const byName = cats.find((c) => c.name.toLowerCase() === String(meta.name || "").toLowerCase());
@@ -1631,9 +1657,9 @@ function ensureRestoredCat(tab: DocSpace, meta: MetaShape | null | undefined): P
 	cats.push(cat);
 	return cat;
 }
-function putRestoredCard(doc: Doc, tabMeta: MetaShape | null | undefined, catMeta: MetaShape | null | undefined, app: any) {
-	const tab = ensureRestoredSpace(doc, tabMeta);
-	const cat = ensureRestoredCat(tab, catMeta);
+function putRestoredCard(doc: Doc, spaceMeta: MetaShape | null | undefined, catMeta: MetaShape | null | undefined, app: any) {
+	const space = ensureRestoredSpace(doc, spaceMeta);
+	const cat = ensureRestoredCat(space, catMeta);
 	const id = app.id && !liveCardId(doc, app.id) ? app.id : crypto.randomUUID();
 	const sortOrder = Math.max(0, ...cat.cards.map((a) => a.sortOrder)) + 1;
 	cat.cards.push(normalizeItem({
@@ -1641,7 +1667,7 @@ function putRestoredCard(doc: Doc, tabMeta: MetaShape | null | undefined, catMet
 		id
 	}, cat.id, sortOrder));
 	return {
-		tab,
+		space,
 		cat,
 		id
 	};
@@ -1659,18 +1685,18 @@ function markRestored(ev: HistoryEvent, scope: "space" | "category" | "card", id
 }
 function snapshotCardFromEvent(ev: HistoryEvent, targetId: string): { card: any; category: any; space: any } | null {
 	const snap = ev.snapshot || {};
-	const space = snap.space || snap.tab;
-	if ((snap.card || snap.app) && (snap.card || snap.app).id === targetId) return {
-		card: snap.card || snap.app,
+	const space = snap.space;
+	if (snap.card && snap.card.id === targetId) return {
+		card: snap.card,
 		category: snap.category,
 		space
 	};
-	for (const card of snap.cards || snap.apps || []) if (card.id === targetId) return {
+	for (const card of snap.cards || []) if (card.id === targetId) return {
 		card,
 		category: snap.category,
 		space
 	};
-	for (const cat of snap.categories || []) for (const card of cat.cards || cat.apps || []) if (card.id === targetId) return {
+	for (const cat of snap.categories || []) for (const card of cat.cards || []) if (card.id === targetId) return {
 		card,
 		category: snapshotCat(cat),
 		space
@@ -1698,13 +1724,13 @@ function restoreHistoryItem(doc: Doc, user: HydratedUser, eventId: string, scope
 	}
 	if (scope === "category") {
 		let catMeta = snap.category && snap.category.id === targetId ? snap.category : null;
-		let cards = snap.cards || snap.apps || [];
-		const spaceMeta = snap.space || snap.tab;
+		let cards = snap.cards || [];
+		const spaceMeta = snap.space;
 		if (!catMeta) {
 			const cat = (snap.categories || []).find((c: any) => c.id === targetId);
 			if (!cat) throw new Error("errors.historyCategoryMissing");
 			catMeta = snapshotCat(cat);
-			cards = cat.cards || cat.apps || [];
+			cards = cat.cards || [];
 		}
 		const space = ensureRestoredSpace(doc, spaceMeta);
 		const cat = ensureRestoredCat(space, catMeta);
@@ -1722,12 +1748,12 @@ function restoreHistoryItem(doc: Doc, user: HydratedUser, eventId: string, scope
 		return space.id;
 	}
 	if (scope === "space") {
-		if (!snap.space && !snap.tab) throw new Error("errors.historySpaceMissing");
-		const spaceMeta = snap.space || snap.tab;
+		if (!snap.space) throw new Error("errors.historySpaceMissing");
+		const spaceMeta = snap.space;
 		const space = ensureRestoredSpace(doc, spaceMeta);
 		for (const cat of snap.categories || []) {
 			const created = ensureRestoredCat(space, snapshotCat(cat));
-			for (const card of cat.cards || cat.apps || []) {
+			for (const card of cat.cards || []) {
 				if (liveCardId(doc, card.id)) continue;
 				putRestoredCard(doc, snapshotSpace(space), snapshotCat(created), card);
 				markRestored(ev, "card", card.id);
@@ -1800,8 +1826,8 @@ export const rememberSpace = createServerFn({ method: "POST" }).validator(z.obje
 })).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	if (doc.lastSpaceId === data.spaceId) return;
-	const tab = doc.spaces.find((t) => t.id === data.spaceId);
-	if (!tab) return;
+	const space = doc.spaces.find((t) => t.id === data.spaceId);
+	if (!space) return;
 	let user = null;
 	const token = tok(data, request);
 	if (token) try {
@@ -1809,7 +1835,7 @@ export const rememberSpace = createServerFn({ method: "POST" }).validator(z.obje
 	} catch {
 		return;
 	}
-	if (!user || !isOwnerUser(user) || !spaceCanSee(tab, user, doc)) return;
+	if (!user || !isOwnerUser(user) || !spaceCanSee(space, user, doc)) return;
 	doc.lastSpaceId = data.spaceId;
 	await writeDocUnlocked(doc);
 }));
@@ -1826,7 +1852,7 @@ export const recordClick = createServerFn({ method: "POST" }).validator(z.object
 		user = null;
 	}
 	const found = cardOf(doc, data.id);
-	if (!spaceCanSee(found.tab, user, doc) || !can(user, "view", { res: "card", id: found.app.id }, doc)) return {
+	if (!spaceCanSee(found.space, user, doc) || !can(user, "view", { res: "card", id: found.app.id }, doc)) return {
 		id: data.id,
 		clicks: found.app.clicks || 0
 	};
@@ -1849,7 +1875,7 @@ export const resetClicks = createServerFn({ method: "POST" }).validator(z.object
 	spaceId: z.string().optional()
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
-	for (const tab of doc.spaces) for (const cat of tab.categories) for (const app of cat.cards) if (app.kind === "app") app.clicks = 0;
+	for (const space of doc.spaces) for (const cat of space.categories) for (const app of cat.cards) if (app.kind === "app") app.clicks = 0;
 	doc.clickDays = {};
 	return emit(doc, user, data.spaceId);
 }));
@@ -1858,8 +1884,8 @@ export const resetProbes = createServerFn({ method: "POST" }).validator(z.object
 	spaceId: z.string().optional()
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireAdmin(doc, tok(data, request));
-	for (const tab of doc.spaces)
-		for (const cat of tab.categories)
+	for (const space of doc.spaces)
+		for (const cat of space.categories)
 			for (const app of cat.cards) {
 				if ((app.kind || "app") !== "app") continue;
 				if (asCheck(app.check) === "off") continue;
@@ -2043,7 +2069,8 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 		return mutate(async (doc) => {
 			ensureUsers(doc);
 			ensureGroups(doc);
-			let user = doc.users.find((u) => u.username === username);
+			const extId = authExternalId("ad", dir.id, username);
+			let user = findUserForAuth(doc.users, username, "ad", extId);
 			if (!user) {
 				if (!dir.autoCreate) {
 					loginFail(key);
@@ -2056,7 +2083,8 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 					role: "lecteur",
 					roleIds: ["lecteur"],
 					grants: [],
-					source: "ad"
+					source: "ad",
+					externalId: extId
 				};
 				doc.users.push(user);
 				appendHistory(doc, user, {
@@ -2068,6 +2096,7 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 				loginFail(key);
 				throw new Error("errors.disabled");
 			}
+			if (!user.externalId) user.externalId = extId;
 			applyAdMembership(doc, user, dir.id, auth?.memberOf);
 			loginOk(key);
 			appendHistory(doc, user, {
@@ -2085,7 +2114,7 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 		ensureUsers(doc);
 		const owner = doc.users.find((u) => isOwnerUser(u));
 		const asOwner = noPass && (!data.username?.trim() || username === "admin" || username === owner?.username);
-		const user = asOwner ? owner : doc.users.find((u) => u.username === username);
+		const user = asOwner ? owner : findUserForAuth(doc.users, username, "local");
 		const skipPass = noPass && isOwnerUser(user);
 		if (!user || !skipPass && !await verifyPassword(data.password || "", user.passHash)) {
 			loginFail(key);
@@ -2355,7 +2384,8 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 		const live = doc.settings;
 		if (!live.oidcEnabled || !live.oidcIssuer || !live.oidcClientId) throw new Error("errors.oidcOff");
 		ensureUsers(doc);
-		let user = doc.users.find((u) => u.username === username);
+		const extId = authExternalId("oidc", issuer, username);
+		let user = findUserForAuth(doc.users, username, "oidc", extId);
 		if (!user) {
 			if (!live.oidcAutoCreate) {
 				loginFail(key);
@@ -2368,7 +2398,8 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 				role: "lecteur",
 				roleIds: ["lecteur"],
 				grants: [],
-				source: "oidc"
+				source: "oidc",
+				externalId: extId
 			};
 			doc.users.push(user);
 			appendHistory(doc, user, {
@@ -2380,6 +2411,7 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 			loginFail(key);
 			throw new Error("errors.disabled");
 		}
+		if (!user.externalId) user.externalId = extId;
 		applyOidcGroups(doc, user, issuer, groups);
 		loginOk(key);
 		appendHistory(doc, user, {
@@ -2419,7 +2451,8 @@ export const proxyLogin = createServerFn({ method: "POST" }).validator(z.object(
 	}
 	return mutate(async (doc) => {
 		ensureUsers(doc);
-		let user = doc.users.find((u) => u.username === username);
+		const extId = authExternalId("proxy", username);
+		let user = findUserForAuth(doc.users, username, "proxy", extId);
 		if (!user) {
 			if (!doc.settings.ldapAutoCreate) {
 				loginFail(key);
@@ -2432,7 +2465,8 @@ export const proxyLogin = createServerFn({ method: "POST" }).validator(z.object(
 				role: "lecteur",
 				roleIds: ["lecteur"],
 				grants: [],
-				source: "proxy"
+				source: "proxy",
+				externalId: extId
 			};
 			doc.users.push(user);
 			appendHistory(doc, user, {
@@ -2444,6 +2478,7 @@ export const proxyLogin = createServerFn({ method: "POST" }).validator(z.object(
 			loginFail(key);
 			throw new Error("errors.disabled");
 		}
+		if (!user.externalId) user.externalId = extId;
 		if (directoryId && memberOf) applyAdMembership(doc, user, directoryId, memberOf);
 		loginOk(key);
 		appendHistory(doc, user, {
@@ -2728,7 +2763,7 @@ export const createSpace = createServerFn({ method: "POST" }).validator(z.object
 	appendHistory(doc, user, {
 		type: "space.create",
 		label: data.name,
-		snapshot: { tab: snapshotSpace(doc.spaces[doc.spaces.length - 1]) }
+		snapshot: { space: snapshotSpace(doc.spaces[doc.spaces.length - 1]) }
 	});
 	return emit(doc, user, id);
 }));
@@ -2773,13 +2808,13 @@ export const duplicateSpace = createServerFn({ method: "POST" }).validator(z.obj
 	const ids = ordered.map((t) => t.id);
 	ids.splice(srcIndex < 0 ? ids.length : srcIndex + 1, 0, spaceId);
 	ids.forEach((id, i) => {
-		const tab = doc.spaces.find((t) => t.id === id);
-		if (tab) tab.sortOrder = i + 1;
+		const space = doc.spaces.find((t) => t.id === id);
+		if (space) space.sortOrder = i + 1;
 	});
 	appendHistory(doc, user, {
 		type: "space.duplicate",
 		label: `${base} (${suffix})`.slice(0, 40),
-		snapshot: { tab: snapshotSpace(doc.spaces.find((t) => t.id === spaceId)) }
+		snapshot: { space: snapshotSpace(doc.spaces.find((t) => t.id === spaceId)) }
 	});
 	return emit(doc, user, spaceId);
 }));
@@ -2794,21 +2829,16 @@ export const updateSpace = createServerFn({ method: "POST" }).validator(z.object
 	hideLabel: z.boolean().optional()
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.id);
-	const tab = doc.spaces.find((t) => t.id === data.id);
-	if (!tab) throw new Error("errors.portalNotFound");
-	tab.name = data.name;
-	tab.icon = data.icon;
-	if (typeof data.hideLabel === "boolean") tab.hideLabel = data.hideLabel;
-	if (canSetNodeAcl(user)) {
-		if (typeof data.restricted === "boolean") tab.restricted = data.restricted;
-		if (data.viewers) tab.viewers = asIdList(data.viewers);
-		if (data.editors) tab.editors = asIdList(data.editors);
-		for (const id of tab.editors) if (!tab.viewers.includes(id)) tab.viewers.push(id);
-	}
+	const space = doc.spaces.find((t) => t.id === data.id);
+	if (!space) throw new Error("errors.portalNotFound");
+	space.name = data.name;
+	space.icon = data.icon;
+	if (typeof data.hideLabel === "boolean") space.hideLabel = data.hideLabel;
+	if (canSetNodeAcl(user) && typeof data.restricted === "boolean") space.restricted = data.restricted;
 	appendHistory(doc, user, {
 		type: "space.update",
-		label: tab.name,
-		snapshot: { tab: snapshotSpace(tab) }
+		label: space.name,
+		snapshot: { space: snapshotSpace(space) }
 	});
 	return emit(doc, user, data.id);
 }));
@@ -2827,13 +2857,13 @@ export const deleteSpace = createServerFn({ method: "POST" }).validator(z.object
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.id);
 	if (doc.spaces.length <= 1) throw new Error("errors.lastSpace");
-	const tab = doc.spaces.find((t) => t.id === data.id);
-	if (tab) appendHistory(doc, user, {
+	const space = doc.spaces.find((t) => t.id === data.id);
+	if (space) appendHistory(doc, user, {
 		type: "space.delete",
-		label: tab.name,
+		label: space.name,
 		snapshot: {
-			space: snapshotSpace(tab),
-			categories: (tab.categories || []).map((c) => ({
+			space: snapshotSpace(space),
+			categories: (space.categories || []).map((c) => ({
 				...snapshotCat(c),
 				cards: (c.cards || []).map(snapshotCard)
 			}))
@@ -2853,9 +2883,9 @@ export const createCategory = createServerFn({ method: "POST" }).validator(z.obj
 	editors: z.array(z.string()).optional()
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.spaceId);
-	const tab = doc.spaces.find((t) => t.id === data.spaceId);
-	if (!tab) throw new Error("errors.portalNotFound");
-	const next = Math.max(0, ...tab.categories.map((c) => c.sortOrder)) + 1;
+	const space = doc.spaces.find((t) => t.id === data.spaceId);
+	if (!space) throw new Error("errors.portalNotFound");
+	const next = Math.max(0, ...space.categories.map((c) => c.sortOrder)) + 1;
 	const access = canSetNodeAcl(user) ? normalizeCatAccess({
 		restricted: data.restricted,
 		viewers: data.viewers,
@@ -2865,7 +2895,7 @@ export const createCategory = createServerFn({ method: "POST" }).validator(z.obj
 		viewers: [],
 		editors: []
 	};
-	tab.categories.push({
+	space.categories.push({
 		id: crypto.randomUUID(),
 		name: data.name,
 		icon: data.icon,
@@ -2877,8 +2907,8 @@ export const createCategory = createServerFn({ method: "POST" }).validator(z.obj
 		type: "category.create",
 		label: data.name,
 		snapshot: {
-			space: snapshotSpace(tab),
-			category: snapshotCat(tab.categories[tab.categories.length - 1])
+			space: snapshotSpace(space),
+			category: snapshotCat(space.categories[space.categories.length - 1])
 		}
 	});
 	return emit(doc, user, data.spaceId);
@@ -2893,45 +2923,41 @@ export const updateCategory = createServerFn({ method: "POST" }).validator(z.obj
 	editors: z.array(z.string()).optional()
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
-	const { tab, cat } = categoryOf(doc, data.id);
-	requireEdit(doc, tok(data, request), tab.id);
+	const { space, cat } = categoryOf(doc, data.id);
+	requireEdit(doc, tok(data, request), space.id);
 	cat.name = data.name;
 	cat.icon = data.icon;
-	if (canSetNodeAcl(user) && typeof data.restricted === "boolean") Object.assign(cat, normalizeCatAccess({
-		restricted: data.restricted,
-		viewers: data.viewers,
-		editors: data.editors
-	}));
+	if (canSetNodeAcl(user) && typeof data.restricted === "boolean") cat.restricted = data.restricted;
 	appendHistory(doc, user, {
 		type: "category.update",
 		label: cat.name,
 		snapshot: {
-			space: snapshotSpace(tab),
+			space: snapshotSpace(space),
 			category: snapshotCat(cat)
 		}
 	});
-	return emit(doc, user, tab.id);
+	return emit(doc, user, space.id);
 }));
 export const deleteCategory = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
-	const tab = spaceOfCategory(doc, data.id);
-	requireEdit(doc, tok(data, request), tab.id);
-	const cat = tab.categories.find((c) => c.id === data.id);
+	const space = spaceOfCategory(doc, data.id);
+	requireEdit(doc, tok(data, request), space.id);
+	const cat = space.categories.find((c) => c.id === data.id);
 	if (cat) appendHistory(doc, user, {
 		type: "category.delete",
 		label: cat.name,
 		snapshot: {
-			space: snapshotSpace(tab),
+			space: snapshotSpace(space),
 			category: snapshotCat(cat),
-			apps: (cat.cards || []).map(snapshotCard)
+			cards: (cat.cards || []).map(snapshotCard)
 		}
 	});
-	tab.categories = tab.categories.filter((c) => c.id !== data.id);
+	space.categories = space.categories.filter((c) => c.id !== data.id);
 	pruneUnusedTags(doc);
-	return emit(doc, user, tab.id);
+	return emit(doc, user, space.id);
 }));
 const itemPayload = {
 	categoryId: z.string().min(1),
@@ -2991,8 +3017,8 @@ export const createCard = createServerFn({ method: "POST" }).validator(z.object(
 	requireUrl(data.kind, data.links?.[0]?.url || data.url);
 	requireTitle(data.kind, data.title);
 	requireBody(data.kind, data.description);
-	const { tab, cat } = categoryOf(doc, data.categoryId);
-	requireEdit(doc, tok(data, request), tab.id);
+	const { space, cat } = categoryOf(doc, data.categoryId);
+	requireEdit(doc, tok(data, request), space.id);
 	const next = Math.max(0, ...cat.cards.map((a) => a.sortOrder)) + 1;
 	cat.cards.push(normalizeItem({
 		kind: data.kind,
@@ -3016,12 +3042,12 @@ export const createCard = createServerFn({ method: "POST" }).validator(z.object(
 		type: "card.create",
 		label: created.title || tt(doc, "empty.untitled"),
 		snapshot: {
-			space: snapshotSpace(tab),
+			space: snapshotSpace(space),
 			category: snapshotCat(cat),
 			app: snapshotCard(created)
 		}
 	});
-	return emit(doc, user, tab.id);
+	return emit(doc, user, space.id);
 }));
 export const updateCard = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
@@ -3034,8 +3060,8 @@ export const updateCard = createServerFn({ method: "POST" }).validator(z.object(
 	requireBody(data.kind, data.description);
 	const found = cardOf(doc, data.id);
 	const dest = categoryOf(doc, data.categoryId);
-	requireEdit(doc, tok(data, request), found.tab.id);
-	requireEdit(doc, tok(data, request), dest.tab.id);
+	requireEdit(doc, tok(data, request), found.space.id);
+	requireEdit(doc, tok(data, request), dest.space.id);
 	if (found.cat.id !== dest.cat.id) {
 		found.cat.cards = found.cat.cards.filter((a) => a.id !== data.id);
 		dest.cat.cards.push(found.app);
@@ -3067,32 +3093,32 @@ export const updateCard = createServerFn({ method: "POST" }).validator(z.object(
 		type: "card.update",
 		label: found.app.title || tt(doc, "empty.untitled"),
 		snapshot: {
-			space: snapshotSpace(dest.tab),
+			space: snapshotSpace(dest.space),
 			category: snapshotCat(dest.cat),
 			app: snapshotCard(found.app)
 		}
 	});
-	return emit(doc, user, dest.tab.id);
+	return emit(doc, user, dest.space.id);
 }));
 export const deleteCard = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request));
-	const { tab, cat, app } = cardOf(doc, data.id);
-	requireEdit(doc, tok(data, request), tab.id);
+	const { space, cat, app } = cardOf(doc, data.id);
+	requireEdit(doc, tok(data, request), space.id);
 	appendHistory(doc, user, {
 		type: "card.delete",
 		label: app.title || tt(doc, "empty.untitled"),
 		snapshot: {
-			space: snapshotSpace(tab),
+			space: snapshotSpace(space),
 			category: snapshotCat(cat),
 			app: snapshotCard(app)
 		}
 	});
 	cat.cards = cat.cards.filter((a) => a.id !== data.id);
 	pruneUnusedTags(doc);
-	return emit(doc, user, tab.id);
+	return emit(doc, user, space.id);
 }));
 export const reorderCards = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
@@ -3104,11 +3130,11 @@ export const reorderCards = createServerFn({ method: "POST" }).validator(z.objec
 	})).min(1).max(400)
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.spaceId);
-	const tab = doc.spaces.find((t) => t.id === data.spaceId);
-	if (!tab) throw new Error("errors.portalNotFound");
-	const allowed = new Set(tab.categories.map((c) => c.id));
+	const space = doc.spaces.find((t) => t.id === data.spaceId);
+	if (!space) throw new Error("errors.portalNotFound");
+	const allowed = new Set(space.categories.map((c) => c.id));
 	const bag = /* @__PURE__ */ new Map();
-	for (const cat of tab.categories) {
+	for (const cat of space.categories) {
 		for (const app of cat.cards) bag.set(app.id, app);
 		cat.cards = [];
 	}
@@ -3118,10 +3144,10 @@ export const reorderCards = createServerFn({ method: "POST" }).validator(z.objec
 		if (!app) continue;
 		app.categoryId = p.categoryId;
 		app.sortOrder = p.sortOrder;
-		tab.categories.find((c) => c.id === p.categoryId)?.cards.push(app);
+		space.categories.find((c) => c.id === p.categoryId)?.cards.push(app);
 		bag.delete(p.id);
 	}
-	for (const leftover of bag.values()) tab.categories.find((c) => c.id === leftover.categoryId)?.cards.push(leftover);
+	for (const leftover of bag.values()) space.categories.find((c) => c.id === leftover.categoryId)?.cards.push(leftover);
 	return emit(doc, user, data.spaceId);
 }));
 export const arrangeCategory = createServerFn({ method: "POST" }).validator(z.object({
@@ -3130,8 +3156,8 @@ export const arrangeCategory = createServerFn({ method: "POST" }).validator(z.ob
 	sort: z.enum(["alpha", "za"]).optional(),
 	resetSpans: z.boolean().optional()
 })).handler(async ({ data, request }: any) => mutate((doc) => {
-	const { tab, cat } = categoryOf(doc, data.categoryId);
-	const user = requireEdit(doc, tok(data, request), tab.id);
+	const { space, cat } = categoryOf(doc, data.categoryId);
+	const user = requireEdit(doc, tok(data, request), space.id);
 	let changed = false;
 	if (data.sort === "alpha" || data.sort === "za") {
 		const next = sortCardsAlpha(cat.cards, doc.settings.locale, data.sort === "za" ? "za" : "az");
@@ -3155,11 +3181,11 @@ export const arrangeCategory = createServerFn({ method: "POST" }).validator(z.ob
 		type: data.sort === "alpha" ? "category.sort" : "category.resetLayout",
 		label: cat.name,
 		snapshot: {
-			space: snapshotSpace(tab),
+			space: snapshotSpace(space),
 			category: snapshotCat(cat)
 		}
 	});
-	return emit(doc, user, tab.id);
+	return emit(doc, user, space.id);
 }));
 export const moveCard = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
@@ -3174,7 +3200,7 @@ export const moveCard = createServerFn({ method: "POST" }).validator(z.object({
 	if (!isOwnerUser(user) && !can(user, "move", { res: "cat", id: data.destCategoryId }, doc) && !can(user, "edit", { res: "space", id: data.destSpaceId }, doc)) throw new Error("errors.noMove");
 	requireEdit(doc, tok(data, request), data.destSpaceId);
 	const dest = categoryOf(doc, data.destCategoryId);
-	if (dest.tab.id !== data.destSpaceId) throw new Error("errors.categoryNotFound");
+	if (dest.space.id !== data.destSpaceId) throw new Error("errors.categoryNotFound");
 	found.cat.cards = found.cat.cards.filter((a) => a.id !== data.id);
 	dest.cat.cards = dest.cat.cards.filter((a) => a.id !== data.id);
 	const at = Math.max(0, Math.min(Math.max(0, data.sortOrder - 1), dest.cat.cards.length));
@@ -3191,12 +3217,12 @@ export const moveCard = createServerFn({ method: "POST" }).validator(z.object({
 		type: "card.update",
 		label: found.app.title || tt(doc, "empty.untitled"),
 		snapshot: {
-			space: snapshotSpace(dest.tab),
+			space: snapshotSpace(dest.space),
 			category: snapshotCat(dest.cat),
 			app: snapshotCard(found.app)
 		}
 	});
-	return emit(doc, user, dest.tab.id);
+	return emit(doc, user, dest.space.id);
 }));
 export const reorderCategories = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
@@ -3204,13 +3230,13 @@ export const reorderCategories = createServerFn({ method: "POST" }).validator(z.
 	order: z.array(z.string().min(1)).min(1).max(80)
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireEdit(doc, tok(data, request), data.spaceId);
-	const tab = doc.spaces.find((t) => t.id === data.spaceId);
-	if (!tab) throw new Error("errors.portalNotFound");
+	const space = doc.spaces.find((t) => t.id === data.spaceId);
+	if (!space) throw new Error("errors.portalNotFound");
 	data.order.forEach((id: string, i: number) => {
-		const cat = tab.categories.find((c) => c.id === id);
+		const cat = space.categories.find((c) => c.id === id);
 		if (cat) cat.sortOrder = i + 1;
 	});
-	tab.categories.sort((a, b) => a.sortOrder - b.sortOrder);
+	space.categories.sort((a, b) => a.sortOrder - b.sortOrder);
 	return emit(doc, user, data.spaceId);
 }));
 export const previewMoveCategory = createServerFn({ method: "POST" }).validator(z.object({
@@ -3253,14 +3279,14 @@ export const reorderSpaces = createServerFn({ method: "POST" }).validator(z.obje
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	data.order.forEach((id: string, i: number) => {
-		const tab = doc.spaces.find((t) => t.id === id);
-		if (tab) tab.sortOrder = i + 1;
+		const space = doc.spaces.find((t) => t.id === id);
+		if (space) space.sortOrder = i + 1;
 	});
 	doc.spaces.sort((a, b) => a.sortOrder - b.sortOrder);
 	return emit(doc, user, data.spaceId);
 }));
 function eachItem(doc: Doc, fn: (app: PortalCard) => void) {
-	for (const tab of doc.spaces) for (const cat of tab.categories) for (const app of cat.cards) fn(app);
+	for (const space of doc.spaces) for (const cat of space.categories) for (const app of cat.cards) fn(app);
 }
 function tagColorFromName(name: unknown) {
 	return defaultTagHex(String(name));
@@ -3347,7 +3373,7 @@ export const saveCustomIcon = createServerFn({ method: "POST" }).validator(z.obj
 
 function unwrapBackup(raw: any) {
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
-	if (raw.settings && (Array.isArray(raw.spaces) || Array.isArray(raw.tabs))) return raw;
+	if (raw.settings && Array.isArray(raw.spaces)) return raw;
 	if (raw.backup && typeof raw.backup === "object") return raw.backup;
 	return raw;
 }
@@ -3432,7 +3458,7 @@ async function resolveProbeByIds(token: string, ids: string[]) {
 		} catch {
 			continue;
 		}
-		if (!spaceCanSee(found.tab, user, doc)) continue;
+		if (!spaceCanSee(found.space, user, doc)) continue;
 		const app = found.app;
 		if (app.kind !== "app" || app.check === "off") continue;
 		if (app.check === "http") {
@@ -3499,9 +3525,9 @@ function curationLinksOf(app: PortalCard): CurationLink[] {
 
 function curationItemsOf(doc: Doc, user: HydratedUser | null): CurationItem[] {
 	const items: CurationItem[] = [];
-	for (const tab of [...doc.spaces].sort((a, b) => a.sortOrder - b.sortOrder)) {
-		if (!spaceCanSee(tab, user, doc)) continue;
-		for (const cat of [...tab.categories].sort((a, b) => a.sortOrder - b.sortOrder)) {
+	for (const space of [...doc.spaces].sort((a, b) => a.sortOrder - b.sortOrder)) {
+		if (!spaceCanSee(space, user, doc)) continue;
+		for (const cat of [...space.categories].sort((a, b) => a.sortOrder - b.sortOrder)) {
 			if (!catCanSee(cat, user, doc)) continue;
 			for (const app of cat.cards) {
 				if ((app.kind || "app") === "note") continue;
@@ -3514,10 +3540,10 @@ function curationItemsOf(doc: Doc, user: HydratedUser | null): CurationItem[] {
 						: undefined;
 				items.push({
 					cardId: app.id,
-					spaceId: tab.id,
+					spaceId: space.id,
 					categoryId: cat.id,
 					title: app.title || tt(doc, "empty.untitled"),
-					spaceName: tab.name || "",
+					spaceName: space.name || "",
 					categoryName: cat.name || "",
 					icon: app.icon || "Link",
 					kind: app.kind || "app",
@@ -3544,7 +3570,7 @@ function curationQueueOf(items: CurationItem[]): CurationScanRef[] {
 
 function allCardIds(doc: Doc): Set<string> {
 	const ids = new Set<string>();
-	for (const tab of doc.spaces) for (const cat of tab.categories) for (const app of cat.cards) ids.add(app.id);
+	for (const space of doc.spaces) for (const cat of space.categories) for (const app of cat.cards) ids.add(app.id);
 	return ids;
 }
 

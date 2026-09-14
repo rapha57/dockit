@@ -34,8 +34,8 @@ export function findUrlDuplicates(
 	const key = canonicalAppUrl(url);
 	if (!key) return [];
 	const hits: DupHit[] = [];
-	for (const tab of catalog ?? []) {
-		for (const cat of tab.categories ?? []) {
+	for (const space of catalog ?? []) {
+		for (const cat of space.categories ?? []) {
 			for (const app of cat.cards ?? []) {
 				if (exceptId && app.id === exceptId) continue;
 				if ((app.kind || "app") === "note") continue;
@@ -43,7 +43,7 @@ export function findUrlDuplicates(
 				hits.push({
 					id: app.id,
 					title: String(app.title || "").trim() || "Sans titre",
-					space: tab.name,
+					space: space.name,
 					category: cat.name
 				});
 			}

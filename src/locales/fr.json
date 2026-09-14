@@ -166,7 +166,7 @@
     "editCategory": "Modifier la catégorie",
     "deleteCategory": "Supprimer la catégorie",
     "addBlock": "Ajouter une catégorie",
-    "restrictedTab": "Espace restreint",
+    "restrictedSpace": "Espace restreint",
     "favorites": "Favoris"
   },
   "stats": {
@@ -414,7 +414,7 @@
     "tags": "Étiquettes",
     "maxTags": "3 étiquettes maximum",
     "addTag": "Rechercher ou créer une étiquette ↵",
-    "urlExists": "Ce lien existe déjà : « {title} » ({tab})",
+    "urlExists": "Ce lien existe déjà : « {title} » ({space})",
     "urlExistsN": "Ce lien existe déjà sur {n} cartes ({list})",
     "removedBody": "« {name} » sera retiré du portail.",
     "links": "Liens",
@@ -506,7 +506,7 @@
     "needSpaceForCard": "Passer sur un espace pour ajouter une carte",
     "needCategory": "Créer une catégorie d’abord",
     "readonly": "Compte en lecture seule",
-    "noEditTab": "Pas le droit de modifier cet espace",
+    "noEditSpace": "Pas le droit de modifier cet espace",
     "probeUnavailable": "Sonde indisponible",
     "ssoUnavailable": "SSO indisponible",
     "generic": "Erreur",
@@ -532,7 +532,7 @@
     "sessionExpired": "Session expirée. Se reconnecter.",
     "userNotFound": "Utilisateur introuvable",
     "readonly": "Compte en lecture seule",
-    "noEditTab": "Pas le droit de modifier cet espace",
+    "noEditSpace": "Pas le droit de modifier cet espace",
     "insufficient": "Droits insuffisants",
     "adminOnly": "Réservé à l’administrateur",
     "noManageSpaces": "Pas le droit de gérer les espaces",
@@ -620,11 +620,6 @@
     "category.resetLayout": "Tailles des cartes réinitialisées",
     "category.delete": "Catégorie supprimée",
     "category.restore": "Catégorie restaurée",
-    "tab.create": "Espace créé",
-    "tab.update": "Espace modifié",
-    "tab.delete": "Espace supprimé",
-    "tab.restore": "Espace restauré",
-    "tab.duplicate": "Espace dupliqué",
     "space.create": "Espace créé",
     "space.update": "Espace modifié",
     "space.delete": "Espace supprimé",
@@ -662,7 +657,7 @@
     "csvAccount": "Compte"
   },
   "seed": {
-    "tab": "Accueil",
+    "space": "Accueil",
     "category": "Applications",
     "cardTitle": "Carte de test",
     "cardDesc": "Exemple à remplacer par une vraie carte."

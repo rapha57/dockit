@@ -976,7 +976,7 @@ export function CardForm({
       {urlDupes.length === 1
         ? t("item.urlExists", {
             title: urlDupes[0].title,
-            tab: urlDupes[0].space,
+            space: urlDupes[0].space,
           })
         : t("item.urlExistsN", {
             n: urlDupes.length,

@@ -12,16 +12,16 @@ function fmtCount(n: number) {
 }
 
 export function collectTopApps(catalog: CatalogSpace[] | null | undefined, limit = 10) {
-  const rows: { id: string; title: string; icon: string; tab: string; clicks: number }[] = [];
-  for (const tab of catalog ?? [])
-    for (const cat of tab.categories)
+  const rows: { id: string; title: string; icon: string; space: string; clicks: number }[] = [];
+  for (const space of catalog ?? [])
+    for (const cat of space.categories)
       for (const app of cat.cards) {
         if ((app.kind || "app") !== "app") continue;
         rows.push({
           id: app.id,
           title: app.title,
           icon: app.icon,
-          tab: tab.name,
+          space: space.name,
           clicks: app.clicks || 0,
         });
       }
@@ -71,7 +71,7 @@ export function StatsPanel({
               </span>
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{row.title}</p>
-                <p className="truncate text-xs text-muted">{row.tab}</p>
+                <p className="truncate text-xs text-muted">{row.space}</p>
                 <div className="stats-meter mt-1.5">
                   <span
                     style={{

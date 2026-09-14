@@ -47,6 +47,7 @@ import {
   linkLdapGroups,
 } from "@/lib/portal";
 import type { LdapGroupHit } from "@/lib/ldap-runtime";
+import { sessionGone } from "@/lib/session-gone";
 
 const INPUT_SM = "h-9 rounded-md bg-transparent";
 
@@ -61,10 +62,6 @@ type Actor = {
   canManageSettings?: boolean;
 };
 type Effect = "inherit" | "allow" | "deny";
-
-function sessionGone(err: unknown): boolean {
-  return String((err as any)?.message || err || "").includes("errors.sessionExpired");
-}
 
 function prettyLogin(name: unknown): string {
   return String(name || "").trim();
@@ -521,18 +518,18 @@ function ResourceTree({
     );
   }
   const list = (spaces || [])
-    .map((tab) => {
-      const cats = (tab.categories || [])
+    .map((space) => {
+      const cats = (space.categories || [])
         .map((cat) => {
-          const apps = (cat.cards || []).filter(
-            (a) => hit(a.title) || hit(cat.name) || hit(tab.name),
+          const cards = (cat.cards || []).filter(
+            (a) => hit(a.title) || hit(cat.name) || hit(space.name),
           );
-          return { ...cat, apps, _hit: hit(cat.name) || apps.length > 0 };
+          return { ...cat, _hit: hit(cat.name) || cards.length > 0 };
         })
         .filter((c) => !q || c._hit);
-      return { ...tab, categories: cats, _hit: hit(tab.name) || cats.length > 0 };
+      return { ...space, categories: cats, _hit: hit(space.name) || cats.length > 0 };
     })
-    .filter((tab) => !q || tab._hit);
+    .filter((space) => !q || space._hit);
 
   const portalHit =
     !q ||
@@ -555,22 +552,22 @@ function ResourceTree({
           />
         </div>
       ) : null}
-      {list.map((tab) => (
-        <div key={tab.id} className="am-tree-block">
+      {list.map((space) => (
+        <div key={space.id} className="am-tree-block">
           <div className="am-tree-row" role="treeitem">
             <button
               type="button"
               className="am-tree-name"
-              onClick={() => setOpen((o) => ({ ...o, [tab.id]: !o[tab.id] }))}
+              onClick={() => setOpen((o) => ({ ...o, [space.id]: !o[space.id] }))}
             >
-              {tab.name}
-              {tab.restricted ? (
+              {space.name}
+              {space.restricted ? (
                 <Lock className="size-3" aria-label={t("access.restricted")} {...{ title: t("access.restricted") }} />
               ) : null}
             </button>
             <PermLine
               res="space"
-              id={tab.id}
+              id={space.id}
               actions={TREE_ACTIONS.space}
               grants={grants}
               setGrants={setGrants}
@@ -578,8 +575,8 @@ function ResourceTree({
               readOnly={readOnly}
             />
           </div>
-          {open[tab.id] || q
-            ? (tab.categories || []).map((cat) => (
+          {open[space.id] || q
+            ? (space.categories || []).map((cat) => (
                 <div key={cat.id}>
                   <div className="am-tree-row is-cat">
                     <button
@@ -601,12 +598,12 @@ function ResourceTree({
                     />
                   </div>
                   {open[cat.id] || q
-                    ? (cat.cards || []).map((app) => (
-                        <div key={app.id} className="am-tree-row is-card">
-                          <span className="am-tree-name">{app.title || t("empty.untitled")}</span>
+                    ? (cat.cards || []).map((card) => (
+                        <div key={card.id} className="am-tree-row is-card">
+                          <span className="am-tree-name">{card.title || t("empty.untitled")}</span>
                           <PermLine
                             res="card"
-                            id={app.id}
+                            id={card.id}
                             actions={TREE_ACTIONS.card}
                             grants={grants}
                             setGrants={setGrants}
@@ -662,20 +659,20 @@ function EffectiveTree({
         <span className="am-tree-name">{t("access.permPortal")}</span>
         {words(tree.portal, "portal", "*", PORTAL_ACTIONS)}
       </div>
-      {tree.spaces.map((tab) => (
-        <div key={tab.id}>
+      {tree.spaces.map((space) => (
+        <div key={space.id}>
           <div className="am-tree-row">
             <button
               type="button"
               className="am-tree-name"
-              onClick={() => setOpen((o) => ({ ...o, [tab.id]: !o[tab.id] }))}
+              onClick={() => setOpen((o) => ({ ...o, [space.id]: !o[space.id] }))}
             >
-              {tab.name}
+              {space.name}
             </button>
-            {words(tab.actions, "space", tab.id, TREE_ACTIONS.space)}
+            {words(space.actions, "space", space.id, TREE_ACTIONS.space)}
           </div>
-          {open[tab.id]
-            ? tab.cats.map((cat) => (
+          {open[space.id]
+            ? space.cats.map((cat) => (
                 <div key={cat.id}>
                   <div className="am-tree-row is-cat">
                     <button
@@ -2271,7 +2268,7 @@ export function MovePickDialog({
   onCancel: () => void;
   onContinue: (destId: string) => void;
 }) {
-  const others = (spaces || []).filter((tab) => tab.id !== fromSpaceId);
+  const others = (spaces || []).filter((space) => space.id !== fromSpaceId);
   const [dest, setDest] = useState(others[0]?.id || "");
   return (
     <div>
@@ -2281,9 +2278,9 @@ export function MovePickDialog({
         <label className="am-field mt-3">
           <span>{t("access.moveDest")}</span>
           <Select className={INPUT_SM} value={dest} onChange={(e) => setDest(e.target.value)}>
-            {others.map((tab) => (
-              <option key={tab.id} value={tab.id}>
-                {tab.name}
+            {others.map((space) => (
+              <option key={space.id} value={space.id}>
+                {space.name}
               </option>
             ))}
           </Select>

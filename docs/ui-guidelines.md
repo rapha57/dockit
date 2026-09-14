@@ -176,7 +176,7 @@ am-work
 
 **Rule.** Hand-rolled absolutely-positioned panels; close on outside `pointerdown` + Escape; no floating-ui/Radix.
 
-**References.** `AccountMenu` (`.account-panel`), card context menu (`.card-ctx` + `.card-ctx-back`), tab overflow (`.tab-more-panel`), search suggestions (`.search-suggest`), tag palette (`.tag-palette`), Access pickers (`.am-picker-pop` with embedded `.am-search`).
+**References.** `AccountMenu` (`.account-panel`), card context menu (`.card-ctx` + `.card-ctx-back`), tab overflow (`.space-more-panel`), search suggestions (`.search-suggest`), tag palette (`.tag-palette`), Access pickers (`.am-picker-pop` with embedded `.am-search`).
 
 **Do.** Menu items: `<button>` with icon `size-4` + label; separators via `.menu-sep`; section label via `.menu-kicker`/`.menu-title`.
 **Don't.** Add a positioning library; nest native `<select>` for choice lists that need custom rows.
@@ -223,9 +223,9 @@ am-work
 
 ## 15. Navigation
 
-**Rule.** Top header = `.tab-row`: `.tab-strip` (scrollable tab list) + `.tab-row-end` (search, theme toggle, account). Tabs are `.tab-item` (icon + optional label, `is-on` active, drag-reorderable with `GripVertical`); overflow tabs move to `.tab-more-panel` under `.tab-more-wrap`.
+**Rule.** Top header = `.space-row`: `.space-strip` (scrollable space list) + `.space-row-end` (search, theme toggle, account). Spaces are `.space-item` (icon + optional label, `is-on` active, drag-reorderable with `GripVertical`); overflow spaces move to `.space-more-panel` under `.space-more-wrap`.
 
-**Do.** New header actions go in `.tab-row-end` as `Button variant="ghost" size="icon-sm"` with `aria-label` + `title`.
+**Do.** New header actions go in `.space-row-end` as `Button variant="ghost" size="icon-sm"` with `aria-label` + `title`.
 **Don't.** Add a second nav layer on the portal page; make tabs non-icon-only without checking `hideLabel` handling.
 
 ---
@@ -254,7 +254,7 @@ am-work
 
 **Rule.** Mobile-first; only `min-width` breakpoints: **40rem** (sm: side-by-side fields, centered modal, settings-nav rail) and **64rem** (lg: 3-column grid). No `max-width` queries in styles.css.
 
-**Do.** Bottom-sheet modals on mobile (ModalShell default); `.tab-strip` scrolls horizontally; drag handles use `touch-none` + pointer events.
+**Do.** Bottom-sheet modals on mobile (ModalShell default); `.space-strip` scrolls horizontally; drag handles use `touch-none` + pointer events.
 **Don't.** Add desktop-only layouts that hide content on mobile; use `hidden sm:block` for essential controls.
 
 ---

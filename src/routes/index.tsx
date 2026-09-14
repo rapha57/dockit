@@ -1,126 +1,67 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
-  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  ArrowDownAZ,
-  ArrowUpZA,
-  ArrowRightLeft,
   Bug,
   Check,
-  Copy,
-  ChevronDown,
-  GripVertical,
-  LayoutGrid,
-  Lock,
-  MoreHorizontal,
-  Pencil,
-  Plus,
   Search,
-  Star,
-  Trash2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/empty-state";
-import { ConfirmDialog, askConfirm } from "@/components/confirm-dialog";
-import { ModalShell } from "@/components/modal-shell";
+
+import { askConfirm } from "@/components/confirm-dialog";
 import { AccountMenu } from "@/components/account-menu";
-import { AppCard } from "@/components/app-card";
-import { HistoryPanel } from "@/components/history-panel";
-import { CurationPanel } from "@/components/curation-panel";
-import { LegendPanel, StatsBar, StatsPanel } from "@/components/stats";
-import { AdminPanel } from "@/components/settings-panel";
-import { LockForm } from "@/components/auth-panel";
-import { AccessFrame } from "@/components/access-frame";
-import { ItemForm, CardForm, FavsForm } from "@/components/editors";
+import { CatalogView, type CategoryHandlers } from "@/components/portal-catalog";
+import { PortalOverlays, type PortalModal } from "@/components/portal-overlays";
+import { SpaceStrip, pickVisibleSpaceIds, type SpaceStripHandlers } from "@/components/space-strip";
+import { StatsBar } from "@/components/stats";
 import { itemKind } from "@/lib/item-kind";
+import { placeCard, placeCarriedCard, placeCarriedCategory, placeCategory, placeSpaces } from "@/lib/layout-place";
 import {
-  placeCard,
-  placeCarriedCard,
-  placeCarriedCategory,
-  placeCategory,
-  placeSpaces,
-} from "@/lib/layout-place";
+  allowsFavorite,
+  catIsFolded,
+  editArmed,
+  itemMatches,
+  lockSelection,
+  writeEditMode,
+} from "@/lib/portal-dnd";
+import { usePortalDrag } from "@/lib/use-portal-drag";
 import { collectTags, fold, tagPaint } from "@/lib/tag-ui";
-import {
-  applyLiveBox,
-  cardResizeEdge,
-  finePointer,
-  gridColCount,
-  itemColWidths,
-  itemTrackHeights,
-  liveResizeBox,
-  nearestSpan,
-  resizeCursor,
-  setResizeUi,
-  spanSize,
-} from "@/lib/card-resize";
+import { cardResizeEdge, finePointer } from "@/lib/card-resize";
 import { sessionGone } from "@/lib/session-gone";
 import { PORTAL_VERSION } from "@/lib/portal-version";
 import type { MenuSpace, PortalData } from "@/lib/portal-ui";
-import { MovePickDialog, MoveSectionDialog } from "@/components/access";
-import { PortalIcon, DockitMark } from "@/lib/icons";
+import { DockitMark } from "@/lib/icons";
 import { ThemeCss, ThemeToggle } from "@/components/theme";
 import {
   createCard,
   createCategory,
-  createSpace,
-  deleteCard,
-  deleteCategory,
-  deleteSpace,
   duplicateSpace,
   getPortal,
-  importPortal,
-  manageTags,
   rememberSpace,
-  moveCard,
-  moveCategory,
-  previewMoveCategory,
-  reorderCards,
-  reorderCategories,
-  reorderSpaces,
   proxyLogin,
   recordClick,
-  resetClicks,
-  resetProbes,
-  resetPortal,
-  startOidc,
-  unlockEdit,
-  updateOidcSettings,
-  updateLdapSettings,
-  updateLoginOrder,
-  updateCard,
   arrangeCategory,
   cardsAlphaDir,
-  updateCategory,
-  updateSettings,
-  updateSpace,
-  updateThemeCss,
-  updateFavsOptions,
 } from "@/lib/portal";
 import { probeTargets } from "@/lib/probe";
 import type { ProbeResult } from "@/lib/probe";
 import { DEFAULT_UI_PREFS, clearUiPrefs, readUiPrefs, writeUiPrefs } from "@/lib/ui-prefs";
-import { t, te, tp, asLocale, applyDisplayPrefs } from "@/lib/i18n";
-import { tagTone } from "@/lib/tag-colors";
+import { t, te, asLocale, applyDisplayPrefs } from "@/lib/i18n";
 import type {
   ClickStats,
   CustomIcon,
   PortalCard,
   PortalCategory,
-  PortalSettings,
   SessionInfo,
 } from "@/lib/portal";
-import type { Category, CategoryMoveImpact } from "@/lib/acl";
 
 export const Route = createFileRoute("/")({
   loader: async () => {
@@ -136,133 +77,6 @@ const TOKEN_KEY = "portal-edit-token";
 const SESSION_KEY = "portal-session";
 const EDIT_MODE_KEY = "portal-edit-mode";
 const OIDC_NEXT_KEY = "portal-oidc-next";
-let editArmed = false;
-function lockSelection(e?: { preventDefault?: () => void } | null) {
-  e?.preventDefault?.();
-  try {
-    window.getSelection()?.removeAllRanges();
-  } catch {
-    // ignore
-  }
-}
-function setDragUi(on: boolean) {
-  if (typeof document === "undefined") return;
-  document.documentElement.classList.toggle("is-dragging", on);
-  if (on) lockSelection();
-}
-function nudgeScroll(clientX: number | undefined, clientY: number | undefined, tabRow?: HTMLElement | null) {
-  const edge = 64;
-  const speed = 28;
-  const h = window.innerHeight;
-  let y = clientY;
-  if (arguments.length === 1) {
-    y = clientX;
-    clientX = window.innerWidth / 2;
-  }
-  if (y === undefined) return;
-  if (y < edge) window.scrollBy(0, -Math.ceil((1 - y / edge) * speed));
-  else if (y > h - edge) window.scrollBy(0, Math.ceil((1 - (h - y) / edge) * speed));
-  if (!tabRow || typeof clientX !== "number") return;
-  const r = tabRow.getBoundingClientRect();
-  const te = 44;
-  if (y < r.top - 16 || y > r.bottom + 16) return;
-  if (clientX < r.left + te)
-    tabRow.scrollLeft -= Math.ceil((1 - Math.max(0, clientX - r.left) / te) * speed);
-  else if (clientX > r.right - te)
-    tabRow.scrollLeft += Math.ceil((1 - Math.max(0, r.right - clientX) / te) * speed);
-}
-function swallowGhostClick() {
-  const block = (ev: MouseEvent) => {
-    if ((ev.target as HTMLElement | null)?.closest("header")) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    window.removeEventListener("click", block, true);
-  };
-  window.addEventListener("click", block, true);
-  window.setTimeout(() => window.removeEventListener("click", block, true), 180);
-}
-function pickVisibleSpaceIds(
-  tabs: { id: string }[] | null | undefined,
-  widths: Map<string, number>,
-  activeId: string | null | undefined,
-  avail: number,
-  favW: number,
-  plusW: number,
-  moreW: number,
-  gap: number,
-) {
-  const ids = (tabs || []).map((t) => t.id);
-  const wOf = (id: string) => widths.get(id) || 72;
-  function total(vis: string[], showMore: boolean) {
-    const n = 1 + vis.length + (showMore ? 1 : 0) + (plusW > 0 ? 1 : 0);
-    let w = favW + (showMore ? moreW : 0) + plusW;
-    for (const id of vis) w += wOf(id);
-    return w + Math.max(0, n - 1) * gap;
-  }
-  function pack(showMore: boolean) {
-    const vis: string[] = [];
-    for (const id of ids) {
-      if (total([...vis, id], showMore) <= avail || id === activeId) vis.push(id);
-    }
-    if (activeId && ids.includes(activeId) && !vis.includes(activeId)) vis.push(activeId);
-    while (total(vis, showMore) > avail) {
-      const drop = [...vis].reverse().find((id) => id !== activeId);
-      if (!drop) break;
-      vis.splice(vis.indexOf(drop), 1);
-    }
-    return vis;
-  }
-  let vis = pack(false);
-  let hid = ids.filter((id) => !vis.includes(id));
-  if (hid.length) {
-    vis = pack(true);
-    hid = ids.filter((id) => !vis.includes(id));
-  }
-  return hid;
-}
-function hoverInsertAt(ids: string[], dragId: string, anchorId: string | null | undefined, after: boolean) {
-  const rest = ids.filter((id) => id !== dragId);
-  const ai = rest.indexOf(anchorId ?? "");
-  return (ai < 0 ? rest.length : ai) + (after ? 1 : 0);
-}
-function pointerAfter(e: { clientX: number; clientY: number }, el: Element) {
-  const r = el.getBoundingClientRect();
-  if (r.height > r.width * 1.1) return e.clientY > r.top + r.height * 0.35;
-  return e.clientX - r.left + (e.clientY - r.top) > (r.width + r.height) / 2;
-}
-function itemSpanClass(app: { colSpan: number; rowSpan: number }) {
-  return `${app.colSpan === 3 ? "item-span-3" : app.colSpan === 2 ? "item-span-2" : ""} ${app.rowSpan === 3 ? "item-h-3" : app.rowSpan === 2 ? "item-h-2" : "item-h-1"}`.trim();
-}
-function allowsFavorite(app: PortalCard, settings: PortalSettings | null | undefined) {
-  const kind = app.kind || "app";
-  if (kind === "note") return Boolean(settings?.favNotes);
-  if (kind === "embed") return Boolean(settings?.favEmbeds);
-  return true;
-}
-function itemMatches(app: PortalCard, needle: string, tags: string[], downSet: Set<string> | null | undefined) {
-  if (downSet && !downSet.has(app.id)) return false;
-  let extra = needle;
-  const fromHash: string[] = [];
-  if (extra.startsWith("#")) {
-    const hashed = extra
-      .slice(1)
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean);
-    fromHash.push(...hashed);
-    extra = "";
-  }
-  const required = [...tags, ...fromHash];
-  if (required.length > 0) {
-    if ((app.kind || "app") !== "app") return false;
-    const have = new Set((app.tags ?? []).map((x) => x.toLowerCase()));
-    if (!required.every((t) => have.has(t.toLowerCase()))) return false;
-  }
-  if (!extra) return true;
-  return `${app.title} ${app.description} ${app.url} ${app.tags.join(" ")} ${app.kind}`
-    .toLowerCase()
-    .includes(extra);
-}
 function copyLabel(raw: unknown, fallback?: string) {
   const text = String(raw || "").trim();
   const fb = fallback || t("copy.fallback");
@@ -276,7 +90,6 @@ function typingTarget(el: EventTarget | null) {
   if ((el as HTMLElement).isContentEditable) return true;
   return Boolean(el.closest("input, textarea, select, [contenteditable='true']"));
 }
-const ITEM_GRID = "item-grid";
 function readToken() {
   if (typeof window === "undefined") return "";
   try {
@@ -327,15 +140,6 @@ function writeSessionInfo(session: SessionInfo | null | undefined) {
     // ignore
   }
 }
-function writeEditMode(on: boolean) {
-  editArmed = on;
-  try {
-    if (on) sessionStorage.setItem(EDIT_MODE_KEY, "1");
-    else sessionStorage.removeItem(EDIT_MODE_KEY);
-  } catch {
-    // ignore
-  }
-}
 function sessionCanEditSpace(session: SessionInfo | null | undefined, spaceId: string | undefined): boolean {
   if (!session || !spaceId) return false;
   if (session.isOwner) return true;
@@ -359,21 +163,6 @@ function sessionCanCreateSpaces(session: SessionInfo | null | undefined): boolea
   return Boolean(session.isOwner || session.canCreateSpaces);
 }
 
-type DragKind = "space" | "cat" | "card";
-type DragState = { kind: DragKind; id: string } | null;
-type OverState =
-  | { kind: "space"; insertAt: number }
-  | { kind: "cat"; insertAt: number }
-  | { kind: "card"; catId: string; insertAt: number }
-  | { kind: "space-carry"; spaceId: string }
-  | null;
-type DragFoldState = { sourceId: string | undefined; left: boolean; openId: string | null } | null;
-type SpaceHoverState = { spaceId: string; at: number } | null;
-type CatHoverState = { catId: string; at: number } | null;
-type MoreHoverState = { at: number } | null;
-type CarryState = { app?: PortalCard; fromSpaceId: string; cat?: PortalCategory | null } | null;
-type ResizeLiveState = { origin: HTMLElement; placeholder: HTMLElement | null } | null;
-type ModalState = { kind: string; [key: string]: unknown };
 function Home() {
   const initial: PortalData = Route.useLoaderData();
   const [data, setData] = useState<PortalData>(initial);
@@ -383,7 +172,7 @@ function Home() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [hideDevBanner, setHideDevBanner] = useState(false);
   const [hideNoPassBanner, setHideNoPassBanner] = useState(false);
-  const [modal, setModal] = useState<ModalState>({
+  const [modal, setModal] = useState<PortalModal>({
     kind: "none",
   });
   const adminTabRef = useRef("general");
@@ -407,15 +196,8 @@ function Home() {
   const [page, setPage] = useState("space");
   const [health, setHealth] = useState<Record<string, ProbeResult>>({});
   const healthBusy = useRef(false);
-  const [drag, setDrag] = useState<DragState>(null);
-  const [over, setOver] = useState<OverState>(null);
-  const [dragFold, setDragFold] = useState<DragFoldState>(null);
-  const [spaceOverflow, setTabOverflow] = useState<string[]>([]);
+  const [spaceOverflow, setSpaceOverflow] = useState<string[]>([]);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [spaceOverMore, setTabOverMore] = useState(false);
-  const dragRef = useRef(drag);
-  const overRef = useRef(over);
-  const didDragRef = useRef(false);
   const dataRef = useRef(data);
   const searchRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef(modal);
@@ -435,30 +217,7 @@ function Home() {
   const morePanelRef = useRef<HTMLDivElement>(null);
   const spaceWidthRef = useRef(new Map<string, number>());
   const moreOpenRef = useRef(false);
-  const spaceOverMoreRef = useRef(false);
-  const moreHoverRef = useRef<MoreHoverState>(null);
-  const spaceInsertRef = useRef(0);
   const activeSpaceRef = useRef(data.activeSpaceId);
-  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
-  const ghostRef = useRef<HTMLElement | null>(null);
-  const markerRef = useRef<HTMLElement | null>(null);
-  const carryRef = useRef<CarryState>(null);
-  const spaceHoverRef = useRef<SpaceHoverState>(null);
-  const catHoverRef = useRef<CatHoverState>(null);
-  const dragFoldRef = useRef<DragFoldState>(null);
-  const dragPtrRef = useRef({
-    x: 0,
-    y: 0,
-  });
-  const dragScrollRafRef = useRef(0);
-  const ghostOff = useRef({
-    x: 0,
-    y: 0,
-  });
-  const unbindDragRef = useRef<(() => void) | null>(null);
-  const resizeLiveRef = useRef<ResizeLiveState>(null);
-  dragRef.current = drag;
-  overRef.current = over;
   dataRef.current = data;
   modalRef.current = modal;
   editModeRef.current = editMode;
@@ -467,741 +226,45 @@ function Home() {
   pageRef.current = page;
   tokenRef.current = token;
   activeSpaceRef.current = data.activeSpaceId;
-  function unbindDrag() {
-    unbindDragRef.current?.();
-    unbindDragRef.current = null;
-  }
-  function endLiveResize() {
-    const live = resizeLiveRef.current;
-    if (!live) return;
-    resizeLiveRef.current = null;
-    live.placeholder?.remove();
-    const el = live.origin;
-    if (!el) return;
-    el.classList.remove("is-live-resize");
-    el.style.left = "";
-    el.style.top = "";
-    el.style.width = "";
-    el.style.height = "";
-  }
-  function stopDragScroll() {
-    if (dragScrollRafRef.current) cancelAnimationFrame(dragScrollRafRef.current);
-    dragScrollRafRef.current = 0;
-  }
-  function startDragScroll() {
-    if (dragScrollRafRef.current) return;
-    const loop = () => {
-      dragScrollRafRef.current = 0;
-      if (!dragRef.current) return;
-      nudgeScroll(dragPtrRef.current.x, dragPtrRef.current.y, spaceListRef.current);
-      dragScrollRafRef.current = requestAnimationFrame(loop);
-    };
-    dragScrollRafRef.current = requestAnimationFrame(loop);
-  }
-  function clearCarry() {
-    carryRef.current = null;
-    spaceHoverRef.current = null;
-    catHoverRef.current = null;
-    dragFoldRef.current = null;
-    stopDragScroll();
-    setDragFold(null);
-  }
-  function canEditSpaceId(spaceId: string) {
-    return sessionCanEditSpace(sessionRef.current, spaceId);
-  }
-  function hitMoreSlot(clientX: number, clientY: number) {
-    const pad = 12;
-    const panel = morePanelRef.current;
-    const wrap = spaceMoreRef.current;
-    if (panel) {
-      const r = panel.getBoundingClientRect();
-      const w = wrap?.getBoundingClientRect();
-      const left = Math.min(r.left, w?.left ?? r.left) - pad;
-      const right = Math.max(r.right, w?.right ?? r.right) + pad;
-      const top = Math.min(r.top, w?.top ?? r.top) - pad;
-      if (
-        clientX >= left &&
-        clientX <= right &&
-        clientY >= top &&
-        clientY <= r.bottom + pad
-      )
-        return true;
-    }
-    if (wrap) {
-      const r = wrap.getBoundingClientRect();
-      if (
-        clientX >= r.left - pad &&
-        clientX <= r.right + 28 &&
-        clientY >= r.top - pad &&
-        clientY <= r.bottom + (moreOpenRef.current ? 8 : 56)
-      )
-        return true;
-    }
-    return false;
-  }
-  function hitSpaceCarry(clientX: number, clientY: number): { spaceId: string; blocked: boolean } | null {
-    const stack = document.elementsFromPoint(clientX, clientY);
-    for (const node of stack) {
-      if (!(node instanceof HTMLElement)) continue;
-      if (node === ghostRef.current) continue;
-      const el = node.closest("[data-space-id]");
-      const spaceId = (el as HTMLElement | null)?.dataset?.spaceId;
-      if (!spaceId) continue;
-      if (!canEditSpaceId(spaceId))
-        return {
-          spaceId,
-          blocked: true,
-        };
-      return {
-        spaceId,
-        blocked: false,
-      };
-    }
-    return null;
-  }
-  function overForCarry(spaceId: string): OverState {
-    const cur = dataRef.current;
-    const cats =
-      (cur.catalog ?? []).find((t) => t.id === spaceId)?.categories ||
-      (spaceId === cur.activeSpaceId ? cur.categories : []);
-    const cat = cats[0];
-    const appId = carryRef.current?.app?.id;
-    if (!cat)
-      return {
-        kind: "space-carry",
-        spaceId,
-      };
-    return {
-      kind: "card",
-      catId: cat.id,
-      insertAt: cat.cards.filter((a) => a.id !== appId).length,
-    };
-  }
-  function overForCarryCat(spaceId: string): OverState {
-    const cur = dataRef.current;
-    const cats =
-      (cur.catalog ?? []).find((t) => t.id === spaceId)?.categories ||
-      (spaceId === cur.activeSpaceId ? cur.categories : []);
-    return {
-      kind: "cat",
-      insertAt: cats.filter((c) => c.id !== dragRef.current?.id).length,
-    };
-  }
-  function killGhost() {
-    ghostRef.current?.remove();
-    ghostRef.current = null;
-    markerRef.current?.remove();
-    markerRef.current = null;
-  }
-  function spawnGhost(from: HTMLElement, e: { clientX: number; clientY: number }, rect?: DOMRect) {
-    ghostRef.current?.remove();
-    const r = rect || from.getBoundingClientRect();
-    const node = from.cloneNode(true) as HTMLElement;
-    node.removeAttribute("data-card-id");
-    node.removeAttribute("data-cat-id");
-    node.removeAttribute("data-space-id");
-    node.classList.add("drag-ghost");
-    node.style.position = "fixed";
-    node.style.left = `${r.left}px`;
-    node.style.top = `${r.top}px`;
-    node.style.width = `${r.width}px`;
-    node.style.height = `${r.height}px`;
-    node.style.maxHeight = `${r.height}px`;
-    node.style.margin = "0";
-    node.style.zIndex = "80";
-    node.style.pointerEvents = "none";
-    document.body.appendChild(node);
-    ghostRef.current = node;
-    ghostOff.current = {
-      x: e.clientX - r.left,
-      y: e.clientY - r.top,
-    };
-  }
-  function moveGhost(x: number, y: number) {
-    const node = ghostRef.current;
-    if (!node) return;
-    node.style.left = `${x - ghostOff.current.x}px`;
-    node.style.top = `${y - ghostOff.current.y}px`;
-  }
-  function finishAppDrag(ev?: { clientX: number; clientY: number }) {
-    const x = ev?.clientX ?? dragPtrRef.current.x;
-    const y = ev?.clientY ?? dragPtrRef.current.y;
-    const tabHit = hitSpaceCarry(x, y);
-    if (tabHit?.blocked) {
-      unbindDrag();
-      if (didDragRef.current) swallowGhostClick();
-      killGhost();
-      const from = carryRef.current?.fromSpaceId;
-      clearCarry();
-      setDrag(null);
-      setOver(null);
-      setDragUi(false);
-      if (from && from !== dataRef.current.activeSpaceId) goSpace(from);
-      toast.error(t("toast.noEditTab"));
-      return;
-    }
-    if (tabHit?.spaceId) {
-      unbindDrag();
-      if (didDragRef.current) swallowGhostClick();
-      killGhost();
-      const from = carryRef.current?.fromSpaceId;
-      clearCarry();
-      setDrag(null);
-      setOver(null);
-      setDragUi(false);
-      if (from && from !== dataRef.current.activeSpaceId) goSpace(from);
-      return;
-    }
-    unbindDrag();
-    if (didDragRef.current) swallowGhostClick();
-    commitDrag();
-  }
-  function bindSpaceDrag(spaceId: string, origin: HTMLElement | null) {
-    unbindDrag();
-    const move = (ev: PointerEvent) => {
-      if (dragRef.current?.kind !== "space" || dragRef.current.id !== spaceId) return;
-      const o = dragOriginRef.current;
-      if ((o ? Math.hypot(ev.clientX - o.x, ev.clientY - o.y) : 0) > 10 && !didDragRef.current) {
-        didDragRef.current = true;
-        setDragUi(true);
-        if (origin) {
-          spawnGhost(origin, ev);
-          if (ghostRef.current) ghostRef.current.style.zIndex = "95";
-        }
-        if (spaceOverflow.length) setMoreOpen(true);
-      }
-      if (!didDragRef.current) return;
-      dragPtrRef.current = {
-        x: ev.clientX,
-        y: ev.clientY,
-      };
-      moveGhost(ev.clientX, ev.clientY);
-      const row = spaceListRef.current?.getBoundingClientRect();
-      const more = spaceMoreRef.current?.getBoundingClientRect();
-      const overBar =
-        row &&
-        ev.clientY >= row.top - 8 &&
-        ev.clientY <= row.bottom + 8 &&
-        ev.clientX >= row.left &&
-        ev.clientX < (more ? more.left - 8 : row.right);
-      if (overBar) {
-        const dragTab = dragRef.current;
-        const stripTabs = spaceListRef.current
-          ? [...spaceListRef.current.querySelectorAll<HTMLElement>(".tab-item[data-space-id]")].filter(
-              (el) => !el.classList.contains("is-overflow") && el.offsetWidth,
-            )
-          : [];
-        const last = stripTabs[stripTabs.length - 1];
-        const atEnd =
-          dragTab?.kind === "space" && last
-            ? ev.clientX >= last.getBoundingClientRect().right + 8
-            : false;
-        if (atEnd && dragTab && spaceOverflow.includes(dragTab.id)) {
-          spaceOverMoreRef.current = true;
-          setTabOverMore(true);
-        } else {
-          spaceOverMoreRef.current = false;
-          setTabOverMore(false);
-        }
-      } else {
-        const inMore = hitMoreSlot(ev.clientX, ev.clientY);
-        if (inMore) {
-          setMoreOpen(true);
-          spaceOverMoreRef.current = true;
-          setTabOverMore(true);
-        }
-      }
-      const insertAt = tabInsertAt(
-        ev.clientX,
-        ev.clientY,
-        spaceId,
-        spaceOverMoreRef.current,
-      );
-      spaceInsertRef.current = insertAt;
-      setOver((cur) =>
-        cur?.kind === "space" && cur.insertAt === insertAt
-          ? cur
-          : {
-              kind: "space",
-              insertAt,
-            },
-      );
-    };
-    const up = () => {
-      unbindDrag();
-      endSpacePointer(spaceId, didDragRef.current);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up, {
-      once: true,
-    });
-    window.addEventListener("pointercancel", up, {
-      once: true,
-    });
-    unbindDragRef.current = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-    };
-  }
-  function openMoveCat(
-    category: PortalCategory,
-    fromSpaceId: string | undefined,
-    destSpaceId: string,
-    insertAt: number | undefined,
-  ) {
-    setBusy(true);
-    previewMoveCategory({
-      data: {
-        token: tokenRef.current,
-        categoryId: category.id,
-        destSpaceId,
-      },
-    })
-      .then((impact: CategoryMoveImpact & { insertAt?: number }) =>
-        setModal({
-          kind: "move-cat",
-          impact: {
-            ...impact,
-            insertAt: typeof insertAt === "number" ? insertAt : impact.insertAt,
-          },
-        }),
-      )
-      .catch((err) => {
-        if (!sessionGone(err)) toast.error(te(err));
-      })
-      .finally(() => setBusy(false));
-  }
-  function bindCatDrag(catId: string, origin: HTMLElement) {
-    unbindDrag();
-    const ghostRect = origin.getBoundingClientRect();
-    const ghostNode = origin.cloneNode(true) as HTMLElement;
-    const move = (ev: PointerEvent) => {
-      if (dragRef.current?.kind !== "cat" || dragRef.current.id !== catId) return;
-      dragPtrRef.current = {
-        x: ev.clientX,
-        y: ev.clientY,
-      };
-      const o = dragOriginRef.current;
-      if ((o ? Math.hypot(ev.clientX - o.x, ev.clientY - o.y) : 0) > 10 && !didDragRef.current) {
-        didDragRef.current = true;
-        setDragUi(true);
-        spawnGhost(ghostNode, ev, ghostRect);
-        startDragScroll();
-      }
-      if (!didDragRef.current) return;
-      nudgeScroll(ev.clientX, ev.clientY, spaceListRef.current);
-      moveGhost(ev.clientX, ev.clientY);
-      const tabHit = hitSpaceCarry(ev.clientX, ev.clientY);
-      const moreHit = hitMoreSlot(ev.clientX, ev.clientY);
-      if (moreHit && !tabHit) {
-        const hover = moreHoverRef.current;
-        if (!hover) moreHoverRef.current = { at: Date.now() };
-        else if (Date.now() - hover.at > 320) setMoreOpen(true);
-        return;
-      }
-      if (tabHit && !tabHit.blocked) {
-        setOver({
-          kind: "space-carry",
-          spaceId: tabHit.spaceId,
-        });
-        if (tabHit.spaceId !== dataRef.current.activeSpaceId) {
-          const hover = spaceHoverRef.current;
-          if (!hover || hover.spaceId !== tabHit.spaceId)
-            spaceHoverRef.current = {
-              spaceId: tabHit.spaceId,
-              at: Date.now(),
-            };
-          else if (Date.now() - hover.at > 320) {
-            goSpace(tabHit.spaceId);
-            setMoreOpen(false);
-            setOver(overForCarryCat(tabHit.spaceId));
-            spaceHoverRef.current = {
-              spaceId: tabHit.spaceId,
-              at: Number.POSITIVE_INFINITY,
-            };
-          }
-        }
-        return;
-      }
-      spaceHoverRef.current = null;
-      moreHoverRef.current = null;
-      if (moreOpenRef.current && !moreHit) setMoreOpen(false);
-      const insertAt = hitCatInsert(ev.clientY, catId);
-      setOver((cur) =>
-        cur?.kind === "cat" && cur.insertAt === insertAt
-          ? cur
-          : {
-              kind: "cat",
-              insertAt,
-            },
-      );
-    };
-    const up = (ev: PointerEvent) => {
-      unbindDrag();
-      killGhost();
-      if (!didDragRef.current) {
-        setDrag(null);
-        setOver(null);
-        setDragUi(false);
-        clearCarry();
-        return;
-      }
-      swallowGhostClick();
-      const from = carryRef.current?.fromSpaceId;
-      const cat =
-        carryRef.current?.cat || dataRef.current.categories.find((c) => c.id === catId);
-      const tabHit = hitSpaceCarry(ev.clientX, ev.clientY);
-      if (tabHit?.blocked) {
-        setDrag(null);
-        setOver(null);
-        setDragUi(false);
-        if (from && from !== dataRef.current.activeSpaceId) goSpace(from);
-        clearCarry();
-        toast.error(t("toast.noEditTab"));
-        return;
-      }
-      const destSpaceId =
-        tabHit?.spaceId && tabHit.spaceId !== from
-          ? tabHit.spaceId
-          : from && dataRef.current.activeSpaceId !== from
-            ? dataRef.current.activeSpaceId
-            : null;
-      const insertAt = overRef.current?.kind === "cat" ? overRef.current.insertAt : undefined;
-      if (destSpaceId && cat) {
-        setDrag(null);
-        setOver(null);
-        setDragUi(false);
-        clearCarry();
-        openMoveCat(cat, from, destSpaceId, insertAt);
-        return;
-      }
-      clearCarry();
-      commitDrag();
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up, {
-      once: true,
-    });
-    window.addEventListener("pointercancel", up, {
-      once: true,
-    });
-    unbindDragRef.current = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-    };
-  }
-  function bindCardDrag(appId: string, origin: HTMLElement) {
-    unbindDrag();
-    const sourceCatId =
-      origin.closest<HTMLElement>("[data-cat-id]")?.dataset?.catId ||
-      dataRef.current.categories.find((c) => c.cards.some((a) => a.id === appId))?.id;
-    const move = (ev: PointerEvent) => {
-      if (dragRef.current?.kind !== "card" || dragRef.current.id !== appId) return;
-      dragPtrRef.current = {
-        x: ev.clientX,
-        y: ev.clientY,
-      };
-      const o = dragOriginRef.current;
-      if ((o ? Math.hypot(ev.clientX - o.x, ev.clientY - o.y) : 0) > 8 && !didDragRef.current) {
-        didDragRef.current = true;
-        setDragUi(true);
-        spawnGhost(origin, ev);
-        startDragScroll();
-      }
-      if (!didDragRef.current) return;
-      nudgeScroll(ev.clientX, ev.clientY, spaceListRef.current);
-      moveGhost(ev.clientX, ev.clientY);
-      const tabHit = hitSpaceCarry(ev.clientX, ev.clientY);
-      const moreHit = hitMoreSlot(ev.clientX, ev.clientY);
-      if (moreHit && !tabHit) {
-        const hover = moreHoverRef.current;
-        if (!hover) moreHoverRef.current = { at: Date.now() };
-        else if (Date.now() - hover.at > 320) setMoreOpen(true);
-        return;
-      }
-      if (tabHit && !tabHit.blocked) {
-        setOver({
-          kind: "space-carry",
-          spaceId: tabHit.spaceId,
-        });
-        if (tabHit.spaceId !== dataRef.current.activeSpaceId) {
-          const hover = spaceHoverRef.current;
-          if (!hover || hover.spaceId !== tabHit.spaceId)
-            spaceHoverRef.current = {
-              spaceId: tabHit.spaceId,
-              at: Date.now(),
-            };
-          else if (Date.now() - hover.at > 320) {
-            const dest = (dataRef.current.catalog ?? []).find((t) => t.id === tabHit.spaceId);
-            if (!dest?.categories?.length) {
-              toast.error(t("toast.needCategory"));
-              spaceHoverRef.current = {
-                spaceId: tabHit.spaceId,
-                at: Number.POSITIVE_INFINITY,
-              };
-              return;
-            }
-            goSpace(tabHit.spaceId);
-            setMoreOpen(false);
-            setOver(overForCarry(tabHit.spaceId));
-            spaceHoverRef.current = {
-              spaceId: tabHit.spaceId,
-              at: Number.POSITIVE_INFINITY,
-            };
-            if (dataRef.current.settings.cardDragCollapse !== false) {
-              dragFoldRef.current = {
-                sourceId: sourceCatId,
-                left: true,
-                openId: null,
-              };
-              setDragFold({
-                sourceId: sourceCatId,
-                left: true,
-                openId: null,
-              });
-              catHoverRef.current = null;
-            }
-          }
-        }
-        return;
-      }
-      spaceHoverRef.current = null;
-      moreHoverRef.current = null;
-      if (moreOpenRef.current && !moreHit) setMoreOpen(false);
-      if (
-        dataRef.current.settings.cardDragCollapse !== false &&
-        sourceCatId &&
-        (dataRef.current.categories || []).length > 1
-      ) {
-        if (!dragFoldRef.current)
-          dragFoldRef.current = {
-            sourceId: sourceCatId,
-            left: false,
-            openId: sourceCatId,
-          };
-        let overCatId: string | null = null;
-        for (const node of document.elementsFromPoint(ev.clientX, ev.clientY)) {
-          if (!(node instanceof HTMLElement)) continue;
-          if (node === ghostRef.current || node === markerRef.current) continue;
-          const s = node.closest<HTMLElement>("[data-cat-id]");
-          if (s?.dataset?.catId) {
-            overCatId = s.dataset.catId;
-            break;
-          }
-        }
-        const fold = dragFoldRef.current!;
-        if (!fold.left) {
-          if (overCatId && overCatId !== sourceCatId) {
-            const next = {
-              sourceId: sourceCatId,
-              left: true,
-              openId: null,
-            };
-            dragFoldRef.current = next;
-            setDragFold(next);
-            catHoverRef.current = {
-              catId: overCatId,
-              at: Date.now(),
-            };
-          }
-        } else if (overCatId) {
-          const hover = catHoverRef.current;
-          if (!hover || hover.catId !== overCatId)
-            catHoverRef.current = {
-              catId: overCatId,
-              at: Date.now(),
-            };
-          else if (Date.now() - hover.at > 320 && fold.openId !== overCatId) {
-            const next = {
-              ...fold,
-              openId: overCatId,
-            };
-            dragFoldRef.current = next;
-            setDragFold(next);
-            catHoverRef.current = {
-              catId: overCatId,
-              at: Number.POSITIVE_INFINITY,
-            };
-          }
-        } else catHoverRef.current = null;
-      }
-      const hit = hitAppInsert(ev.clientX, ev.clientY, appId);
-      if (!hit) return;
-      const cur = overRef.current;
-      if (cur?.kind === "card" && cur.catId === hit.catId && cur.insertAt === hit.insertAt) return;
-      setOver(hit);
-    };
-    const up = (ev: PointerEvent) => finishAppDrag(ev);
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up, {
-      once: true,
-    });
-    window.addEventListener("pointercancel", up, {
-      once: true,
-    });
-    unbindDragRef.current = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-    };
-  }
-  function bindAppResize(app: PortalCard, origin: HTMLElement, edge: { x: number; y: number }, ev: { clientX: number; clientY: number; pointerId: number }) {
-    unbindDrag();
-    endLiveResize();
-    const grid = origin.closest<HTMLElement>("[data-app-grid]");
-    const maxCols = gridColCount();
-    const startPtr = {
-      x: ev.clientX,
-      y: ev.clientY,
-    };
-    const startRect = origin.getBoundingClientRect();
-    const start = {
-      left: startRect.left,
-      top: startRect.top,
-      width: startRect.width,
-      height: startRect.height,
-    };
-    const startCol = spanSize(app.colSpan);
-    const startRow = spanSize(app.rowSpan);
-    const widths = grid
-      ? itemColWidths(grid, maxCols)
-      : [start.width, start.width, start.width];
-    const heights = itemTrackHeights(grid);
-    let box = {
-      ...start,
-    };
-    let liveCol: number = startCol;
-    let liveRow: number = startRow;
-    const slot = document.createElement("div");
-    slot.className = `resize-slot drop-slot ${itemSpanClass(app)}`;
-    slot.setAttribute("data-resize-slot", "");
-    const slotLab = document.createElement("span");
-    slotLab.className = "drop-slot-label";
-    slotLab.textContent = t("nav.dropHere");
-    slot.appendChild(slotLab);
-    origin.after(slot);
-    origin.classList.add("is-live-resize");
-    applyLiveBox(origin, start);
-    resizeLiveRef.current = {
-      origin,
-      placeholder: slot,
-    };
-    const cursor = resizeCursor(edge);
-    writeEditMode(true);
-    setResizeUi(true, cursor);
-    try {
-      origin.setPointerCapture?.(ev.pointerId);
-    } catch {
-      // ignore
-    }
-    const paintSlot = (col: number, row: number) => {
-      slot.className = `resize-slot drop-slot ${itemSpanClass({
-        colSpan: col,
-        rowSpan: row,
-      })}`;
-    };
-    const move = (e: PointerEvent) => {
-      e.preventDefault();
-      box = liveResizeBox(
-        start,
-        edge,
-        e.clientX - startPtr.x,
-        e.clientY - startPtr.y,
-        widths,
-        heights,
-        maxCols,
-      );
-      applyLiveBox(origin, box);
-      const col = edge.x ? nearestSpan(widths, box.width, maxCols) : startCol;
-      const row = edge.y ? nearestSpan(heights, box.height, 3) : startRow;
-      if (col === liveCol && row === liveRow) return;
-      liveCol = col;
-      liveRow = row;
-      paintSlot(col, row);
-    };
-    const up = () => {
-      unbindDrag();
-      const col = edge.x ? nearestSpan(widths, box.width, maxCols) : startCol;
-      const row = edge.y ? nearestSpan(heights, box.height, 3) : startRow;
-      endLiveResize();
-      setResizeUi(false);
-      if (col === startCol && row === startRow) return;
-      persistAppSpan(app, col as 1 | 2 | 3, row as 1 | 2 | 3);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up, {
-      once: true,
-    });
-    window.addEventListener("pointercancel", up, {
-      once: true,
-    });
-    unbindDragRef.current = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-      try {
-        origin.releasePointerCapture?.(ev.pointerId);
-      } catch {
-        // ignore
-      }
-    };
-  }
-  function persistAppSpan(app: PortalCard, colSpan: 1 | 2 | 3, rowSpan: 1 | 2 | 3) {
-    const current = dataRef.current;
-    const categoryId =
-      app.categoryId || current.categories.find((c) => c.cards.some((a) => a.id === app.id))?.id;
-    if (!categoryId) return;
-    if (spanSize(app.colSpan) === colSpan && spanSize(app.rowSpan) === rowSpan) return;
-    const snapshot = current.categories;
-    const nextCats = current.categories.map((c) => ({
-      ...c,
-      apps: c.cards.map((a) =>
-        a.id === app.id
-          ? {
-              ...a,
-              colSpan,
-              rowSpan,
-            }
-          : a,
-      ),
-    }));
-    setData({
-      ...current,
-      categories: nextCats,
-    });
-    updateCard({
-      data: {
-        token: tokenRef.current,
-        id: app.id,
-        categoryId,
-        kind: app.kind || "app",
-        title: app.title || "",
-        description: app.description || "",
-        url: app.url || "",
-        icon: app.icon || "Link",
-        tags: app.tags || [],
-        colSpan,
-        rowSpan,
-        check: app.check || "off",
-        checkHost: app.checkHost || "",
-        links: app.links || [],
-      },
-    })
-      .then((next) => {
-        setData(next);
-        stayEditing();
-      })
-      .catch((err) => {
-        if (!sessionGone(err)) toast.error(te(err));
-        setData({
-          ...current,
-          categories: snapshot,
-        });
-        stayEditing();
-      });
-  }
+  const dnd = usePortalDrag({
+    dataRef,
+    setData,
+    tokenRef,
+    sessionRef,
+    spaceListRef,
+    spaceMoreRef,
+    morePanelRef,
+    moreOpenRef,
+    spaceOverflow,
+    setMoreOpen,
+    goSpace,
+    stayEditing,
+    setBusy,
+    setModal,
+    activeSpaceRef,
+  });
+  const {
+    drag,
+    over,
+    dragFold,
+    liveId,
+    setDrag,
+    setOver,
+    spaceOverMore,
+    setSpaceOverMore,
+    didDragRef,
+    dragOriginRef,
+    carryRef,
+    dragRef,
+    bindSpaceDrag,
+    bindCatDrag,
+    bindCardDrag,
+    bindAppResize,
+    openMoveCat,
+    spaceInsertRef,
+    spaceOverMoreRef,
+    carryDestSpaceId,
+  } = dnd;
   useEffect(() => {
     const t = readToken();
     setToken(t);
@@ -1260,65 +323,7 @@ function Home() {
     } catch {
       // ignore
     }
-    const forceIdle = () => {
-      unbindDragRef.current?.();
-      unbindDragRef.current = null;
-      ghostRef.current?.remove();
-      ghostRef.current = null;
-      markerRef.current?.remove();
-      markerRef.current = null;
-      didDragRef.current = false;
-      dragRef.current = null;
-      overRef.current = null;
-      carryRef.current = null;
-      spaceHoverRef.current = null;
-      if (dragScrollRafRef.current) cancelAnimationFrame(dragScrollRafRef.current);
-      dragScrollRafRef.current = 0;
-      setDrag(null);
-      setOver(null);
-      setDragUi(false);
-      document.documentElement.classList.remove("is-dragging");
-      const live = resizeLiveRef.current;
-      resizeLiveRef.current = null;
-      live?.placeholder?.remove();
-      if (live?.origin) {
-        live.origin.classList.remove("is-live-resize");
-        live.origin.style.left = "";
-        live.origin.style.top = "";
-        live.origin.style.width = "";
-        live.origin.style.height = "";
-      }
-      setResizeUi(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (
-        e.key === "Escape" &&
-        (dragRef.current ||
-          document.documentElement.classList.contains("is-dragging") ||
-          document.documentElement.classList.contains("is-card-resizing"))
-      )
-        forceIdle();
-    };
-    const onHide = () => {
-      if (document.hidden) forceIdle();
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("blur", forceIdle);
-    document.addEventListener("visibilitychange", onHide);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("blur", forceIdle);
-      document.removeEventListener("visibilitychange", onHide);
-      forceIdle();
-    };
-  }, []);
-  useEffect(() => {
-    const block = (e: Event) => {
-      if (dragRef.current || document.documentElement.classList.contains("is-card-resizing"))
-        e.preventDefault();
-    };
-    document.addEventListener("selectstart", block);
-    return () => document.removeEventListener("selectstart", block);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boot-only session restore
   }, []);
   useEffect(() => {
     const prefs = readUiPrefs();
@@ -1653,7 +658,7 @@ function Home() {
       return;
     }
     if (!sessionCanEditSpace(sess, cur.activeSpaceId)) {
-      toast.error(t("toast.noEditTab"));
+      toast.error(t("toast.noEditSpace"));
       return;
     }
     if (!editModeRef.current) enterEdit();
@@ -1729,21 +734,6 @@ function Home() {
       close: false,
     });
   }
-  function catSortButton(cat: PortalCategory) {
-    const za = cardsAlphaDir(cat.cards, data.settings.locale) === "az";
-    return (
-      <button
-        type="button"
-        className="card-tool"
-        aria-label={za ? t("cat.sortZa") : t("cat.sortAlpha")}
-        title={za ? t("cat.sortZa") : t("cat.sortAlpha")}
-        onClick={() => sortCategoryCards(cat)}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        {za ? <ArrowUpZA className="size-3.5" /> : <ArrowDownAZ className="size-3.5" />}
-      </button>
-    );
-  }
   async function resetCategoryCards(cat: PortalCategory) {
     if (!cat?.cards?.length) return;
     if (
@@ -1768,12 +758,12 @@ function Home() {
       close: false,
     });
   }
-  function cloneSpace(tab: MenuSpace) {
+  function cloneSpace(space: MenuSpace) {
     apply(async () => {
       const next = await duplicateSpace({
         data: {
           token,
-          id: tab.id,
+          id: space.id,
         },
       });
       toast.success(t("toast.spaceDuplicated"));
@@ -1794,13 +784,13 @@ function Home() {
         ...cur,
         categories: cur.categories.map((c) => ({
           ...c,
-          apps: c.cards.map(bump),
+          cards: c.cards.map(bump),
         })),
         catalog: (cur.catalog ?? []).map((t) => ({
           ...t,
           categories: t.categories.map((c) => ({
             ...c,
-            apps: c.cards.map(bump),
+            cards: c.cards.map(bump),
           })),
         })),
       };
@@ -1934,9 +924,13 @@ function Home() {
   const collapsedSet = useMemo(() => new Set(ui.collapsedCats ?? []), [ui.collapsedCats]);
   const searching = query.trim().length > 0 || tagFilter.length > 0 || downFilter;
   function isCatCollapsed(catId: string) {
-    if (searching) return false;
-    if (drag?.kind === "card" && dragFold?.left) return catId !== dragFold.openId;
-    return collapsedSet.has(catId);
+    return catIsFolded(catId, {
+      searching,
+      dragKind: drag?.kind,
+      fold: dragFold,
+      foldOn: data.settings.cardDragCollapse !== false,
+      collapsed: collapsedSet,
+    });
   }
   const onFavs = page === "favs" && !searching;
   const canEditActive = sessionCanEditSpace(session, data.activeSpaceId);
@@ -1991,14 +985,14 @@ function Home() {
     const downSet = downFilter ? new Set(downIds) : null;
     if (!s && tags.length === 0 && !downFilter) return [];
     return (data.catalog ?? [])
-      .map((tab) => {
-        const tabHit = Boolean(s) && tab.name.toLowerCase().includes(s);
-        const categories = tab.categories
+      .map((space) => {
+        const spaceHit = Boolean(s) && space.name.toLowerCase().includes(s);
+        const categories = space.categories
           .map((c) => {
-            const catHit = tabHit || (Boolean(s) && c.name.toLowerCase().includes(s));
+            const catHit = spaceHit || (Boolean(s) && c.name.toLowerCase().includes(s));
             return {
               ...c,
-              apps:
+              cards:
                 catHit && tags.length === 0 && !downSet
                   ? c.cards
                   : c.cards.filter((a) => itemMatches(a, s, tags, downSet)),
@@ -2006,7 +1000,7 @@ function Home() {
           })
           .filter((c) => c.cards.length > 0);
         return {
-          ...tab,
+          ...space,
           categories,
         };
       })
@@ -2037,14 +1031,14 @@ function Home() {
   const favGroups = useMemo(() => {
     const order = new Map(ui.favIds.map((id, i) => [id, i]));
     const groups = [];
-    for (const tab of data.catalog ?? [])
-      for (const cat of tab.categories) {
+    for (const space of data.catalog ?? [])
+      for (const cat of space.categories) {
         const apps = cat.cards
           .filter((a) => favSet.has(a.id) && allowsFavorite(a, data.settings))
           .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
         if (apps.length)
           groups.push({
-            tab,
+            space,
             cat,
             cards: apps,
           });
@@ -2056,8 +1050,8 @@ function Home() {
   const probeList = useMemo(() => {
     if (data.settings.healthChecks === false) return [];
     const out = [];
-    for (const tab of data.catalog ?? [])
-      for (const cat of tab.categories)
+    for (const space of data.catalog ?? [])
+      for (const cat of space.categories)
         for (const app of cat.cards) {
           if ((app.kind || "app") !== "app" || app.check === "off" || !app.check) continue;
           if (app.check === "http")
@@ -2138,18 +1132,11 @@ function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- probe run keyed on probeKey, not the array identity
   }, [probeKey, token]);
   const filtered = useMemo(() => {
-    if (searching) return searchHits.flatMap((t) => t.categories);
+    if (searching) return searchHits.flatMap((space) => space.categories);
     return data.categories;
   }, [searching, searchHits, data.categories]);
-  const carryFromSpaceId = carryRef.current?.fromSpaceId;
-  const carryDestSpaceId =
-    over?.kind === "space-carry"
-      ? over.spaceId
-      : carryFromSpaceId && carryFromSpaceId !== data.activeSpaceId
-        ? data.activeSpaceId
-        : null;
   const displaySpaces = useMemo(() => {
-    let tabs = data.spaces;
+    let spaces = data.spaces;
     if (
       canReorderSpaces &&
       drag &&
@@ -2158,9 +1145,9 @@ function Home() {
       over.kind === "space" &&
       !spaceOverMore
     )
-      tabs = placeSpaces(data.spaces, drag.id, over.insertAt) ?? data.spaces;
-    if (editMode || searching) return tabs;
-    return tabs.filter((t) => spaceHasCards(t.id));
+      spaces = placeSpaces(data.spaces, drag.id, over.insertAt) ?? data.spaces;
+    if (editMode || searching) return spaces;
+    return spaces.filter((s) => spaceHasCards(s.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- helper reads refs; list identity deps cover the recompute
   }, [
     data.spaces,
@@ -2175,7 +1162,7 @@ function Home() {
     spaceOverMore,
   ]);
   const moreMenuSpaces = displaySpaces.filter(
-    (tab) => spaceOverflow.includes(tab.id) && !(drag?.kind === "space" && drag.id === tab.id),
+    (space) => spaceOverflow.includes(space.id) && !(drag?.kind === "space" && drag.id === space.id),
   );
   const moreGapAt =
     drag?.kind === "space" && spaceOverMore && over?.kind === "space"
@@ -2186,7 +1173,7 @@ function Home() {
           .filter((id) => spaceOverflow.includes(id)).length
       : -1;
   useEffect(() => {
-    if (editMode || searching || page !== "tab") return;
+    if (editMode || searching || page !== "space") return;
     if (spaceHasCards(data.activeSpaceId)) return;
     const next = (data.spaces || []).find((t) => t.id !== data.activeSpaceId && spaceHasCards(t.id));
     if (next) goSpace(next.id);
@@ -2204,13 +1191,13 @@ function Home() {
       const gap = Number.parseFloat(getComputedStyle(strip).gap) || 0;
       const avail = strip.clientWidth;
       if (!avail) return;
-      const fav = strip.querySelector<HTMLElement>("[data-tab-slot=fav]");
+      const fav = strip.querySelector<HTMLElement>("[data-space-slot=fav]");
       const favW = fav?.offsetWidth || 0;
-      const plus = strip.querySelector<HTMLElement>("[data-tab-slot=plus]");
+      const plus = strip.querySelector<HTMLElement>("[data-space-slot=plus]");
       const plusW = plus?.offsetWidth || 0;
-      const moreEl = strip.querySelector<HTMLElement>("[data-tab-slot=more]");
+      const moreEl = strip.querySelector<HTMLElement>("[data-space-slot=more]");
       const moreW = moreEl?.offsetWidth || 0;
-      for (const el of strip.querySelectorAll<HTMLElement>(".tab-item[data-space-id]")) {
+      for (const el of strip.querySelectorAll<HTMLElement>(".space-item[data-space-id]")) {
         if (el.classList.contains("is-overflow")) continue;
         const id = el.dataset.spaceId;
         if (id && el.offsetWidth) spaceWidthRef.current.set(id, el.offsetWidth);
@@ -2226,7 +1213,7 @@ function Home() {
         moreW,
         gap,
       );
-      setTabOverflow((cur) =>
+      setSpaceOverflow((cur) =>
         cur.length === hid.length && cur.every((id, i) => id === hid[i]) ? cur : hid,
       );
     };
@@ -2235,13 +1222,14 @@ function Home() {
     ro.observe(row);
     ro.observe(strip);
     return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- strip measure; dragRef is a ref
   }, [displaySpaces, editMode, data.activeSpaceId, page, canReorderSpaces, searching, drag?.kind]);
   useEffect(() => {
     if (!spaceOverflow.length && moreOpen) setMoreOpen(false);
   }, [spaceOverflow, moreOpen]);
   useLayoutEffect(() => {
     if (!moreOpen) return;
-    const btn = spaceMoreRef.current?.querySelector(".tab-more");
+    const btn = spaceMoreRef.current?.querySelector(".space-more");
     const panel = morePanelRef.current;
     if (!btn || !panel) return;
     const place = () => {
@@ -2275,6 +1263,7 @@ function Home() {
       document.removeEventListener("pointerdown", close);
       window.removeEventListener("keydown", onKey);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- close-on-outside; dragRef is a ref
   }, [moreOpen]);
   const displayCategories = useMemo(() => {
     const base = filtered;
@@ -2300,350 +1289,8 @@ function Home() {
       if (over.kind === "card") return placeCard(base, drag.id, over.catId, over.insertAt) ?? base;
     }
     return base;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- live drag preview; carryRef is a ref
   }, [filtered, canDrag, drag, over]);
-  function sameLayout(a: PortalCategory[], b: PortalCategory[]) {
-    return (
-      JSON.stringify(
-        a.map((c) => ({
-          id: c.id,
-          apps: c.cards.map((x) => x.id),
-        })),
-      ) ===
-      JSON.stringify(
-        b.map((c) => ({
-          id: c.id,
-          apps: c.cards.map((x) => x.id),
-        })),
-      )
-    );
-  }
-  function persistMove(app: PortalCard, fromSpaceId: string, destSpaceId: string, nextCats: PortalCategory[]) {
-    const current = dataRef.current;
-    const snapshot = {
-      categories: current.categories,
-      catalog: current.catalog,
-      activeSpaceId: current.activeSpaceId,
-    };
-    const dest = nextCats.find((c) => c.cards.some((a) => a.id === app.id));
-    const placed = dest?.cards.find((a) => a.id === app.id);
-    if (!dest || !placed) return;
-    const catalog = (current.catalog ?? []).map((t) => {
-      if (t.id === fromSpaceId)
-        return {
-          ...t,
-          categories: t.categories.map((c) => ({
-            ...c,
-            apps: c.cards.filter((a) => a.id !== app.id),
-          })),
-        };
-      if (t.id === destSpaceId)
-        return {
-          ...t,
-          categories: nextCats,
-        };
-      return t;
-    });
-    setData({
-      ...current,
-      categories: nextCats,
-      catalog,
-      activeSpaceId: destSpaceId,
-    });
-    moveCard({
-      data: {
-        token: tokenRef.current,
-        id: app.id,
-        destSpaceId,
-        destCategoryId: dest.id,
-        sortOrder: placed.sortOrder || 1,
-      },
-    })
-      .then((next) => {
-        setData(next);
-        stayEditing();
-      })
-      .catch((err) => {
-        toast.error(te(err));
-        setData({
-          ...current,
-          ...snapshot,
-        });
-        stayEditing();
-      });
-  }
-  function persistTabs(nextTabs: MenuSpace[]) {
-    const current = dataRef.current;
-    if (nextTabs.map((t) => t.id).join() === current.spaces.map((t) => t.id).join()) return;
-    const snapshot = current.spaces;
-    setData({
-      ...current,
-      spaces: nextTabs,
-    });
-    reorderSpaces({
-      data: {
-        token,
-        spaceId: current.activeSpaceId,
-        order: nextTabs.map((t) => t.id),
-      },
-    })
-      .then((next) => {
-        const latest = dataRef.current;
-        setData({
-          ...next,
-          activeSpaceId: latest.activeSpaceId,
-          categories: next.activeSpaceId === latest.activeSpaceId ? next.categories : latest.categories,
-        });
-        stayEditing();
-      })
-      .catch((err) => {
-        if (sessionGone(err)) return;
-        toast.error(te(err));
-        setData({
-          ...current,
-          spaces: snapshot,
-        });
-        stayEditing();
-      });
-  }
-  function persistLayout(nextCats: PortalCategory[]) {
-    const current = dataRef.current;
-    if (sameLayout(current.categories, nextCats)) return;
-    const snapshot = current.categories;
-    setData({
-      ...current,
-      categories: nextCats,
-    });
-    const placements = nextCats.flatMap((c) =>
-      c.cards.map((a, i) => ({
-        id: a.id,
-        categoryId: c.id,
-        sortOrder: i + 1,
-      })),
-    );
-    const catChanged =
-      nextCats.map((c) => c.id).join() !== current.categories.map((c) => c.id).join();
-    const spaceId = activeSpaceRef.current || current.activeSpaceId;
-    (catChanged
-      ? reorderCategories({
-          data: {
-            token,
-            spaceId,
-            order: nextCats.map((c) => c.id),
-          },
-        }).then(() =>
-          reorderCards({
-            data: {
-              token,
-              spaceId,
-              placements,
-            },
-          }),
-        )
-      : reorderCards({
-          data: {
-            token,
-            spaceId,
-            placements,
-          },
-        })
-    )
-      .then((next) => {
-        const latest = dataRef.current;
-        if (next.activeSpaceId !== latest.activeSpaceId && next.activeSpaceId !== current.activeSpaceId) {
-          stayEditing();
-          return;
-        }
-        setData(next);
-        stayEditing();
-      })
-      .catch((err) => {
-        toast.error(te(err));
-        setData({
-          ...current,
-          categories: snapshot,
-        });
-        stayEditing();
-      });
-  }
-  function commitDrag() {
-    const d = dragRef.current;
-    const o = overRef.current;
-    const current = dataRef.current;
-    unbindDrag();
-    setDrag(null);
-    setOver(null);
-    killGhost();
-    setDragUi(false);
-    stopDragScroll();
-    catHoverRef.current = null;
-    dragFoldRef.current = null;
-    setDragFold(null);
-    window.setTimeout(() => {
-      didDragRef.current = false;
-    }, 50);
-    if (!d || !o) return;
-    if (d.kind === "space" && o.kind === "space") {
-      const next = placeSpaces(current.spaces, d.id, o.insertAt);
-      if (next) persistTabs(next);
-      return;
-    }
-    if (d.kind === "card" && o.kind === "card") {
-      const carry = carryRef.current;
-      const destSpaceId = current.activeSpaceId;
-      if (carry && carry.fromSpaceId !== destSpaceId && carry.app) {
-        const nextCats = placeCarriedCard(current.categories, carry.app, o.catId, o.insertAt);
-        if (nextCats) persistMove(carry.app, carry.fromSpaceId, destSpaceId, nextCats);
-        clearCarry();
-        return;
-      }
-      const next =
-        placeCard(current.categories, d.id, o.catId, o.insertAt) ||
-        (carry && placeCarriedCard(current.categories, carry.app, o.catId, o.insertAt));
-      clearCarry();
-      if (next) persistLayout(next);
-      return;
-    }
-    if (d.kind === "cat" && o.kind === "cat") {
-      const next = placeCategory(current.categories, d.id, o.insertAt);
-      if (next) persistLayout(next);
-    }
-  }
-  function tabInsertAt(clientX: number, clientY: number, dragId: string, forceMore: boolean) {
-    const ids = dataRef.current.spaces.map((t) => t.id).filter((id) => id !== dragId);
-    const panel = morePanelRef.current;
-    const useMore = forceMore || Boolean(panel);
-    if (useMore && panel) {
-      const box = panel.getBoundingClientRect();
-      const inPanel =
-        forceMore ||
-        (clientX >= box.left &&
-          clientX <= box.right &&
-          clientY >= box.top &&
-          clientY <= box.bottom);
-      if (inPanel) {
-        const nodes = [...panel.querySelectorAll<HTMLElement>("[data-space-id]")];
-        let last = -1;
-        for (const el of nodes) {
-          const id = el.dataset.spaceId;
-          if (!id || id === dragId) continue;
-          const at = ids.indexOf(id);
-          if (at >= 0) last = at;
-          const r = el.getBoundingClientRect();
-          if (clientY < r.top + r.height / 2) return at < 0 ? ids.length : at;
-        }
-        if (nodes.length) return last < 0 ? ids.length : last + 1;
-      }
-    }
-    if (forceMore) {
-      const ov = spaceOverflow.filter((id) => id !== dragId);
-      if (!ov.length) return ids.length;
-      const at = ids.indexOf(ov[0]);
-      return at < 0 ? ids.length : at;
-    }
-    const root = spaceListRef.current;
-    if (!root) return ids.length;
-    const nodes = [...root.querySelectorAll<HTMLElement>(".tab-item[data-space-id]")].filter(
-      (el) => !el.classList.contains("is-overflow") && el.offsetWidth,
-    );
-    let last = -1;
-    for (const el of nodes) {
-      const id = el.dataset.spaceId;
-      if (!id || id === dragId) continue;
-      const at = ids.indexOf(id);
-      if (at >= 0) last = at;
-      const r = el.getBoundingClientRect();
-      if (clientX < r.left + r.width / 2) return at < 0 ? ids.length : at;
-    }
-    return last < 0 ? ids.length : last + 1;
-  }
-  function endSpacePointer(spaceId: string, moved: boolean) {
-    spaceOverMoreRef.current = false;
-    setTabOverMore(false);
-    if (!moved) {
-      setDrag(null);
-      setOver(null);
-      killGhost();
-      setDragUi(false);
-      goSpace(spaceId);
-      return;
-    }
-    swallowGhostClick();
-    const next = placeSpaces(dataRef.current.spaces, spaceId, spaceInsertRef.current);
-    setDrag(null);
-    setOver(null);
-    killGhost();
-    setDragUi(false);
-    window.setTimeout(() => {
-      didDragRef.current = false;
-    }, 50);
-    if (next) persistTabs(next);
-  }
-  function hitAppInsert(
-    clientX: number,
-    clientY: number,
-    dragId: string,
-  ): { kind: "card"; catId: string; insertAt: number } | null {
-    const stack = document.elementsFromPoint(clientX, clientY);
-    let card: HTMLElement | undefined;
-    let section: HTMLElement | undefined;
-    let overSelf = false;
-    for (const node of stack) {
-      if (!(node instanceof HTMLElement)) continue;
-      if (node === ghostRef.current || node === markerRef.current) continue;
-      const c = node.closest<HTMLElement>("[data-card-id]");
-      if (c?.dataset.appId === dragId) overSelf = true;
-      else if (c?.dataset.appId && !card) card = c;
-      const s = node.closest<HTMLElement>("[data-cat-id]");
-      if (s && !section) section = s;
-    }
-    if (overSelf) {
-      const cur = overRef.current;
-      if (cur?.kind === "card") return cur;
-    }
-    if (!section?.dataset.catId) return null;
-    const catId = section.dataset.catId;
-    const cat = dataRef.current.categories.find((c) => c.id === catId);
-    if (!cat) return null;
-    const destId = card?.dataset.appId;
-    if (destId && destId !== dragId && card) {
-      const after = pointerAfter(
-        {
-          clientX,
-          clientY,
-        },
-        card,
-      );
-      return {
-        kind: "card",
-        catId,
-        insertAt: hoverInsertAt(
-          cat.cards.map((a) => a.id),
-          dragId,
-          destId,
-          after,
-        ),
-      };
-    }
-    return {
-      kind: "card",
-      catId,
-      insertAt: cat.cards.filter((a) => a.id !== dragId).length,
-    };
-  }
-  function hitCatInsert(clientY: number, dragId: string) {
-    const others = [...document.querySelectorAll<HTMLElement>("[data-cat-id]")].filter(
-      (el) => el.dataset.catId && el.dataset.catId !== dragId,
-    );
-    for (let i = 0; i < others.length; i++) {
-      const r = (
-        others[i].querySelector("[data-cat-handle]") ??
-        others[i].querySelector("h2") ??
-        others[i]
-      ).getBoundingClientRect();
-      if (clientY < r.top + r.height / 2) return i;
-    }
-    return others.length;
-  }
   const picker = {
     token,
     library: data.customIcons ?? [],
@@ -2686,13 +1333,200 @@ function Home() {
     data.settings.timeFormat,
     data.settings.timezone,
   ]);
+
+  const catalogChrome = {
+    settings: data.settings,
+    probes: health,
+    tagFilter,
+    favSet,
+  };
+  const catalogHandlers: CategoryHandlers = {
+    goSpace,
+    toggleCollapsed,
+    openCard: (cat, app) =>
+      setModal(app ? { kind: "card", categoryId: cat.id, app } : { kind: "card", categoryId: cat.id }),
+    moveCat: (cat, fromSpaceId) =>
+      setModal({
+        kind: "move-pick",
+        category: cat,
+        fromSpaceId,
+      }),
+    sortCat: sortCategoryCards,
+    resetCat: (cat) => {
+      void resetCategoryCards(cat);
+    },
+    duplicateCat: duplicateCategory,
+    editCat: (cat) =>
+      setModal({
+        kind: "category",
+        category: cat,
+      }),
+    deleteCat: (cat) =>
+      setModal({
+        kind: "confirm-cat",
+        category: cat,
+      }),
+    duplicateCard: duplicateApp,
+    deleteCard: (app) =>
+      setModal({
+        kind: "confirm-app",
+        app,
+      }),
+    toggleTag,
+    toggleFav,
+    recheck: (app) => {
+      void recheckApp(app);
+    },
+    openLink: bumpClick,
+    didDrag: () => didDragRef.current,
+    onCatPointerDown: (e, cat, catIndex) => {
+      if (!canDrag) return;
+      if ((e.target as HTMLElement).closest("button")) return;
+      lockSelection();
+      didDragRef.current = false;
+      dragOriginRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+      };
+      writeEditMode(true);
+      carryRef.current = {
+        cat: {
+          ...cat,
+        },
+        fromSpaceId: dataRef.current.activeSpaceId,
+      };
+      bindCatDrag(
+        cat.id,
+        e.currentTarget.closest(".cat-head") || e.currentTarget.closest("[data-cat-id]") || e.currentTarget,
+      );
+      setDrag({
+        kind: "cat",
+        id: cat.id,
+      });
+      setOver({
+        kind: "cat",
+        insertAt: catIndex,
+      });
+    },
+    onCardPointerDown: (e, app, cat) => {
+      if (!canDrag) return;
+      if ((e.target as HTMLElement).closest("button")) return;
+      if (e.button != null && e.button !== 0) return;
+      if (canResize && e.pointerType !== "touch" && finePointer()) {
+        const edge = cardResizeEdge(e.currentTarget, e.clientX, e.clientY);
+        if (edge) {
+          lockSelection(e);
+          bindAppResize(app, e.currentTarget, edge, e);
+          return;
+        }
+      }
+      lockSelection();
+      didDragRef.current = false;
+      dragOriginRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+      };
+      writeEditMode(true);
+      carryRef.current = {
+        app: {
+          ...app,
+        },
+        fromSpaceId: dataRef.current.activeSpaceId,
+      };
+      setDrag({
+        kind: "card",
+        id: app.id,
+      });
+      const from = dataRef.current.categories.find((c) => c.cards.some((a) => a.id === app.id));
+      setOver({
+        kind: "card",
+        catId: from?.id ?? cat.id,
+        insertAt: from?.cards.findIndex((a) => a.id === app.id) ?? 0,
+      });
+      bindCardDrag(app.id, e.currentTarget, cat.id);
+    },
+  };
+  const spaceStripHandlers: SpaceStripHandlers = {
+    goFavs: () => setPage("favs"),
+    goSpace,
+    editFavs: () =>
+      setModal({
+        kind: "favs",
+      }),
+    editSpace: (space) =>
+      setModal({
+        kind: "space",
+        space,
+      }),
+    duplicateSpace: cloneSpace,
+    deleteSpace: (space) =>
+      setModal({
+        kind: "confirm-space",
+        space,
+      }),
+    addSpace: () =>
+      setModal({
+        kind: "space",
+      }),
+    onSpacePointerDown: (e, space, spaceIndex) => {
+      if (!canReorderSpaces) return;
+      if ((e.target as HTMLElement).closest("[data-space-action]")) return;
+      lockSelection();
+      didDragRef.current = false;
+      dragOriginRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+      };
+      writeEditMode(true);
+      setDrag({
+        kind: "space",
+        id: space.id,
+      });
+      spaceInsertRef.current = spaceIndex;
+      setOver({
+        kind: "space",
+        insertAt: spaceIndex,
+      });
+      bindSpaceDrag(space.id, e.currentTarget);
+    },
+    onMoreSpacePointerDown: (e, space) => {
+      if (!canReorderSpaces) return;
+      e.stopPropagation();
+      lockSelection();
+      didDragRef.current = false;
+      dragOriginRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+      };
+      writeEditMode(true);
+      spaceOverMoreRef.current = true;
+      setSpaceOverMore(true);
+      setDrag({
+        kind: "space",
+        id: space.id,
+      });
+      const idx = displaySpaces.findIndex((s) => s.id === space.id);
+      spaceInsertRef.current = idx < 0 ? displaySpaces.length : idx;
+      setOver({
+        kind: "space",
+        insertAt: idx < 0 ? displaySpaces.length : idx,
+      });
+      bindSpaceDrag(space.id, e.currentTarget);
+    },
+    didDrag: () => {
+      if (!didDragRef.current) return false;
+      didDragRef.current = false;
+      return true;
+    },
+    toggleMore: () => setMoreOpen((v) => !v),
+    closeMore: () => setMoreOpen(false),
+  };
+
   return (
     <div className="min-h-dvh">
-      {" "}
-      <ThemeCss light={data.settings.cssLight || ""} dark={data.settings.cssDark || ""} />{" "}
+      <ThemeCss light={data.settings.cssLight || ""} dark={data.settings.cssDark || ""} />
       {data.runtime?.isDev && !hideDevBanner ? (
         <div className="security-banner is-dev" role="status">
-          {" "}
           <Bug className="size-3.5 shrink-0" />
           {t("banner.dev")}
           <button
@@ -2702,21 +1536,18 @@ function Home() {
             title={t("actions.close")}
             onClick={() => setHideDevBanner(true)}
           >
-            {" "}
             <X strokeWidth={2.75} />
           </button>
         </div>
       ) : null}
       {session?.mustChangePassword ? (
         <div className="security-banner" role="status">
-          {" "}
           <AlertTriangle className="size-3.5 shrink-0" />
           {t("banner.weakPassword")}
         </div>
       ) : null}
       {data.runtime?.isDev && data.settings.devAdminNoPassword && !hideNoPassBanner ? (
         <div className="security-banner" role="status">
-          {" "}
           <AlertTriangle className="size-3.5 shrink-0" />
           {t("banner.noPassword")}
           <button
@@ -2726,36 +1557,30 @@ function Home() {
             title={t("actions.close")}
             onClick={() => setHideNoPassBanner(true)}
           >
-            {" "}
             <X strokeWidth={2.75} />
           </button>
         </div>
-      ) : null}{" "}
+      ) : null}
       <header className="sticky top-0 z-20 border-b border-border bg-header">
-        {" "}
         <div className="mx-auto flex min-w-0 max-w-6xl items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6">
-          {" "}
           <div className="flex min-w-0 items-center gap-3">
-            {" "}
             <div className="flex size-10 shrink-0 items-center justify-center">
               {data.settings.logo ? (
                 <img src={data.settings.logo} alt="" className="size-10 object-contain" />
               ) : (
                 <DockitMark className="dockit-mark size-9" />
               )}
-            </div>{" "}
+            </div>
             <div className="hidden min-w-0 sm:block sm:max-w-72">
-              {" "}
               <h1 className="truncate text-base font-semibold tracking-tight">
                 {data.settings.title}
-              </h1>{" "}
+              </h1>
               <p className="hidden truncate text-xs text-muted sm:block">
                 {data.settings.subtitle || t("settings.defaultTagline")}
               </p>
             </div>
-          </div>{" "}
+          </div>
           <div className="search-box relative flex min-h-10 min-w-0 flex-1 items-center gap-1 rounded-lg border border-border bg-surface pl-9">
-            {" "}
             <Search className="pointer-events-none absolute left-3 size-4 text-muted" />
             {(tagFilter.length || downFilter) ? (
               <div className="search-tags">
@@ -2847,19 +1672,17 @@ function Home() {
                         applyTagFromSearch(t.name);
                       }}
                     >
-                      {" "}
                       <span data-tone={paint.tone} style={paint.style} className="tag-chip">
                         {t.name}
-                      </span>{" "}
+                      </span>
                       <span className="text-xs text-muted">{t.count}</span>
                     </button>
                   );
                 })}
               </div>
             ) : null}
-          </div>{" "}
+          </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {" "}
             <ThemeToggle />
             <AccountMenu
               loggedIn={Boolean(token || session)}
@@ -2890,915 +1713,72 @@ function Home() {
                 aria-label={t("nav.done")}
                 onClick={() => requestEdit()}
               >
-                {" "}
                 <Check className="size-4" />
                 <span className="hidden sm:inline">{t("nav.done")}</span>
               </Button>
             ) : null}
           </div>
         </div>
-        {displaySpaces.length > 0 && (
-          <div ref={spaceListRef} className="tab-row">
-            <div ref={spaceStripRef} className="tab-strip">
-            <button
-              type="button"
-              data-tab-slot="fav"
-              onClick={() => {
-                if (didDragRef.current) {
-                  didDragRef.current = false;
-                  return;
-                }
-                setPage("favs");
-              }}
-              className={`tab-item ${onFavs ? "is-on" : ""} ${data.settings.favsHideLabel ? "is-icon" : ""}`}
-              aria-pressed={onFavs}
-              aria-label={t("nav.favorites")}
-              title={t("nav.favorites")}
-            >
-              {" "}
-              <Star className="tab-ico" fill={onFavs || favCount > 0 ? "currentColor" : "none"} />
-              {data.settings.favsHideLabel ? null : <span>{t("nav.favorites")}</span>}
-              {favCount > 0 ? (
-                <span className="count-chip" data-tone={tagTone(t("nav.favorites"))}>
-                  {favCount}
-                </span>
-              ) : null}
-              {editMode && onFavs && session?.canEdit ? (
-                <span
-                  className="ml-1 flex items-center gap-[0.35rem]"
-                  data-space-action=""
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  {" "}
-                  <span
-                    role="button"
-                    className="card-tool"
-                    aria-label={t("aria.editSpace")}
-                    title={t("aria.editSpace")}
-                    onClick={() =>
-                      setModal({
-                        kind: "favs",
-                      })
-                    }
-                  >
-                    {" "}
-                    <Pencil className="size-3.5" />
-                  </span>
-                </span>
-              ) : null}
-            </button>
-            {displaySpaces.map((tab, tabIndex) => (
-              <Fragment key={tab.id}>
-                {spaceOverflow.includes(tab.id) &&
-                drag?.kind === "space" &&
-                drag.id === tab.id &&
-                !spaceOverMore &&
-                displaySpaces.slice(tabIndex + 1).some((t) => !spaceOverflow.includes(t.id)) ? (
-                  <div className="drop-slot tab-gap">
-                    <span className="drop-slot-label">{t("nav.dropHere")}</span>
-                  </div>
-                ) : null}
-              <button
-                key={tab.id}
-                type="button"
-                data-space-id={tab.id}
-                onClick={() => {
-                  if (didDragRef.current) {
-                    didDragRef.current = false;
-                    return;
-                  }
-                  goSpace(tab.id);
-                }}
-                onPointerDown={(e) => {
-                  if (!canReorderSpaces) return;
-                  if ((e.target as HTMLElement).closest("[data-space-action]")) return;
-                  lockSelection(e);
-                  didDragRef.current = false;
-                  dragOriginRef.current = {
-                    x: e.clientX,
-                    y: e.clientY,
-                  };
-                  writeEditMode(true);
-                  setDrag({
-                    kind: "space",
-                    id: tab.id,
-                  });
-                  spaceInsertRef.current = tabIndex;
-                  setOver({
-                    kind: "space",
-                    insertAt: tabIndex,
-                  });
-                  bindSpaceDrag(tab.id, e.currentTarget);
-                }}
-                className={`tab-item ${canReorderSpaces ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${drag?.kind === "space" && drag.id === tab.id ? "is-src" : ""} ${carryDestSpaceId === tab.id ? "is-drop" : ""} ${tab.id === data.activeSpaceId && page !== "favs" ? "is-on" : searching && searchHits.some((h) => h.id === tab.id) ? "text-fg" : searching ? "text-subtle" : ""} ${tab.hideLabel ? "is-icon" : ""} ${spaceOverflow.includes(tab.id) ? "is-overflow" : ""}`}
-                title={tab.name}
-                aria-label={tab.name}
-              >
-                {canReorderSpaces ? (
-                  <GripVertical className="tab-ico text-subtle" aria-hidden />
-                ) : null}{" "}
-                <PortalIcon name={tab.icon} className="tab-ico" />
-                {tab.hideLabel ? null : <span className="tab-item-name">{tab.name}</span>}
-                {tab.restricted ? (
-                  <span title={t("aria.restrictedTab")}>
-                    <Lock className="tab-ico text-muted" aria-label={t("aria.restrictedTab")} />
-                  </span>
-                ) : null}
-                {editMode &&
-                  tab.id === data.activeSpaceId &&
-                  canEditSpace(tab.id) && (
-                    <span
-                      className="ml-1 flex items-center gap-[0.35rem]"
-                      data-space-action=""
-                      onClick={(e) => e.stopPropagation()}
-                      onPointerDown={(e) => e.stopPropagation()}
-                    >
-                      {" "}
-                      {sessionCanCreateSpaces(session) ? (
-                        <span
-                          role="button"
-                          className="card-tool"
-                          aria-label={t("aria.duplicateSpace")}
-                          title={t("aria.duplicateSpace")}
-                          onClick={() => cloneSpace(tab)}
-                        >
-                          {" "}
-                          <Copy className="size-3.5" />
-                        </span>
-                      ) : null}{" "}
-                      <span
-                        role="button"
-                        className="card-tool"
-                        aria-label={t("aria.editSpace")}
-                        title={t("aria.editSpace")}
-                        onClick={() =>
-                          setModal({
-                            kind: "space",
-                            tab,
-                          })
-                        }
-                      >
-                        {" "}
-                        <Pencil className="size-3.5" />
-                      </span>
-                      {data.spaces.length > 1 && (
-                        <span
-                          role="button"
-                          className="card-tool is-danger"
-                          aria-label={t("aria.deleteSpace")}
-                          title={t("aria.deleteSpace")}
-                          onClick={() =>
-                            setModal({
-                              kind: "confirm-space",
-                              tab,
-                            })
-                          }
-                        >
-                          {" "}
-                          <Trash2 className="size-3.5" />
-                        </span>
-                      )}
-                    </span>
-                  )}
-              </button>
-              </Fragment>
-            ))}
-            </div>
-            <div className="tab-row-end">
-            <div ref={spaceMoreRef} className="tab-more-wrap" data-tab-slot="more">
-              <button
-                type="button"
-                className={`tab-item tab-more ${spaceOverflow.length ? "" : "is-off"}`}
-                aria-label={t("nav.moreSpaces")}
-                title={t("nav.moreSpaces")}
-                aria-haspopup="menu"
-                aria-expanded={moreOpen}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMoreOpen((v) => !v);
-                }}
-              >
-                <MoreHorizontal className="tab-ico" />
-                {spaceOverflow.length > 1 ? (
-                  <span className="count-chip">{spaceOverflow.length}</span>
-                ) : null}
-              </button>
-              {moreOpen && spaceOverflow.length && typeof document !== "undefined"
-                ? createPortal(
-                    <div
-                      ref={morePanelRef}
-                      className="account-panel tab-more-panel"
-                      role="menu"
-                      onPointerDown={(e) => e.stopPropagation()}
-                    >
-                      <p className="menu-kicker">{t("nav.moreSpaces")}</p>
-                      {moreMenuSpaces.map((tab, i) => (
-                        <Fragment key={tab.id}>
-                          {moreGapAt === i ? (
-                            <div className="drop-slot tab-more-gap">
-                              <span className="drop-slot-label">{t("nav.dropHere")}</span>
-                            </div>
-                          ) : null}
-                          <button
-                            type="button"
-                            data-space-id={tab.id}
-                            role="menuitem"
-                            className={`${canReorderSpaces ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${carryDestSpaceId === tab.id ? "is-drop" : ""}`}
-                            onClick={() => {
-                              if (didDragRef.current) {
-                                didDragRef.current = false;
-                                return;
-                              }
-                              goSpace(tab.id);
-                              setMoreOpen(false);
-                            }}
-                            onPointerDown={(e) => {
-                              if (!canReorderSpaces) return;
-                              e.stopPropagation();
-                              lockSelection(e);
-                              didDragRef.current = false;
-                              dragOriginRef.current = {
-                                x: e.clientX,
-                                y: e.clientY,
-                              };
-                              writeEditMode(true);
-                              spaceOverMoreRef.current = true;
-                              setTabOverMore(true);
-                              setDrag({
-                                kind: "space",
-                                id: tab.id,
-                              });
-                              const idx = displaySpaces.findIndex((t) => t.id === tab.id);
-                              spaceInsertRef.current = idx < 0 ? displaySpaces.length : idx;
-                              setOver({
-                                kind: "space",
-                                insertAt: idx < 0 ? displaySpaces.length : idx,
-                              });
-                              bindSpaceDrag(tab.id, e.currentTarget);
-                            }}
-                          >
-                            {canReorderSpaces ? (
-                              <GripVertical className="tab-ico text-subtle" aria-hidden />
-                            ) : null}
-                            <PortalIcon name={tab.icon} className="tab-ico" />
-                            <span className="min-w-0 truncate">{tab.name}</span>
-                            {tab.restricted ? (
-                              <Lock className="tab-ico ml-auto text-muted" aria-hidden />
-                            ) : null}
-                          </button>
-                        </Fragment>
-                      ))}
-                      {moreGapAt === moreMenuSpaces.length ? (
-                        <div className="drop-slot tab-more-gap">
-                          <span className="drop-slot-label">{t("nav.dropHere")}</span>
-                        </div>
-                      ) : null}
-                    </div>,
-                    document.body,
-                  )
-                : null}
-            </div>
-            {editMode && sessionCanCreateSpaces(session) && (
-              <button
-                type="button"
-                data-tab-slot="plus"
-                className="card-tool self-center"
-                aria-label={t("actions.addSpace")}
-                title={t("actions.addSpace")}
-                onClick={() =>
-                  setModal({
-                    kind: "space",
-                  })
-                }
-              >
-                <Plus className="size-3.5" />
-              </button>
-            )}
-            </div>
-          </div>
-        )}
-      </header>{" "}
+        <SpaceStrip
+          spaces={displaySpaces}
+          overflowIds={spaceOverflow}
+          moreMenuSpaces={moreMenuSpaces}
+          moreGapAt={moreGapAt}
+          moreOpen={moreOpen}
+          dragSpaceId={drag?.kind === "space" ? drag.id : undefined}
+          carryDestSpaceId={carryDestSpaceId}
+          spaceOverMore={spaceOverMore}
+          onFavs={onFavs}
+          favsPage={page === "favs"}
+          favCount={favCount}
+          favsHideLabel={Boolean(data.settings.favsHideLabel)}
+          editMode={editMode}
+          canReorder={canReorderSpaces}
+          canEditFavs={Boolean(session?.canEdit)}
+          canEditSpace={canEditSpace}
+          canCreateSpaces={sessionCanCreateSpaces(session)}
+          canDeleteSpaces={data.spaces.length > 1}
+          activeSpaceId={data.activeSpaceId}
+          searching={searching}
+          searchHitIds={searchHits.map((h) => h.id)}
+          spaceListRef={spaceListRef}
+          spaceStripRef={spaceStripRef}
+          spaceMoreRef={spaceMoreRef}
+          morePanelRef={morePanelRef}
+          handlers={spaceStripHandlers}
+        />
+      </header>
       <main
         className={`mx-auto max-w-6xl px-4 py-10 sm:px-6 ${data.settings.infoBar !== false ? "pb-16" : ""}`}
       >
-        {onFavs ? (
-          <div>
-            {favGroups.length === 0 ? (
-              <div className="empty-page">
-                {" "}
-                <div className="empty-page-mark">
-                  {" "}
-                  <Star className="size-7" />
-                </div>{" "}
-                <p>{t("empty.favs")}</p>
-              </div>
-            ) : (
-              <div className="space-y-12">
-                {favGroups.map((group) => (
-                  <section key={`${group.tab.id}:${group.cat.id}`} className="cat-section">
-                    {" "}
-                    <div className="cat-head">
-                      {" "}
-                      <div className="cat-head-main">
-                        {" "}
-                        <button
-                          type="button"
-                          onClick={() => goSpace(group.tab.id)}
-                          className="flex min-w-0 items-center gap-3 text-muted hover:text-fg"
-                        >
-                          {" "}
-                          <span className="portal-mark flex size-9 items-center justify-center rounded-lg text-fg">
-                            {" "}
-                            <PortalIcon name={group.tab.icon} className="size-4" />
-                          </span>{" "}
-                          <span className="truncate text-xl font-semibold tracking-tight">
-                            {group.tab.name}
-                          </span>
-                        </button>{" "}
-                        <span className="text-subtle">/</span>
-                        <span className="portal-mark flex size-9 items-center justify-center rounded-lg text-fg">
-                          {" "}
-                          <PortalIcon name={group.cat.icon} className="size-4" />
-                        </span>{" "}
-                        <h2 className="truncate text-xl font-semibold tracking-tight">
-                          {group.cat.name}
-                        </h2>
-                        {data.settings.catCounts ? (
-                          <span className="count-chip" data-tone={tagTone(group.cat.name)}>
-                            {group.cards.length}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>{" "}
-                    <div className={ITEM_GRID}>
-                      {group.cards.map((app) => (
-                        <AppCard
-                          key={app.id}
-                          app={app}
-                          editMode={false}
-                          className={itemSpanClass(app)}
-                          onTag={toggleTag}
-                          activeTags={tagFilter}
-                          tagColors={data.settings.tagColors}
-                          tagsAlpha={data.settings.tagsAlpha !== false}
-                          cardIconBg={data.settings.cardIconBg !== false}
-                          health={data.settings.healthChecks ? health[app.id] : void 0}
-                          healthPending={
-                            data.settings.healthChecks && app.check !== "off" && !health[app.id]
-                          }
-                          showHealth={data.settings.healthChecks}
-                          showClicks={data.settings.usageStats}
-                          favorite={favSet.has(app.id)}
-                          onFavorite={
-                            allowsFavorite(app, data.settings) ? () => toggleFav(app.id) : void 0
-                          }
-                          onRecheck={() => void recheckApp(app)}
-                          onOpen={() => bumpClick(app)}
-                          dimMenu={Boolean(data.settings.annexFade)}
-                          ctxMenu={data.settings.cardContextMenu !== false}
-                          ctxHideUrl={Boolean(data.settings.ctxHideUrl)}
-                          onEdit={() => void 0}
-                          onDelete={() => void 0}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-            searching
-              ? filtered.length === 0
-              : editMode
-                ? filtered.length === 0
-                : !displayCategories.some((c) => c.cards.length)
-          ) ? (
-          searching ? (
-            <p className="py-16 text-center text-sm text-muted">
-              {t("empty.noResults")}
-              {query.trim()
-                ? t("empty.forQuery", {
-                    q: query.trim(),
-                  })
-                : ""}
-              {tagFilter.length
-                ? t(tagFilter.length > 1 ? "empty.withTags" : "empty.withTag", {
-                    tags: tagFilter.join(" + "),
-                  })
-                : ""}
-              {downFilter ? t("empty.amongDown") : ""}
-            </p>
-          ) : editMode ? (
-            <EmptyState
-              editMode={canEditActive}
-              onAdd={
-                canEditActive
-                  ? () =>
-                      setModal({
-                        kind: "category",
-                      })
-                  : void 0
-              }
-            />
-          ) : null
-        ) : searching ? (
-          <div className="space-y-14">
-            {" "}
-            <p className="text-sm text-muted">
-              {tp(
-                "empty.hits",
-                searchHits.reduce(
-                  (n, tab) => n + tab.categories.reduce((m, c) => m + c.cards.length, 0),
-                  0,
-                ),
-              )}{" "}
-              {tp("empty.inSpaces", searchHits.length)}
-            </p>
-            {searchHits.map((tab) => (
-              <div key={tab.id} className="space-y-10">
-                {" "}
-                <button
-                  type="button"
-                  onClick={() => goSpace(tab.id)}
-                  className="flex items-center gap-2 text-sm font-medium text-muted hover:text-fg"
-                >
-                  {" "}
-                  <PortalIcon name={tab.icon} className="size-4" />
-                  {tab.name}
-                  <span className="count-chip" data-tone={tagTone(tab.name)}>
-                    {tab.categories.reduce((n, c) => n + c.cards.length, 0)}
-                  </span>
-                </button>
-                {tab.categories.map((cat) => (
-                  <section key={cat.id} className="cat-section">
-                    {" "}
-                    <div className="cat-head">
-                      {" "}
-                      <div className="cat-head-main">
-                        {" "}
-                        <span className="portal-mark flex size-9 items-center justify-center rounded-lg text-fg">
-                          {" "}
-                          <PortalIcon name={cat.icon} className="size-4" />
-                        </span>{" "}
-                        <h2 className="truncate text-xl font-semibold tracking-tight">
-                          {cat.name}
-                        </h2>
-                        {data.settings.catCounts ? (
-                          <span className="count-chip" data-tone={tagTone(cat.name)}>
-                            {cat.cards.length}
-                          </span>
-                        ) : null}
-                      </div>
-                      {editMode && canEditSpace(tab.id) ? (
-                        <div className="flex items-center gap-[0.35rem]">
-                          {" "}
-                          <button
-                            type="button"
-                            className="card-tool"
-                            aria-label={t("actions.addCard")}
-                            title={t("actions.addCard")}
-                            onClick={() =>
-                              setModal({
-                                kind: "card",
-                                categoryId: cat.id,
-                              })
-                            }
-                          >
-                            {" "}
-                            <Plus className="size-3.5" />
-                          </button>{" "}
-                          <button
-                            type="button"
-                            className="card-tool"
-                            aria-label={t("access.moveSection")}
-                            title={t("access.moveSection")}
-                            onClick={() =>
-                              setModal({
-                                kind: "move-pick",
-                                category: cat,
-                                fromSpaceId: tab.id,
-                              })
-                            }
-                          >
-                            {" "}
-                            <ArrowRightLeft className="size-3.5" />
-                          </button>{" "}
-                          {cat.cards.length ? (
-                            <>
-                              {catSortButton(cat)}{" "}
-                              <button
-                                type="button"
-                                className="card-tool"
-                                aria-label={t("cat.resetLayout")}
-                                title={t("cat.resetLayout")}
-                                onClick={() => void resetCategoryCards(cat)}
-                                onPointerDown={(e) => e.stopPropagation()}
-                              >
-                                <LayoutGrid className="size-3.5" />
-                              </button>{" "}
-                            </>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="card-tool"
-                            aria-label={t("actions.duplicate")}
-                            title={t("actions.duplicate")}
-                            onClick={() => duplicateCategory(cat, tab.id)}
-                          >
-                            {" "}
-                            <Copy className="size-3.5" />
-                          </button>{" "}
-                          <button
-                            type="button"
-                            className="card-tool"
-                            aria-label={t("aria.editCategory")}
-                            title={t("aria.editCategory")}
-                            onClick={() =>
-                              setModal({
-                                kind: "category",
-                                category: cat,
-                              })
-                            }
-                          >
-                            {" "}
-                            <Pencil className="size-3.5" />
-                          </button>{" "}
-                          <button
-                            type="button"
-                            className="card-tool is-danger"
-                            aria-label={t("aria.deleteCategory")}
-                            title={t("aria.deleteCategory")}
-                            onClick={() =>
-                              setModal({
-                                kind: "confirm-cat",
-                                category: cat,
-                              })
-                            }
-                          >
-                            {" "}
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>{" "}
-                    <div className={ITEM_GRID}>
-                      {cat.cards.map((app) => (
-                        <AppCard
-                          key={app.id}
-                          app={app}
-                          editMode={editMode && canEditSpace(tab.id)}
-                          className={itemSpanClass(app)}
-                          onTag={toggleTag}
-                          activeTags={tagFilter}
-                          tagColors={data.settings.tagColors}
-                          tagsAlpha={data.settings.tagsAlpha !== false}
-                          cardIconBg={data.settings.cardIconBg !== false}
-                          health={data.settings.healthChecks ? health[app.id] : void 0}
-                          healthPending={
-                            data.settings.healthChecks && app.check !== "off" && !health[app.id]
-                          }
-                          showHealth={data.settings.healthChecks}
-                          showClicks={data.settings.usageStats}
-                          favorite={favSet.has(app.id)}
-                          onFavorite={
-                            editMode
-                              ? void 0
-                              : allowsFavorite(app, data.settings)
-                                ? () => toggleFav(app.id)
-                                : void 0
-                          }
-                          onRecheck={() => void recheckApp(app)}
-                          onOpen={() => bumpClick(app)}
-                          dimMenu={Boolean(data.settings.annexFade)}
-                          ctxMenu={data.settings.cardContextMenu !== false}
-                          ctxHideUrl={Boolean(data.settings.ctxHideUrl)}
-                          onEdit={() =>
-                            setModal({
-                              kind: "card",
-                              categoryId: cat.id,
-                              app,
-                            })
-                          }
-                          onDuplicate={() => duplicateApp(app, cat.id)}
-                          onDelete={() =>
-                            setModal({
-                              kind: "confirm-app",
-                              app,
-                            })
-                          }
-                        />
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className={drag?.kind === "cat" ? "space-y-3" : "space-y-12"}>
-            {displayCategories.map((cat, catIndex) => {
-              if (!editMode && cat.cards.length === 0) return null;
-              if (drag?.kind === "cat" && drag.id === cat.id)
-                return (
-                  <div key={cat.id} data-cat-id={cat.id} className="drop-slot drop-slot-cat">
-                    {" "}
-                    <span className="drop-slot-label">{t("nav.dropHere")}</span>
-                  </div>
-                );
-              const collapsed = isCatCollapsed(cat.id);
-              return (
-                <section
-                  key={cat.id}
-                  data-cat-id={cat.id}
-                  className={`cat-section${drag?.kind === "card" && over?.kind === "card" && over.catId === cat.id ? " is-drop" : ""}`}
-                >
-                  {" "}
-                  <div className={`cat-head ${collapsed ? "is-collapsed" : ""}`}>
-                    {" "}
-                    <div
-                      data-cat-handle=""
-                      className={`cat-head-main select-none ${canDrag ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-pointer"}`}
-                      onClick={() => {
-                        if (canDrag || didDragRef.current) return;
-                        toggleCollapsed(cat.id);
-                      }}
-                      onPointerDown={(e) => {
-                        if (!canDrag) return;
-                        lockSelection(e);
-                        didDragRef.current = false;
-                        dragOriginRef.current = {
-                          x: e.clientX,
-                          y: e.clientY,
-                        };
-                        writeEditMode(true);
-                        carryRef.current = {
-                          cat: {
-                            ...cat,
-                          },
-                          fromSpaceId: dataRef.current.activeSpaceId,
-                        };
-                        bindCatDrag(
-                          cat.id,
-                          e.currentTarget.closest(".cat-head") ||
-                            e.currentTarget.closest("[data-cat-id]") ||
-                            e.currentTarget,
-                        );
-                        setDrag({
-                          kind: "cat",
-                          id: cat.id,
-                        });
-                        setOver({
-                          kind: "cat",
-                          insertAt: catIndex,
-                        });
-                      }}
-                    >
-                      {canDrag ? (
-                        <GripVertical className="size-4 shrink-0 text-subtle" aria-hidden />
-                      ) : null}{" "}
-                      <span className="portal-mark flex size-9 items-center justify-center rounded-lg text-fg">
-                        {" "}
-                        <PortalIcon name={cat.icon} className="size-4" />
-                      </span>{" "}
-                      <h2 className="truncate text-xl font-semibold tracking-tight">{cat.name}</h2>{" "}
-                      {data.settings.catCounts ? (
-                        <span className="count-chip" data-tone={tagTone(cat.name)}>
-                          {cat.cards.length}
-                        </span>
-                      ) : null}
-                    </div>{" "}
-                    <div className="flex items-center gap-[0.35rem]">
-                      {" "}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={collapsed ? t("cat.expand") : t("cat.collapse")}
-                        title={collapsed ? t("cat.expand") : t("cat.collapse")}
-                        aria-expanded={!collapsed}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          toggleCollapsed(cat.id);
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                      >
-                        {" "}
-                        <ChevronDown
-                          className={`size-4 text-muted transition-transform ${collapsed ? "-rotate-90" : ""}`}
-                        />
-                      </Button>
-                      {editMode && canEditActive && (
-                        <>
-                          {" "}
-                          <button
-                            type="button"
-                            className="card-tool"
-                            aria-label={t("actions.addCard")}
-                            title={t("actions.addCard")}
-                            onClick={() =>
-                              setModal({
-                                kind: "card",
-                                categoryId: cat.id,
-                              })
-                            }
-                          >
-                            {" "}
-                            <Plus className="size-3.5" />
-                          </button>{" "}
-                          <button
-                            type="button"
-                            className="card-tool"
-                            aria-label={t("access.moveSection")}
-                            title={t("access.moveSection")}
-                            onClick={() =>
-                              setModal({
-                                kind: "move-pick",
-                                category: cat,
-                                fromSpaceId: data.activeSpaceId,
-                              })
-                            }
-                          >
-                            {" "}
-                            <ArrowRightLeft className="size-3.5" />
-                          </button>{" "}
-                          {cat.cards.length ? (
-                            <>
-                              {catSortButton(cat)}{" "}
-                              <button
-                                type="button"
-                                className="card-tool"
-                                aria-label={t("cat.resetLayout")}
-                                title={t("cat.resetLayout")}
-                                onClick={() => void resetCategoryCards(cat)}
-                                onPointerDown={(e) => e.stopPropagation()}
-                              >
-                                <LayoutGrid className="size-3.5" />
-                              </button>{" "}
-                            </>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="card-tool"
-                            aria-label={t("actions.duplicate")}
-                            title={t("actions.duplicate")}
-                            onClick={() => duplicateCategory(cat, data.activeSpaceId)}
-                          >
-                            {" "}
-                            <Copy className="size-3.5" />
-                          </button>{" "}
-                          <button
-                            type="button"
-                            className="card-tool"
-                            aria-label={t("aria.editCategory")}
-                            title={t("aria.editCategory")}
-                            onClick={() =>
-                              setModal({
-                                kind: "category",
-                                category: cat,
-                              })
-                            }
-                          >
-                            {" "}
-                            <Pencil className="size-3.5" />
-                          </button>{" "}
-                          <button
-                            type="button"
-                            className="card-tool is-danger"
-                            aria-label={t("aria.deleteCategory")}
-                            title={t("aria.deleteCategory")}
-                            onClick={() =>
-                              setModal({
-                                kind: "confirm-cat",
-                                category: cat,
-                              })
-                            }
-                          >
-                            {" "}
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  {collapsed || drag?.kind === "cat" ? null : cat.cards.length === 0 ? (
-                    <p className="empty-well flex items-center justify-center gap-1 px-4 py-8 text-center text-sm text-muted">
-                      {canDrag
-                        ? [t("empty.noCardsDrop"), " ", <Plus className="size-3.5" />]
-                        : t("empty.noCardsAdd")}
-                    </p>
-                  ) : (
-                    <div data-app-grid="" className={ITEM_GRID}>
-                      {cat.cards.map((app) => (
-                        <AppCard
-                          key={app.id}
-                          app={app}
-                          editMode={editMode && canEditActive}
-                          canDrag={canDrag}
-                          canResize={canResize && app.kind !== "app"}
-                          dragging={drag?.kind === "card" && drag.id === app.id}
-                          className={itemSpanClass(app)}
-                          onTag={toggleTag}
-                          activeTags={tagFilter}
-                          tagColors={data.settings.tagColors}
-                          tagsAlpha={data.settings.tagsAlpha !== false}
-                          cardIconBg={data.settings.cardIconBg !== false}
-                          health={data.settings.healthChecks ? health[app.id] : void 0}
-                          healthPending={
-                            data.settings.healthChecks && app.check !== "off" && !health[app.id]
-                          }
-                          showHealth={data.settings.healthChecks}
-                          showClicks={data.settings.usageStats}
-                          favorite={favSet.has(app.id)}
-                          onFavorite={
-                            editMode
-                              ? void 0
-                              : allowsFavorite(app, data.settings)
-                                ? () => toggleFav(app.id)
-                                : void 0
-                          }
-                          onRecheck={() => void recheckApp(app)}
-                          onOpen={() => bumpClick(app)}
-                          dimMenu={Boolean(data.settings.annexFade)}
-                          ctxMenu={data.settings.cardContextMenu !== false}
-                          ctxHideUrl={Boolean(data.settings.ctxHideUrl)}
-                          onPointerDown={(e) => {
-                            if (!canDrag) return;
-                            if ((e.target as HTMLElement).closest("button")) return;
-                            if (e.button != null && e.button !== 0) return;
-                            if (canResize && e.pointerType !== "touch" && finePointer()) {
-                              const edge = cardResizeEdge(e.currentTarget, e.clientX, e.clientY);
-                              if (edge) {
-                                lockSelection(e);
-                                bindAppResize(app, e.currentTarget, edge, e);
-                                return;
-                              }
-                            }
-                            lockSelection(e);
-                            didDragRef.current = false;
-                            dragOriginRef.current = {
-                              x: e.clientX,
-                              y: e.clientY,
-                            };
-                            writeEditMode(true);
-                            carryRef.current = {
-                              app: {
-                                ...app,
-                              },
-                              fromSpaceId: dataRef.current.activeSpaceId,
-                            };
-                            setDrag({
-                              kind: "card",
-                              id: app.id,
-                            });
-                            const from = dataRef.current.categories.find((c) =>
-                              c.cards.some((a) => a.id === app.id),
-                            );
-                            setOver({
-                              kind: "card",
-                              catId: from?.id ?? cat.id,
-                              insertAt: from?.cards.findIndex((a) => a.id === app.id) ?? 0,
-                            });
-                            bindCardDrag(app.id, e.currentTarget);
-                          }}
-                          onEdit={() =>
-                            setModal({
-                              kind: "card",
-                              categoryId: cat.id,
-                              app,
-                            })
-                          }
-                          onDuplicate={() => duplicateApp(app, cat.id)}
-                          onDelete={() =>
-                            setModal({
-                              kind: "confirm-app",
-                              app,
-                            })
-                          }
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              );
-            })}
-            {editMode && canEditActive && !searching ? (
-              <EmptyState
-                editMode
-                compact
-                onAdd={() =>
-                  setModal({
-                    kind: "category",
-                  })
-                }
-              />
-            ) : null}
-          </div>
-        )}
-      </main>{" "}
+        <CatalogView
+          mode={onFavs ? "favs" : searching ? "search" : "space"}
+          favGroups={favGroups}
+          searchHits={searchHits}
+          categories={displayCategories}
+          activeSpaceId={data.activeSpaceId}
+          query={query}
+          tagFilter={tagFilter}
+          downFilter={downFilter}
+          editMode={editMode}
+          canEditActive={canEditActive}
+          canEditSpace={canEditSpace}
+          canDrag={canDrag}
+          canResize={canResize}
+          collapsed={isCatCollapsed}
+          dragKind={drag?.kind}
+          dropCatId={over?.kind === "card" ? over.catId : undefined}
+          draggingCardId={drag?.kind === "card" ? (liveId ?? undefined) : undefined}
+          liveCatId={drag?.kind === "cat" ? (liveId ?? undefined) : undefined}
+          chrome={catalogChrome}
+          handlers={catalogHandlers}
+          onAddCategory={() =>
+            setModal({
+              kind: "category",
+            })
+          }
+        />
+      </main>
       <StatsBar
         stats={clickStats}
         infoBar={data.settings.infoBar !== false}
@@ -3827,690 +1807,32 @@ function Home() {
             : void 0
         }
       />
-      {modal.kind !== "none" && (
-        <ModalShell
-          wide={
-            modal.kind === "admin" ||
-            modal.kind === "stats" ||
-            modal.kind === "legend" ||
-            modal.kind === "card" ||
-            modal.kind === "history" ||
-            modal.kind === "curation" ||
-            modal.kind === "users" ||
-            modal.kind === "space" ||
-            modal.kind === "category"
-          }
-          onClose={() => {
-            setBusy(false);
-            setModal({
-              kind: "none",
-            });
-          }}
-        >
-          {modal.kind === "lock" && (
-            <LockForm
-              busy={busy}
-              oidcEnabled={Boolean(data.settings.oidcEnabled)}
-              oidcAutoRedirect={Boolean(data.settings.oidcAutoRedirect)}
-              oidcLabel={data.settings.oidcLabel || t("oidc.defaultLabel")}
-              ldapEnabled={Boolean(data.settings.ldapEnabled)}
-              ldapDomain={data.settings.ldapDomain || ""}
-              ldapRealms={data.settings.ldapRealms || []}
-              loginOrder={data.settings.loginOrder}
-              noPassword={Boolean(data.runtime?.isDev && data.settings.devAdminNoPassword)}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onOidc={async () => {
-                setBusy(true);
-                try {
-                  try {
-                    sessionStorage.setItem(OIDC_NEXT_KEY, (modal.next as string) || "session");
-                  } catch {
-                    // ignore
-                  }
-                  const res = await startOidc({
-                    data: {},
-                  });
-                  if (!res?.url) throw new Error("errors.oidcFail");
-                  window.location.assign(res.url);
-                } catch (err) {
-                  toast.error(te(err));
-                  setBusy(false);
-                }
-              }}
-              onUnlock={async (username, password, domain) => {
-                setBusy(true);
-                try {
-                  const res = await Promise.race([
-                    unlockEdit({
-                      data: {
-                        username,
-                        password,
-                        domain: domain === "ad" ? "ad" : "local",
-                      },
-                    }),
-                    new Promise<never>((_, reject) => {
-                      window.setTimeout(() => reject(new Error("errors.timeout")), 12e3);
-                    }),
-                  ]);
-                  if (res.sessionHttpOnly) {
-                    await pinSessCookie(res.token);
-                    try {
-                      sessionStorage.removeItem(TOKEN_KEY);
-                    } catch {
-                      // ignore
-                    }
-                  } else {
-                    try {
-                      sessionStorage.setItem(TOKEN_KEY, res.token);
-                    } catch {
-                      // ignore
-                    }
-                  }
-                  setToken(res.token);
-                  setSession(res.session);
-                  writeSessionInfo(res.session);
-                  const next = await getPortal({
-                    data: {
-                      token: res.token,
-                      spaceId: data.activeSpaceId,
-                    },
-                  });
-                  setData(next);
-                  if (modal.next === "admin")
-                    setModal({
-                      kind: "admin",
-                      tab: res.session?.canManageSettings ? adminTabRef.current : "about",
-                    });
-                  else if (modal.next === "history")
-                    setModal({
-                      kind: "history",
-                      tab: "recovery",
-                    });
-                  else if (modal.next === "users" && res.session?.canManageUsers)
-                    setModal({
-                      kind: "users",
-                    });
-                  else if (modal.next === "curation" && res.session?.canCuration)
-                    setModal({
-                      kind: "curation",
-                    });
-                  else if (modal.next === "edit" && sessionCanArrange(res.session)) {
-                    enterEdit();
-                    setModal({
-                      kind: "none",
-                    });
-                  } else
-                    setModal({
-                      kind: "none",
-                    });
-                } catch (err) {
-                  toast.error(te(err));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            />
-          )}
-          {modal.kind === "stats" && (
-            <StatsPanel
-              catalog={data.catalog}
-              scoped={clickStats.fullCatalog === false}
-              onClose={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-            />
-          )}
-          {modal.kind === "legend" && (
-            <LegendPanel
-              onClose={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-            />
-          )}
-          {modal.kind === "users" && (
-            <AccessFrame
-              token={token}
-              session={session}
-              spaces={data.spaces}
-              settings={data.settings}
-              busy={busy}
-              onClose={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onSaveOidc={(payload) =>
-                apply(
-                  async () => {
-                    const next = await updateOidcSettings({
-                      data: {
-                        token,
-                        spaceId: data.activeSpaceId,
-                        ...payload,
-                      },
-                    });
-                    toast.success(t("toast.saved"));
-                    return next;
-                  },
-                  {
-                    close: false,
-                  },
-                )
-              }
-              onSaveLdap={(payload) =>
-                apply(
-                  async () => {
-                    const next = await updateLdapSettings({
-                      data: {
-                        token,
-                        spaceId: data.activeSpaceId,
-                        ...payload,
-                      },
-                    });
-                    toast.success(t("toast.saved"));
-                    return next;
-                  },
-                  {
-                    close: false,
-                  },
-                )
-              }
-              onSaveLoginOrder={(loginOrder) =>
-                apply(
-                  async () => {
-                    const next = await updateLoginOrder({
-                      data: {
-                        token,
-                        spaceId: data.activeSpaceId,
-                        loginOrder,
-                      },
-                    });
-                    return next;
-                  },
-                  {
-                    close: false,
-                  },
-                )
-              }
-            />
-          )}
-          {modal.kind === "history" && (
-            <HistoryPanel
-              key={(modal.tab as string) || "recovery"}
-              token={token}
-              tab={(modal.tab as string) || "recovery"}
-              onClose={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onRestored={(next: PortalData) => {
-                setData(next);
-                if (next.session) {
-                  setSession(next.session);
-                  writeSessionInfo(next.session);
-                }
-              }}
-            />
-          )}
-          {modal.kind === "curation" && (
-            <CurationPanel
-              token={token}
-              busy={busy}
-              spacePerms={session?.spacePerms || {}}
-              picker={picker}
-              catalog={data.catalog}
-              probes={data.settings.healthChecks !== false}
-              knownTags={allTags}
-              tagColors={data.settings.tagColors}
-              editContext={(cardId) => {
-                for (const tb of data.catalog) {
-                  for (const cat of tb.categories) {
-                    const app = cat.cards.find((a) => a.id === cardId);
-                    if (app) {
-                      return {
-                        app,
-                        categoryId: cat.id,
-                        categories: data.categories.some((c) => c.id === cat.id) ? data.categories : tb.categories,
-                      };
-                    }
-                  }
-                }
-                return null;
-              }}
-              onSaveCard={(app, payload, onDone) =>
-                apply(() => updateCard({ data: { token, id: app.id, ...payload } }), {
-                  close: false,
-                  onDone,
-                })
-              }
-              onClose={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-            />
-          )}
-          {modal.kind === "admin" && (
-            <AdminPanel
-              tab={(modal.tab as string) || "general"}
-              settings={data.settings}
-              runtime={data.runtime}
-              catalog={data.catalog}
-              tags={allTags}
-              spaces={data.spaces}
-              directory={data.directory || []}
-              token={token}
-              session={session}
-              busy={busy}
-              onTab={(tab: string) =>
-                setModal({
-                  kind: "admin",
-                  tab,
-                })
-              }
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onSaveSettings={(payload, opts) =>
-                apply(
-                  () =>
-                    updateSettings({
-                      data: {
-                        token,
-                        spaceId: data.activeSpaceId,
-                        ...payload,
-                      },
-                    }),
-                  opts,
-                )
-              }
-              onResetClicks={async () => {
-                setBusy(true);
-                try {
-                  const next = await resetClicks({
-                    data: {
-                      token,
-                      spaceId: data.activeSpaceId,
-                    },
-                  });
-                  setData(next);
-                  if (next.clickStats) setClickStats(next.clickStats);
-                  else
-                    setClickStats({
-                      all: 0,
-                      today: 0,
-                      week: 0,
-                      month: 0,
-                      year: 0,
-                      spanDays: 0,
-                    });
-                  toast.success(t("toast.clicksReset"));
-                } catch (err) {
-                  if (sessionGone(err)) return;
-                  toast.error(te(err));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              onResetProbes={async () => {
-                setBusy(true);
-                try {
-                  const next = await resetProbes({
-                    data: {
-                      token,
-                      spaceId: data.activeSpaceId,
-                    },
-                  });
-                  setData(next);
-                  toast.success(t("toast.probeReset"));
-                } catch (err) {
-                  if (sessionGone(err)) return;
-                  toast.error(te(err));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              onApplyTags={async (payload) => {
-                const colorOnly =
-                  Boolean(payload.colors) && !payload.rename && !payload.remove && !payload.create;
-                if (!colorOnly) setBusy(true);
-                try {
-                  const next = await manageTags({
-                    data: {
-                      token,
-                      spaceId: data.activeSpaceId,
-                      ...payload,
-                    },
-                  });
-                  setData(next);
-                  if (!colorOnly) toast.success(t("toast.tagsUpdated"));
-                } catch (err) {
-                  if (sessionGone(err)) return;
-                  toast.error(te(err));
-                } finally {
-                  if (!colorOnly) setBusy(false);
-                }
-              }}
-              onSaveTheme={(payload) =>
-                apply(
-                  async () => {
-                    const next = await updateThemeCss({
-                      data: {
-                        token,
-                        spaceId: data.activeSpaceId,
-                        ...payload,
-                      },
-                    });
-                    toast.success(t("toast.themesSaved"));
-                    return next;
-                  },
-                  {
-                    close: false,
-                  },
-                )
-              }
-              onResetPortal={() =>
-                apply(async () => {
-                  const next = await resetPortal({
-                    data: {
-                      token,
-                    },
-                  });
-                  if (next.clickStats) setClickStats(next.clickStats);
-                  toast.success(t("toast.portalReset"));
-                  return next;
-                })
-              }
-              onImportPortal={(payload) =>
-                apply(async () => {
-                  const next = await importPortal({
-                    data: {
-                      token,
-                      payload,
-                    },
-                  });
-                  if (next.clickStats) setClickStats(next.clickStats);
-                  toast.success(t("toast.imported"));
-                  return next;
-                })
-              }
-            />
-          )}
-          {modal.kind === "space" && (
-            <ItemForm
-              kind="space"
-              initial={(modal.tab as MenuSpace | null) ?? null}
-              busy={busy}
-              picker={picker}
-              canAcl={sessionCanManageAcl(session)}
-              people={data.directory || []}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onSave={(name, icon, access) =>
-                apply(() =>
-                  modal.tab
-                    ? updateSpace({
-                        data: {
-                          token,
-                          id: (modal.tab as MenuSpace).id,
-                          name,
-                          icon,
-                          ...access,
-                        },
-                      })
-                    : createSpace({
-                        data: {
-                          token,
-                          name,
-                          icon,
-                          ...access,
-                        },
-                      }),
-                )
-              }
-            />
-          )}
-          {modal.kind === "favs" && (
-            <FavsForm
-              hideLabel={Boolean(data.settings.favsHideLabel)}
-              busy={busy}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onSave={(hideLabel) =>
-                apply(() =>
-                  updateFavsOptions({
-                    data: {
-                      token,
-                      hideLabel,
-                      spaceId: data.activeSpaceId,
-                    },
-                  }),
-                )
-              }
-            />
-          )}
-          {modal.kind === "category" && (
-            <ItemForm
-              kind="category"
-              initial={(modal.category as PortalCategory | null) ?? null}
-              busy={busy}
-              picker={picker}
-              canAcl={sessionCanManageAcl(session)}
-              people={data.directory || []}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onSave={(name, icon, access) =>
-                apply(() =>
-                  modal.category
-                    ? updateCategory({
-                        data: {
-                          token,
-                          id: (modal.category as PortalCategory).id,
-                          name,
-                          icon,
-                          ...access,
-                        },
-                      })
-                    : createCategory({
-                        data: {
-                          token,
-                          spaceId: data.activeSpaceId,
-                          name,
-                          icon,
-                          ...access,
-                        },
-                      }),
-                )
-              }
-            />
-          )}
-          {modal.kind === "card" && (
-            <CardForm
-              categories={
-                modal.app && !data.categories.some((c) => c.id === (modal.app as PortalCard).categoryId)
-                  ? (data.catalog.find((tb) =>
-                      tb.categories.some((c) => c.id === (modal.app as PortalCard).categoryId),
-                    )?.categories ?? data.categories)
-                  : data.categories
-              }
-              categoryId={(modal.categoryId as string) || ""}
-              catalog={data.catalog}
-              initial={(modal.app as PortalCard | null) ?? null}
-              busy={busy}
-              picker={picker}
-              probes={data.settings.healthChecks !== false}
-              knownTags={allTags}
-              tagColors={data.settings.tagColors}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onSave={(payload) =>
-                apply(() =>
-                  modal.app
-                    ? updateCard({
-                        data: {
-                          token,
-                          id: (modal.app as PortalCard).id,
-                          ...payload,
-                        },
-                      })
-                    : createCard({
-                        data: {
-                          token,
-                          ...payload,
-                        },
-                      }),
-                )
-              }
-            />
-          )}
-          {modal.kind === "move-pick" && (
-            <MovePickDialog
-              category={modal.category as Category | null | undefined}
-              spaces={data.spaces}
-              fromSpaceId={modal.fromSpaceId as string | undefined}
-              busy={busy}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onContinue={(destSpaceId) =>
-                openMoveCat(
-                  modal.category as PortalCategory,
-                  modal.fromSpaceId as string | undefined,
-                  destSpaceId,
-                  undefined,
-                )
-              }
-            />
-          )}
-          {modal.kind === "move-cat" && (
-            <MoveSectionDialog
-              impact={modal.impact as CategoryMoveImpact & { insertAt?: number }}
-              busy={busy}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onConfirm={() =>
-                apply(() =>
-                  moveCategory({
-                    data: {
-                      token,
-                      categoryId: (modal.impact as CategoryMoveImpact).categoryId,
-                      destSpaceId: (modal.impact as CategoryMoveImpact).toId,
-                      ...(typeof (modal.impact as { insertAt?: number }).insertAt === "number"
-                        ? { insertAt: (modal.impact as { insertAt?: number }).insertAt }
-                        : {}),
-                    },
-                  }),
-                )
-              }
-            />
-          )}
-          {modal.kind === "confirm-cat" && (
-            <ConfirmDialog
-              inline
-              title={t("confirm.deleteCategory")}
-              body={t("confirm.deleteCategoryBody", {
-                name: (modal.category as PortalCategory).name,
-              })}
-              busy={busy}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onOk={() =>
-                apply(() =>
-                  deleteCategory({
-                    data: {
-                      token,
-                      id: (modal.category as PortalCategory).id,
-                    },
-                  }),
-                )
-              }
-            />
-          )}
-          {modal.kind === "confirm-app" && (
-            <ConfirmDialog
-              inline
-              title={itemKind((modal.app as PortalCard).kind).remove}
-              body={t("item.removedBody", {
-                name:
-                String((modal.app as PortalCard).title || "").trim() ||
-                itemKind((modal.app as PortalCard).kind).option,
-              })}
-              busy={busy}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onOk={() =>
-                apply(() =>
-                  deleteCard({
-                    data: {
-                      token,
-                      id: (modal.app as PortalCard).id,
-                    },
-                  }),
-                )
-              }
-            />
-          )}
-          {modal.kind === "confirm-space" && (
-            <ConfirmDialog
-              inline
-              title={t("confirm.deleteSpace")}
-              body={t("confirm.deleteSpaceBody", {
-                name: (modal.tab as MenuSpace).name,
-              })}
-              busy={busy}
-              onCancel={() =>
-                setModal({
-                  kind: "none",
-                })
-              }
-              onOk={() =>
-                apply(() =>
-                  deleteSpace({
-                    data: {
-                      token,
-                      id: (modal.tab as MenuSpace).id,
-                    },
-                  }),
-                )
-              }
-            />
-          )}
-        </ModalShell>
-      )}
+      <PortalOverlays
+        modal={modal}
+        setModal={setModal}
+        busy={busy}
+        setBusy={setBusy}
+        data={data}
+        setData={setData}
+        token={token}
+        setToken={setToken}
+        session={session}
+        setSession={setSession}
+        picker={picker}
+        allTags={allTags}
+        apply={apply}
+        enterEdit={enterEdit}
+        openMoveCat={openMoveCat}
+        clickStats={clickStats}
+        setClickStats={setClickStats}
+        adminTabRef={adminTabRef}
+        pinSessCookie={pinSessCookie}
+        writeSessionInfo={writeSessionInfo}
+        tokenKey={TOKEN_KEY}
+        oidcNextKey={OIDC_NEXT_KEY}
+        sessionCanArrange={sessionCanArrange}
+        sessionCanManageAcl={sessionCanManageAcl}
+      />
     </div>
   );
 }
