@@ -17,6 +17,10 @@ Self-hosted. One JSON file. No database.</p>
   <img src="https://img.shields.io/badge/license-MIT-2EA043?style=flat-square" alt="MIT" />
 </p>
 
+<p align="center">
+  <img src="screenshots/screen_001.png" alt="Dockit portal with spaces, categories and cards" />
+</p>
+
 ## Why Dockit?
 
 IT engineers live in dozens of tools: consoles, monitoring, ticketing, IAM, cloud, internal apps, docs. The links scatter across bookmarks, tabs, chat and mail.
