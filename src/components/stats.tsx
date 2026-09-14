@@ -167,7 +167,6 @@ export function LegendPanel({ onClose }: { onClose: () => void }) {
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <h3 className="dialog-title">{t("legend.title")}</h3>
-          <p className="mt-1 text-sm text-muted">{t("legend.lead")}</p>
         </div>
         <Button
           type="button"
@@ -180,35 +179,38 @@ export function LegendPanel({ onClose }: { onClose: () => void }) {
           <X className="size-4" />
         </Button>
       </div>
-      <ul className="legend-list">
-        {rows.map((row) => (
-          <li key={row.id} className="legend-row">
-            <LegendSample>{row.sample}</LegendSample>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{row.title}</p>
-              <p className="text-xs text-muted">{row.hint}</p>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <p className="settings-kicker legend-kicker">{t("legend.shortcuts")}</p>
-      <ul className="legend-list">
-        {[
-          { id: "search", keys: ["/"], title: t("legend.keySearch"), hint: t("legend.keySearchHint") },
-          { id: "type", keys: ["A–Z"], title: t("legend.keyType"), hint: t("legend.keyTypeHint") },
-          { id: "edit", keys: [modKeyLabel(), "E"], title: t("legend.keyEdit"), hint: t("legend.keyEditHint") },
-          { id: "new", keys: [modKeyLabel(), "N"], title: t("legend.keyNew"), hint: t("legend.keyNewHint") },
-          { id: "esc", keys: ["Esc"], title: t("legend.keyEsc"), hint: t("legend.keyEscHint") },
-        ].map((row) => (
-          <li key={row.id} className="legend-row">
-            <LegendKeys keys={row.keys} />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{row.title}</p>
-              <p className="text-xs text-muted">{row.hint}</p>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <div className="legend-grid">
+        <p className="settings-kicker legend-span">{t("legend.icons")}</p>
+        <ul className="legend-list">
+          {rows.map((row) => (
+            <li key={row.id} className="legend-row">
+              <LegendSample>{row.sample}</LegendSample>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{row.title}</p>
+                <p className="text-xs text-muted">{row.hint}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="settings-kicker legend-span legend-kicker">{t("legend.shortcuts")}</p>
+        <ul className="legend-list">
+          {[
+            { id: "search", keys: ["/"], title: t("legend.keySearch"), hint: t("legend.keySearchHint") },
+            { id: "type", keys: ["A–Z"], title: t("legend.keyType"), hint: t("legend.keyTypeHint") },
+            { id: "edit", keys: [modKeyLabel(), "E"], title: t("legend.keyEdit"), hint: t("legend.keyEditHint") },
+            { id: "new", keys: [modKeyLabel(), "N"], title: t("legend.keyNew"), hint: t("legend.keyNewHint") },
+            { id: "esc", keys: ["Esc"], title: t("legend.keyEsc"), hint: t("legend.keyEscHint") },
+          ].map((row) => (
+            <li key={row.id} className="legend-row">
+              <LegendKeys keys={row.keys} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{row.title}</p>
+                <p className="text-xs text-muted">{row.hint}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

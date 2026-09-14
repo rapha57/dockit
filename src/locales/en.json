@@ -183,7 +183,7 @@
   },
   "legend": {
     "title": "Legend",
-    "lead": "Meaning of the icons on cards.",
+    "icons": "Icons",
     "hub": "Link hub",
     "hubHint": "Presents every link on the card.",
     "annex": "Extra links",

@@ -50,13 +50,12 @@ export function BrandPick({
           }}
         />
       </label>
-      {src ? (
-        <button type="button" className="settings-link" onClick={onReset}>
+      <div className="brand-slot-meta">
+        {hint ? <p className="settings-hint">{hint}</p> : <span />}
+        <button type="button" className="settings-link" disabled={!src} onClick={onReset}>
           {resetLabel}
         </button>
-      ) : (
-        <p className="settings-hint">{hint}</p>
-      )}
+      </div>
     </div>
   );
 }

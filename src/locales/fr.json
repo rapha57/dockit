@@ -183,7 +183,7 @@
   },
   "legend": {
     "title": "Légende",
-    "lead": "Signification des icônes sur les cartes.",
+    "icons": "Icônes",
     "hub": "Hub de liens",
     "hubHint": "Propose tous les liens de la carte.",
     "annex": "Liens annexes",

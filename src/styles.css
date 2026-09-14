@@ -1844,6 +1844,19 @@ html.dark .settings-hint.is-warn {
   font-weight: 500;
   color: var(--color-muted);
 }
+.brand-slot-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.brand-slot-meta .settings-hint {
+  min-width: 0;
+}
+.brand-slot-meta .settings-link {
+  flex-shrink: 0;
+  text-align: right;
+}
 .brand-preview {
   position: relative;
   display: flex;
@@ -3477,16 +3490,25 @@ html.dark .dockit-mark {
   border-radius: inherit;
   background: var(--color-fg);
 }
+.legend-grid {
+  display: grid;
+  grid-template-columns: minmax(1.85rem, max-content) minmax(0, 1fr);
+  column-gap: 1rem;
+  row-gap: 0.85rem;
+  align-items: center;
+}
+.legend-span {
+  grid-column: 1 / -1;
+}
 .legend-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
+  display: contents;
 }
 .legend-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
   align-items: center;
-  gap: 0.85rem;
+  column-gap: inherit;
 }
 .legend-sample {
   display: inline-flex;
@@ -3494,6 +3516,7 @@ html.dark .dockit-mark {
   height: 1.85rem;
   align-items: center;
   justify-content: center;
+  justify-self: center;
   pointer-events: none;
 }
 .legend-sample .card-tool,
@@ -3503,13 +3526,14 @@ html.dark .dockit-mark {
   cursor: default;
 }
 .legend-kicker {
-  margin-top: 1.35rem;
+  margin-top: 0.5rem;
 }
 .legend-keys {
   display: inline-flex;
   min-width: 1.85rem;
   align-items: center;
   justify-content: center;
+  justify-self: center;
   gap: 0.15rem;
 }
 .legend-keys-bit {

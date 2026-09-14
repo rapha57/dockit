@@ -32,7 +32,7 @@ import { useTheme } from "@/components/theme";
 import { t, te, tp, asLocale, asDateFormat, asTimeFormat, asTimeZone, asNumberFormat, localeTag, formatNumber, formatWhen, listTimeZones } from "@/lib/i18n";
 import { CSS_MAX, sanitizeThemeCss } from "@/lib/theme-css";
 import { checkLatestRelease } from "@/lib/release";
-import { exportPortal, type PortalSettings, type SessionInfo } from "@/lib/portal";
+import { exportPortal, type ClickStats, type PortalSettings, type SessionInfo } from "@/lib/portal";
 import { collectInventory, inventoryCsv, inventoryPdf } from "@/lib/inventory";
 import { TAG_PALETTE, defaultTagHex, remapTagHex, tagInk } from "@/lib/tag-colors";
 import { settingsBase, FIELD_SM, type SettingsPayload, type TagsPayload, type CatalogSpace, type DirectoryEntry, type MenuSpace, type PortalData } from "@/lib/portal-ui";
@@ -72,6 +72,15 @@ function catalogHasProbes(catalog: CatalogSpace[]): boolean {
   return false;
 }
 
+function catalogHasClicks(catalog: CatalogSpace[]): boolean {
+  for (const space of catalog)
+    for (const cat of space.categories)
+      for (const card of cat.cards) {
+        if ((card.clicks || 0) > 0) return true;
+      }
+  return false;
+}
+
 export function AdminPanel({
   tab,
   settings,
@@ -90,11 +99,13 @@ export function AdminPanel({
   onSaveTheme,
   onResetPortal,
   onImportPortal,
+  clickStats,
 }: {
   tab: string;
   settings: PortalSettings;
   runtime?: PortalData["runtime"];
   catalog: CatalogSpace[];
+  clickStats?: ClickStats;
   tags: { name: string; count: number }[];
   spaces: MenuSpace[];
   directory: DirectoryEntry[];
@@ -242,7 +253,7 @@ export function AdminPanel({
                   type="button"
                   variant="danger"
                   className="am-create self-start"
-                  disabled={busy || !onResetClicks}
+                  disabled={busy || !onResetClicks || !((clickStats?.all || 0) > 0 || catalogHasClicks(catalog))}
                   onClick={async () => {
                     if (!onResetClicks) return;
                     if (
@@ -1399,7 +1410,7 @@ export function InfoBarForm({
   onSave: (payload: SettingsPayload) => void;
 }) {
   const [infoStats, setInfoStats] = useState(initial.infoStats !== false);
-  const [infoLegend, setInfoLegend] = useState(Boolean(initial.infoLegend));
+  const [infoLegend, setInfoLegend] = useState(initial.infoLegend !== false);
   const infoBar = initial.infoBar !== false;
   return (
     <form

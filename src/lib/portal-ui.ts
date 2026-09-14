@@ -133,7 +133,7 @@ export function settingsBase(initial: PortalSettings): SettingsPayload {
     cardDragCollapse: initial.cardDragCollapse !== false,
     ctxHideUrl: Boolean(initial.ctxHideUrl),
     infoStats: initial.infoStats !== false,
-    infoLegend: Boolean(initial.infoLegend),
+    infoLegend: initial.infoLegend !== false,
     probeTlsVerify: Boolean(initial.probeTlsVerify),
     probeAuthOnly: Boolean(initial.probeAuthOnly),
     sessionHttpOnly: Boolean(initial.sessionHttpOnly),

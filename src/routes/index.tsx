@@ -1799,7 +1799,7 @@ function Home() {
             : void 0
         }
         onLegend={
-          data.settings.infoBar !== false && data.settings.infoLegend
+          data.settings.infoBar !== false && data.settings.infoLegend !== false
             ? () =>
                 setModal({
                   kind: "legend",

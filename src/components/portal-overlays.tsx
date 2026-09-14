@@ -359,6 +359,7 @@ export function PortalOverlays({
           settings={data.settings}
           runtime={data.runtime}
           catalog={data.catalog}
+          clickStats={clickStats}
           tags={allTags}
           spaces={data.spaces}
           directory={data.directory || []}
