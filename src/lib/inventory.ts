@@ -1,18 +1,18 @@
 import { t, tp, formatWhen } from "./i18n";
 
 type InventoryLink = { url?: string };
-type InventoryApp = {
+type InventoryCard = {
 	kind?: string;
 	title?: string;
 	url?: string;
 	links?: InventoryLink[];
 	tags?: string[];
 };
-type InventoryCategory = { name?: string; cards?: InventoryApp[]; apps?: InventoryApp[] };
-type InventoryTab = { name?: string; categories?: InventoryCategory[] };
+type InventoryCategory = { name?: string; cards?: InventoryCard[] };
+type InventorySpace = { name?: string; categories?: InventoryCategory[] };
 
 export type InventoryRow = {
-	tab: string;
+	space: string;
 	category: string;
 	kind: string;
 	title: string;
@@ -21,14 +21,14 @@ export type InventoryRow = {
 	tags: string;
 };
 
-export function collectInventory(catalog: InventoryTab[] | null | undefined): InventoryRow[] {
+export function collectInventory(catalog: InventorySpace[] | null | undefined): InventoryRow[] {
 	const rows: InventoryRow[] = [];
 	for (const tab of catalog ?? []) {
 		for (const cat of tab.categories ?? []) {
-			for (const app of cat.cards ?? cat.apps ?? []) {
+			for (const app of cat.cards ?? cat.cards ?? []) {
 				const kind = app.kind || "app";
 				rows.push({
-					tab: tab.name || "",
+					space: tab.name || "",
 					category: cat.name || "",
 					kind: kind === "embed" ? t("inventory.kindEmbed") : kind === "note" ? t("inventory.kindNote") : t("inventory.kindApp"),
 					title: String(app.title || "").trim(),
@@ -50,7 +50,7 @@ export function inventoryCsv(rows: InventoryRow[]): string {
 	const header = [t("inventory.space"), t("inventory.category"), t("inventory.type"), t("inventory.title"), t("inventory.link"), t("inventory.otherLinks"), t("inventory.tags")];
 	const lines = [header.map(csvCell).join(";")];
 	for (const r of rows) {
-		lines.push([r.tab, r.category, r.kind, r.title, r.url, r.extras, r.tags].map(csvCell).join(";"));
+		lines.push([r.space, r.category, r.kind, r.title, r.url, r.extras, r.tags].map(csvCell).join(";"));
 	}
 	return `\uFEFF${lines.join("\r\n")}`;
 }
@@ -149,7 +149,7 @@ function pageStream(title: string, meta: string, rows: InventoryRow[], startY: n
 	};
 	drawRow(inventoryHead(), true);
 	for (const row of rows) {
-		const ok = drawRow([row.tab, row.category, row.kind, row.title, row.url, row.extras, row.tags], false);
+		const ok = drawRow([row.space, row.category, row.kind, row.title, row.url, row.extras, row.tags], false);
 		if (!ok) return { content: chunks.join("\n"), rest: rows.slice(rows.indexOf(row)), y };
 	}
 	return { content: chunks.join("\n"), rest: [], y };
@@ -159,7 +159,7 @@ export function inventoryPdf(rows: InventoryRow[], portalTitle?: string): Uint8A
 	const title = `${portalTitle || "Dockit"} - ${t("inventory.titleSuffix")}`;
 	const stamp = formatWhen(new Date(), true);
 	const meta = `${tp("inventory.entries", rows.length)} - ${stamp}`;
-	const list: InventoryRow[] = rows.length ? rows : [{ tab: "-", category: "-", kind: "-", title: t("inventory.noCards"), url: "", extras: "", tags: "" }];
+	const list: InventoryRow[] = rows.length ? rows : [{ space: "-", category: "-", kind: "-", title: t("inventory.noCards"), url: "", extras: "", tags: "" }];
 	const pages: string[] = [];
 	let rest = list;
 	while (rest.length) {

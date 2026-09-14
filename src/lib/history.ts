@@ -3,7 +3,7 @@ import { t, formatWhen } from "./i18n";
 export const HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 export const MAX_HISTORY = 400;
 
-export type TabSnapshot = {
+export type SpaceSnapshot = {
 	id: string;
 	name: string;
 	icon: string;
@@ -14,7 +14,7 @@ export type TabSnapshot = {
 	hideLabel: boolean;
 };
 
-export function snapshotTab(tab: any): TabSnapshot {
+export function snapshotSpace(tab: any): SpaceSnapshot {
 	return {
 		id: String(tab.id || ""),
 		name: String(tab.name || "Space").slice(0, 40),
@@ -49,8 +49,8 @@ export function snapshotCat(cat: any): CategorySnapshot {
 	};
 }
 
-export type AppLink = { title: string; url: string };
-export type AppSnapshot = {
+export type CardLink = { title: string; url: string };
+export type CardSnapshot = {
 	id: string;
 	categoryId: string;
 	kind: "app" | "note" | "embed";
@@ -66,10 +66,10 @@ export type AppSnapshot = {
 	check: "http" | "icmp" | "off";
 	checkHost: string;
 	clicks: number;
-	links: AppLink[];
+	links: CardLink[];
 };
 
-export function snapshotApp(app: any): AppSnapshot {
+export function snapshotCard(app: any): CardSnapshot {
 	return {
 		id: String(app.id || ""),
 		categoryId: String(app.categoryId || ""),
@@ -98,15 +98,19 @@ export function snapshotApp(app: any): AppSnapshot {
 function snapshotFromDisk(raw: any): any {
 	if (!raw || typeof raw !== "object") return null;
 	const s = { ...raw };
-	if (s.space && !s.tab) s.tab = s.space;
-	if (s.card && !s.app) s.app = s.card;
-	if (Array.isArray(s.cards) && !s.apps) s.apps = s.cards;
+	if (s.tab && !s.space) s.space = s.tab;
+	delete s.tab;
+	if (s.app && !s.card) s.card = s.app;
+	delete s.app;
+	if (Array.isArray(s.apps) && !s.cards) s.cards = s.apps;
+	delete s.apps;
 	if (Array.isArray(s.categories)) {
 		s.categories = s.categories.map((c: any) => {
 			if (!c || typeof c !== "object") return c;
+			const { apps, ...rest } = c;
 			return {
-				...c,
-				apps: c.apps || c.cards || []
+				...rest,
+				cards: c.cards || apps || []
 			};
 		});
 	}
@@ -142,7 +146,7 @@ export function snapshotToDisk(snap: any): any {
 	return s;
 }
 
-export type HistoryRestored = { tab: boolean; categories: string[]; apps: string[] };
+export type HistoryRestored = { space: boolean; categories: string[]; cards: string[] };
 export type HistoryEvent = {
 	id: string;
 	at: number;
@@ -159,8 +163,9 @@ export function asHistory(raw: unknown): HistoryEvent[] {
 	const out: HistoryEvent[] = [];
 	for (const row of raw as any[]) {
 		if (!row || typeof row !== "object") continue;
-		const type = String(row.type || "").slice(0, 40);
+		let type = String(row.type || "").slice(0, 40);
 		if (!type) continue;
+		if (type.startsWith("tab.")) type = `space.${type.slice(4)}`;
 		const restored = row.restored && typeof row.restored === "object" ? row.restored : {};
 		out.push({
 			id: String(row.id || crypto.randomUUID()),
@@ -170,9 +175,9 @@ export function asHistory(raw: unknown): HistoryEvent[] {
 			label: String(row.label || "").slice(0, 120),
 			purged: Boolean(row.purged),
 			restored: {
-				tab: Boolean(restored.tab || restored.space),
+				space: Boolean(restored.space || restored.tab),
 				categories: Array.isArray(restored.categories) ? restored.categories.map(String).slice(0, 80) : [],
-				apps: Array.isArray(restored.cards)
+				cards: Array.isArray(restored.cards)
 					? restored.cards.map(String).slice(0, 400)
 					: Array.isArray(restored.apps)
 						? restored.apps.map(String).slice(0, 400)
@@ -215,7 +220,7 @@ export function appendHistory(
 		type: String(payload.type || "").slice(0, 40),
 		label: String(payload.label || "").slice(0, 120),
 		purged: false,
-		restored: { tab: false, categories: [], apps: [] },
+		restored: { space: false, categories: [], cards: [] },
 		snapshot: payload.snapshot || null
 	});
 	if (doc.history.length > MAX_HISTORY) doc.history = doc.history.slice(-MAX_HISTORY);
@@ -223,7 +228,7 @@ export function appendHistory(
 
 export function eventPath(ev: HistoryEvent | null | undefined): string {
 	const snap = ev?.snapshot || {};
-	const tab = snap.tab?.name || snap.space?.name || "";
+	const tab = snap.space?.name || snap.tab?.name || "";
 	const cat = snap.category?.name || "";
 	if (tab && cat) return `${tab} / ${cat}`;
 	return tab || cat || "";
@@ -270,16 +275,16 @@ export function auditCsv(rows: AuditRow[] | null | undefined): string {
 	return `\uFEFF${lines.join("\r\n")}`;
 }
 
-function isRestored(ev: HistoryEvent, scope: "tab" | "category" | "card", id: string): boolean {
-	const r = ev.restored || { tab: false, categories: [], apps: [] };
-	if (scope === "tab") return Boolean(r.tab);
+function isRestored(ev: HistoryEvent, scope: "space" | "category" | "card", id: string): boolean {
+	const r = ev.restored || { space: false, categories: [], cards: [] };
+	if (scope === "space") return Boolean(r.space);
 	if (scope === "category") return (r.categories || []).includes(id);
-	return (r.apps || []).includes(id);
+	return (r.cards || []).includes(id);
 }
 
 export type TrashRow = {
 	id: string;
-	scope: "card" | "category" | "tab";
+	scope: "card" | "category" | "space";
 	targetId: string;
 	at: number;
 	actor: string;
@@ -296,16 +301,19 @@ export function publicTrash(history: HistoryEvent[] | null | undefined): TrashRo
 		if (ev.purged || !ev.snapshot) continue;
 		if (!String(ev.type || "").endsWith(".delete")) continue;
 		const snap = ev.snapshot;
-		if (ev.type === "card.delete" && snap.app && !isRestored(ev, "card", snap.app.id)) {
+		const cardSnap = snap.card || snap.app;
+		const spaceSnap = snap.space || snap.tab;
+		const catCards = snap.cards || snap.apps || [];
+		if (ev.type === "card.delete" && cardSnap && !isRestored(ev, "card", cardSnap.id)) {
 			out.push({
 				id: ev.id,
 				scope: "card",
-				targetId: snap.app.id,
+				targetId: cardSnap.id,
 				at: ev.at,
 				actor: ev.actor,
-				label: snap.app.title || t("empty.untitled"),
-				kind: snap.app.kind || "app",
-				icon: snap.app.icon,
+				label: cardSnap.title || t("empty.untitled"),
+				kind: cardSnap.kind || "app",
+				icon: cardSnap.icon,
 				path: eventPath(ev)
 			});
 		}
@@ -319,10 +327,10 @@ export function publicTrash(history: HistoryEvent[] | null | undefined): TrashRo
 				label: snap.category.name,
 				kind: "category",
 				icon: snap.category.icon,
-				path: snap.tab?.name || "",
-				count: Array.isArray(snap.apps) ? snap.apps.length : 0
+				path: spaceSnap?.name || "",
+				count: Array.isArray(catCards) ? catCards.length : 0
 			});
-			for (const app of snap.apps || []) {
+			for (const app of catCards) {
 				if (isRestored(ev, "card", app.id)) continue;
 				out.push({
 					id: ev.id,
@@ -333,24 +341,25 @@ export function publicTrash(history: HistoryEvent[] | null | undefined): TrashRo
 					label: app.title || t("empty.untitled"),
 					kind: app.kind || "app",
 					icon: app.icon,
-					path: [snap.tab?.name, snap.category?.name].filter(Boolean).join(" / ")
+					path: [spaceSnap?.name, snap.category?.name].filter(Boolean).join(" / ")
 				});
 			}
 		}
-		if (ev.type === "tab.delete" && snap.tab && !isRestored(ev, "tab", snap.tab.id)) {
+		if (ev.type === "space.delete" && spaceSnap && !isRestored(ev, "space", spaceSnap.id)) {
 			out.push({
 				id: ev.id,
-				scope: "tab",
-				targetId: snap.tab.id,
+				scope: "space",
+				targetId: spaceSnap.id,
 				at: ev.at,
 				actor: ev.actor,
-				label: snap.tab.name,
-				kind: "tab",
-				icon: snap.tab.icon,
+				label: spaceSnap.name,
+				kind: "space",
+				icon: spaceSnap.icon,
 				path: "",
-				count: (snap.categories || []).reduce((n: number, c: any) => n + (c.apps?.length || 0), 0)
+				count: (snap.categories || []).reduce((n: number, c: any) => n + ((c.cards || c.apps)?.length || 0), 0)
 			});
 			for (const cat of snap.categories || []) {
+				const cards = cat.cards || cat.apps || [];
 				if (!isRestored(ev, "category", cat.id)) {
 					out.push({
 						id: ev.id,
@@ -361,11 +370,11 @@ export function publicTrash(history: HistoryEvent[] | null | undefined): TrashRo
 						label: cat.name,
 						kind: "category",
 						icon: cat.icon,
-						path: snap.tab?.name || "",
-						count: Array.isArray(cat.apps) ? cat.apps.length : 0
+						path: spaceSnap?.name || "",
+						count: Array.isArray(cards) ? cards.length : 0
 					});
 				}
-				for (const app of cat.apps || []) {
+				for (const app of cards) {
 					if (isRestored(ev, "card", app.id)) continue;
 					out.push({
 						id: ev.id,
@@ -376,7 +385,7 @@ export function publicTrash(history: HistoryEvent[] | null | undefined): TrashRo
 						label: app.title || t("empty.untitled"),
 						kind: app.kind || "app",
 						icon: app.icon,
-						path: [snap.tab?.name, cat.name].filter(Boolean).join(" / ")
+						path: [spaceSnap?.name, cat.name].filter(Boolean).join(" / ")
 					});
 				}
 			}

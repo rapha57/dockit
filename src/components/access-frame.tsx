@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button";
 import { AccessUsers, AccessGroups, AccessRoles } from "@/components/access";
 import { IdentitySourcesPanel, seedLdapDirs } from "@/components/auth-panel";
 import { t } from "@/lib/i18n";
-import type { MenuTab, OidcPayload, LdapPayload } from "@/lib/portal-ui";
+import type { MenuSpace, OidcPayload, LdapPayload } from "@/lib/portal-ui";
 import type { PortalSettings, SessionInfo } from "@/lib/portal";
 
 export function AccessFrame({
   token,
   session,
-  tabs,
+  spaces,
   settings,
   busy,
   onClose,
@@ -20,7 +20,7 @@ export function AccessFrame({
 }: {
   token: string;
   session: SessionInfo | null;
-  tabs: MenuTab[];
+  spaces: MenuSpace[];
   settings: PortalSettings;
   busy: boolean;
   onClose: () => void;
@@ -127,16 +127,16 @@ export function AccessFrame({
               onSaveLoginOrder={onSaveLoginOrder}
             />
           ) : pane === "roles" ? (
-            <AccessRoles token={token} tabs={tabs} directories={seedLdapDirs(settings)} />
+            <AccessRoles token={token} spaces={spaces} directories={seedLdapDirs(settings)} />
           ) : pane === "groups" ? (
             <AccessGroups
               token={token}
               actor={session ?? undefined}
-              tabs={tabs}
+              spaces={spaces}
               directories={seedLdapDirs(settings)}
             />
           ) : (
-            <AccessUsers token={token} actor={session ?? undefined} tabs={tabs} />
+            <AccessUsers token={token} actor={session ?? undefined} spaces={spaces} />
           )}
         </div>
       </div>

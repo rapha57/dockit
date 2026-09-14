@@ -16,10 +16,10 @@ import { ExpandRow } from "@/components/expand-row";
 import { askConfirm } from "@/components/confirm-dialog";
 import { t, te, td } from "@/lib/i18n";
 import { ICON_OPTIONS, PRODUCT_ICONS, PortalIcon, fileToDataUrl, iconifySrc, urlToDataUrl } from "@/lib/icons";
-import { grabSiteFavicon, probePreview, saveCustomIcon, type CustomIcon, type ItemKind, type PortalApp, type PortalCategory, type CheckMode } from "@/lib/portal";
+import { grabSiteFavicon, probePreview, saveCustomIcon, type CustomIcon, type ItemKind, type PortalCard, type PortalCategory, type CheckMode } from "@/lib/portal";
 import { safeAppHref } from "@/lib/safe-href";
 import { findUrlDuplicates } from "@/lib/dup-url";
-import { FIELD_SM, type AccessPayload, type CardFormPayload, type CatalogTab, type DirectoryEntry, type MenuTab } from "@/lib/portal-ui";
+import { FIELD_SM, type AccessPayload, type CardFormPayload, type CatalogSpace, type DirectoryEntry, type MenuSpace } from "@/lib/portal-ui";
 import { itemKind } from "@/lib/item-kind";
 import { fold, lookupTagColor, tagPaint } from "@/lib/tag-ui";
 import { randomTagHex } from "@/lib/tag-colors";
@@ -406,8 +406,8 @@ export function ItemForm({
   onCancel,
   onSave,
 }: {
-  kind: "tab" | "category";
-  initial?: MenuTab | PortalCategory | null;
+  kind: "space" | "category";
+  initial?: MenuSpace | PortalCategory | null;
   busy: boolean;
   picker: {
     token: string;
@@ -421,11 +421,11 @@ export function ItemForm({
   onCancel: () => void;
   onSave: (name: string, icon: string, access: AccessPayload) => void;
 }) {
-  const isTab = kind === "tab";
+  const isSpace = kind === "space";
   const [name, setName] = useState(initial?.name ?? "");
-  const [icon, setIcon] = useState(initial?.icon ?? (isTab ? "Layers" : "Folder"));
+  const [icon, setIcon] = useState(initial?.icon ?? (isSpace ? "Layers" : "Folder"));
   const [restricted, setRestricted] = useState(Boolean(initial?.restricted));
-  const [hideLabel, setHideLabel] = useState(Boolean(isTab && initial && "hideLabel" in initial ? (initial as MenuTab).hideLabel : false));
+  const [hideLabel, setHideLabel] = useState(Boolean(isSpace && initial && "hideLabel" in initial ? (initial as MenuSpace).hideLabel : false));
   const [viewers, setViewers] = useState(initial?.viewers ?? []);
   const [editors, setEditors] = useState(initial?.editors ?? []);
   return (
@@ -433,19 +433,19 @@ export function ItemForm({
       className="settings-frame is-item is-narrow"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(name.trim(), icon.trim() || (isTab ? "Layers" : "Folder"), {
+        onSave(name.trim(), icon.trim() || (isSpace ? "Layers" : "Folder"), {
           restricted,
           viewers,
           editors,
-          ...(isTab ? { hideLabel } : {}),
+          ...(isSpace ? { hideLabel } : {}),
         });
       }}
     >
       <div className="settings-body">
         <div className="settings-head">
           <div className="settings-head-copy">
-            <h3 className="dialog-title">{initial ? (isTab ? t("aria.editSpace") : t("aria.editCategory")) : (isTab ? t("space.create") : t("category.create"))}</h3>
-            <p className="settings-lead">{isTab ? t("item.spaceLead") : t("item.categoryLead")}</p>
+            <h3 className="dialog-title">{initial ? (isSpace ? t("aria.editSpace") : t("aria.editCategory")) : (isSpace ? t("space.create") : t("category.create"))}</h3>
+            <p className="settings-lead">{isSpace ? t("item.spaceLead") : t("item.categoryLead")}</p>
           </div>
           <Button
             type="button"
@@ -485,7 +485,7 @@ export function ItemForm({
                   </div>
                 </div>
               </div>
-              {isTab ? (
+              {isSpace ? (
                 <div className="settings-toggles">
                   <p className="settings-kicker">{t("item.display")}</p>
                   <label>
@@ -509,8 +509,8 @@ export function ItemForm({
                 editors={editors}
                 setEditors={setEditors}
                 people={people}
-                seeHint={isTab ? t("space.seeHint") : t("category.seeHint")}
-                editHint={isTab ? t("space.editHint") : t("category.editHint")}
+                seeHint={isSpace ? t("space.seeHint") : t("category.seeHint")}
+                editHint={isSpace ? t("space.editHint") : t("category.editHint")}
               />
             ) : null}
           </div>
@@ -807,8 +807,8 @@ export function CardForm({
 }: {
   categories: PortalCategory[];
   categoryId: string;
-  catalog: CatalogTab[];
-  initial?: PortalApp | null;
+  catalog: CatalogSpace[];
+  initial?: PortalCard | null;
   busy: boolean;
   picker: {
     token: string;
@@ -976,7 +976,7 @@ export function CardForm({
       {urlDupes.length === 1
         ? t("item.urlExists", {
             title: urlDupes[0].title,
-            tab: urlDupes[0].tab,
+            tab: urlDupes[0].space,
           })
         : t("item.urlExistsN", {
             n: urlDupes.length,

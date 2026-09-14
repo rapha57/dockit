@@ -3,8 +3,8 @@ import type { CheckMode, ItemKind, PortalSettings } from "@/lib/portal";
 import { asDateFormat, asLocale, asNumberFormat, asTimeFormat, asTimeZone } from "@/lib/i18n";
 
 export type PortalData = Awaited<ReturnType<typeof getPortal>>;
-export type MenuTab = PortalData["tabs"][number];
-export type CatalogTab = PortalData["catalog"][number];
+export type MenuSpace = PortalData["spaces"][number];
+export type CatalogSpace = PortalData["catalog"][number];
 export type DirectoryEntry = PortalData["directory"][number];
 export type CurationViewData = Awaited<ReturnType<typeof getCuration>>;
 

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { NoteBody } from "@/components/note-editor";
 import { t, td, tp } from "@/lib/i18n";
 import { PortalIcon } from "@/lib/icons";
-import { cardUrl, type PortalApp } from "@/lib/portal";
+import { cardUrl, type PortalCard } from "@/lib/portal";
 import { safeAppHref } from "@/lib/safe-href";
 import { orderedTags, tagPaint } from "@/lib/tag-ui";
 import { clearResizeCursor, finePointer, hoverResizeCursor } from "@/lib/card-resize";
@@ -63,7 +63,7 @@ export function FavStar({ on, onToggle }: { on: boolean; onToggle: () => void })
 }
 export type AppCardMenu = { x: number; y: number };
 export type AppCardProps = {
-  app: PortalApp;
+  app: PortalCard;
   editMode: boolean;
   canDrag?: boolean;
   canResize?: boolean;
@@ -162,7 +162,7 @@ export function AppCard({
   }, [menu, dimMenu]);
   if (dragging)
     return (
-      <div data-app-id={app.id} data-app-card="" className={`drop-slot ${className ?? ""}`}>
+      <div data-card-id={app.id} data-app-card="" className={`drop-slot ${className ?? ""}`}>
         <span className="drop-slot-label">{t("nav.dropHere")}</span>
       </div>
     );
@@ -497,7 +497,7 @@ export function AppCard({
   const href = safeAppHref(cardUrl(app));
   if (kind === "app" && !editMode)
     return (
-      <div data-app-id={app.id} className={shell} onContextMenu={onCtx}>
+      <div data-card-id={app.id} className={shell} onContextMenu={onCtx}>
         {href ? (
           <a
             href={href}
@@ -530,7 +530,7 @@ export function AppCard({
     );
   return (
     <div
-      data-app-id={app.id}
+      data-card-id={app.id}
       data-app-card=""
       onPointerDown={onPointerDown}
       onPointerMove={(e) => {

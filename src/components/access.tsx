@@ -30,7 +30,7 @@ import {
   type ResKind,
   type Role,
   type Source,
-  type Tab,
+  type Space,
   type User,
 } from "@/lib/acl";
 import { t, te, tp, localeTag, formatNumber } from "@/lib/i18n";
@@ -147,12 +147,12 @@ function cycleEffect(cur: Effect): Effect {
   return "inherit";
 }
 
-function roleProbe(grants: GrantInput[] | null | undefined, tabs: Tab[] | null | undefined): AclDoc {
+function roleProbe(grants: GrantInput[] | null | undefined, spaces: Space[] | null | undefined): AclDoc {
   return {
     roles: [{ id: "_probe", name: "_", grants: grants || [] }],
     users: [],
     groups: [],
-    tabs: tabs || [],
+    spaces: spaces || [],
   };
 }
 
@@ -160,14 +160,14 @@ type Dir = {
   users: User[];
   groups: Group[];
   roles: Role[];
-  tabs: Tab[];
+  spaces: Space[];
   busy: boolean;
-  apply: (res: Partial<{ users: User[]; groups: Group[]; roles: Role[]; tabs: Tab[] }>) => void;
+  apply: (res: Partial<{ users: User[]; groups: Group[]; roles: Role[]; spaces: Space[] }>) => void;
   setBusy: (v: boolean) => void;
 };
 
 function MiniDoc(dir: Dir): AclDoc {
-  return { users: dir.users, groups: dir.groups, roles: dir.roles, tabs: dir.tabs };
+  return { users: dir.users, groups: dir.groups, roles: dir.roles, spaces: dir.spaces };
 }
 
 function inheritedGrantsOf(user: User | null | undefined, dir: Dir): Grant[] {
@@ -203,13 +203,13 @@ function useDirectory(token: string): Dir {
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
-  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [spaces, setSpaces] = useState<Space[]>([]);
   const [busy, setBusy] = useState(true);
-  function apply(res: Partial<{ users: User[]; groups: Group[]; roles: Role[]; tabs: Tab[] }>) {
+  function apply(res: Partial<{ users: User[]; groups: Group[]; roles: Role[]; spaces: Space[] }>) {
     if (res.users) setUsers(res.users);
     if (res.groups) setGroups(res.groups);
     if (res.roles) setRoles(res.roles);
-    if (res.tabs) setTabs(res.tabs);
+    if (res.spaces) setSpaces(res.spaces);
   }
   useEffect(() => {
     listUsers({ data: { token } })
@@ -222,7 +222,7 @@ function useDirectory(token: string): Dir {
         if (!sessionGone(err)) toast.error(te(err));
       });
   }, [token]);
-  return { users, groups, roles, tabs, busy, apply, setBusy };
+  return { users, groups, roles, spaces, busy, apply, setBusy };
 }
 
 function ListShell({ toolbar, head, children }: { toolbar?: ReactNode; head?: ReactNode; children?: ReactNode }) {
@@ -461,7 +461,7 @@ function PermLine({
   actions,
   grants,
   setGrants,
-  tabs,
+  spaces,
   readOnly,
 }: {
   res: ResKind;
@@ -469,10 +469,10 @@ function PermLine({
   actions: string[];
   grants: GrantInput[] | null | undefined;
   setGrants: (g: Grant[]) => void;
-  tabs: Tab[] | null | undefined;
+  spaces: Space[] | null | undefined;
   readOnly?: boolean;
 }) {
-  const probe = roleProbe(grants, tabs);
+  const probe = roleProbe(grants, spaces);
   const user: User = { id: "_u", roleIds: ["_probe"], grants: [] };
   return (
     <span className="am-perms">
@@ -495,13 +495,13 @@ function PermLine({
 }
 
 function ResourceTree({
-  tabs,
+  spaces,
   grants,
   setGrants,
   query,
   readOnly,
 }: {
-  tabs: Tab[] | null | undefined;
+  spaces: Space[] | null | undefined;
   grants: GrantInput[] | null | undefined;
   setGrants: (g: Grant[]) => void;
   query?: string;
@@ -520,11 +520,11 @@ function ResourceTree({
       actionLabel(q).toLowerCase().includes(q)
     );
   }
-  const list = (tabs || [])
+  const list = (spaces || [])
     .map((tab) => {
       const cats = (tab.categories || [])
         .map((cat) => {
-          const apps = (cat.apps || []).filter(
+          const apps = (cat.cards || []).filter(
             (a) => hit(a.title) || hit(cat.name) || hit(tab.name),
           );
           return { ...cat, apps, _hit: hit(cat.name) || apps.length > 0 };
@@ -550,7 +550,7 @@ function ResourceTree({
             actions={PORTAL_ACTIONS}
             grants={grants}
             setGrants={setGrants}
-            tabs={tabs}
+            spaces={spaces}
             readOnly={readOnly}
           />
         </div>
@@ -569,12 +569,12 @@ function ResourceTree({
               ) : null}
             </button>
             <PermLine
-              res="tab"
+              res="space"
               id={tab.id}
-              actions={TREE_ACTIONS.tab}
+              actions={TREE_ACTIONS.space}
               grants={grants}
               setGrants={setGrants}
-              tabs={tabs}
+              spaces={spaces}
               readOnly={readOnly}
             />
           </div>
@@ -596,12 +596,12 @@ function ResourceTree({
                       actions={TREE_ACTIONS.cat}
                       grants={grants}
                       setGrants={setGrants}
-                      tabs={tabs}
+                      spaces={spaces}
                       readOnly={readOnly}
                     />
                   </div>
                   {open[cat.id] || q
-                    ? (cat.apps || []).map((app) => (
+                    ? (cat.cards || []).map((app) => (
                         <div key={app.id} className="am-tree-row is-card">
                           <span className="am-tree-name">{app.title || t("empty.untitled")}</span>
                           <PermLine
@@ -610,7 +610,7 @@ function ResourceTree({
                             actions={TREE_ACTIONS.card}
                             grants={grants}
                             setGrants={setGrants}
-                            tabs={tabs}
+                            spaces={spaces}
                             readOnly={readOnly}
                           />
                         </div>
@@ -662,7 +662,7 @@ function EffectiveTree({
         <span className="am-tree-name">{t("access.permPortal")}</span>
         {words(tree.portal, "portal", "*", PORTAL_ACTIONS)}
       </div>
-      {tree.tabs.map((tab) => (
+      {tree.spaces.map((tab) => (
         <div key={tab.id}>
           <div className="am-tree-row">
             <button
@@ -672,7 +672,7 @@ function EffectiveTree({
             >
               {tab.name}
             </button>
-            {words(tab.actions, "tab", tab.id, TREE_ACTIONS.tab)}
+            {words(tab.actions, "space", tab.id, TREE_ACTIONS.space)}
           </div>
           {open[tab.id]
             ? tab.cats.map((cat) => (
@@ -783,7 +783,7 @@ function DiscardAsk({
 function PermBlocks({
   user,
   dir,
-  tabs,
+  spaces,
   grants,
   setGrants,
   editing,
@@ -793,7 +793,7 @@ function PermBlocks({
 }: {
   user: User | null | undefined;
   dir: Dir;
-  tabs: Tab[] | null | undefined;
+  spaces: Space[] | null | undefined;
   grants: GrantInput[] | null | undefined;
   setGrants?: (g: Grant[]) => void;
   editing?: boolean;
@@ -827,7 +827,7 @@ function PermBlocks({
           ) : null}
           {(grants || []).length || (editing && !hideDirectEdit) ? (
             <ResourceTree
-              tabs={tabs}
+              spaces={spaces}
               grants={grants || []}
               setGrants={setGrants || (() => {})}
               query={editing ? pq : ""}
@@ -840,7 +840,7 @@ function PermBlocks({
       ) : null}
       {pane === "inherited" ? (
         inherited.length ? (
-          <ResourceTree tabs={tabs} grants={inherited} setGrants={() => {}} query="" readOnly />
+          <ResourceTree spaces={spaces} grants={inherited} setGrants={() => {}} query="" readOnly />
         ) : (
           <p className="am-empty-line">{t("access.none")}</p>
         )
@@ -936,14 +936,14 @@ type UserDraft = {
 export function AccessUsers({
   token,
   actor,
-  tabs: seedTabs,
+  spaces: seedSpaces,
 }: {
   token: string;
   actor?: Actor;
-  tabs?: Tab[];
+  spaces?: Space[];
 }) {
   const dir = useDirectory(token);
-  const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
+  const spaces = dir.spaces.length ? dir.spaces : seedSpaces || [];
   const expand = useExpandSession();
   const snap = useRef<UserDraft | null>(null);
   const [q, setQ] = useState("");
@@ -1356,7 +1356,7 @@ export function AccessUsers({
                                 }
                           }
                           dir={dir}
-                          tabs={tabs}
+                          spaces={spaces}
                           grants={rowDraft.grants || []}
                           setGrants={(g) => patch({ ...rowDraft, grants: g })}
                           editing={expand.editing}
@@ -1438,16 +1438,16 @@ type GroupDraft = {
 export function AccessGroups({
   token,
   actor,
-  tabs: seedTabs,
+  spaces: seedSpaces,
   directories,
 }: {
   token: string;
   actor?: Actor;
-  tabs?: Tab[];
+  spaces?: Space[];
   directories?: LdapDirectory[];
 }) {
   const dir = useDirectory(token);
-  const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
+  const spaces = dir.spaces.length ? dir.spaces : seedSpaces || [];
   const expand = useExpandSession();
   const snap = useRef<GroupDraft | null>(null);
   const [q, setQ] = useState("");
@@ -1767,8 +1767,8 @@ export function AccessGroups({
                               members: rowDraft.members,
                             })
                       }
-                      dir={{ ...dir, tabs }}
-                      tabs={tabs}
+                      dir={{ ...dir, spaces }}
+                      spaces={spaces}
                       grants={rowDraft.grants || []}
                       setGrants={(g) => patch({ ...rowDraft, grants: g })}
                       editing={expand.editing}
@@ -1829,15 +1829,15 @@ type RoleRow = Role & { userCount?: number; groupCount?: number };
 
 export function AccessRoles({
   token,
-  tabs: seedTabs,
+  spaces: seedSpaces,
   directories,
 }: {
   token: string;
-  tabs?: Tab[];
+  spaces?: Space[];
   directories?: LdapDirectory[];
 }) {
   const dir = useDirectory(token);
-  const tabs = dir.tabs.length ? dir.tabs : seedTabs || [];
+  const spaces = dir.spaces.length ? dir.spaces : seedSpaces || [];
   const expand = useExpandSession();
   const snap = useRef<RoleDraft | null>(null);
   const [draft, setDraft] = useState<RoleDraft | null>(null);
@@ -2191,7 +2191,7 @@ export function AccessRoles({
                         />
                       ) : null}
                       <ResourceTree
-                        tabs={tabs}
+                        spaces={spaces}
                         grants={rowDraft.grants}
                         setGrants={
                           defLocked || !expand.editing
@@ -2258,20 +2258,20 @@ export function AccessRoles({
 
 export function MovePickDialog({
   category,
-  tabs,
-  fromTabId,
+  spaces,
+  fromSpaceId,
   busy,
   onCancel,
   onContinue,
 }: {
   category?: Category | null;
-  tabs?: Tab[];
-  fromTabId?: string;
+  spaces?: Space[];
+  fromSpaceId?: string;
   busy?: boolean;
   onCancel: () => void;
   onContinue: (destId: string) => void;
 }) {
-  const others = (tabs || []).filter((tab) => tab.id !== fromTabId);
+  const others = (spaces || []).filter((tab) => tab.id !== fromSpaceId);
   const [dest, setDest] = useState(others[0]?.id || "");
   return (
     <div>

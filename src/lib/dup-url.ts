@@ -15,19 +15,19 @@ export function canonicalAppUrl(raw: string | undefined | null): string {
 	}
 }
 
-type DupApp = {
+type DupCard = {
   id?: string;
   kind?: string;
   url?: string;
   title?: string;
   links?: { url?: string }[];
 };
-type DupCategory = { name?: string; apps?: DupApp[] };
-type DupTab = { name?: string; categories?: DupCategory[] };
-type DupHit = { id?: string; title: string; tab?: string; category?: string };
+type DupCategory = { name?: string; cards?: DupCard[] };
+type DupSpace = { name?: string; categories?: DupCategory[] };
+type DupHit = { id?: string; title: string; space?: string; category?: string };
 
 export function findUrlDuplicates(
-	catalog: DupTab[] | null | undefined,
+	catalog: DupSpace[] | null | undefined,
 	url: string | undefined | null,
 	exceptId?: string | null,
 ): DupHit[] {
@@ -36,14 +36,14 @@ export function findUrlDuplicates(
 	const hits: DupHit[] = [];
 	for (const tab of catalog ?? []) {
 		for (const cat of tab.categories ?? []) {
-			for (const app of cat.apps ?? []) {
+			for (const app of cat.cards ?? []) {
 				if (exceptId && app.id === exceptId) continue;
 				if ((app.kind || "app") === "note") continue;
 				if (canonicalAppUrl((app.links ?? [])[0]?.url || app.url || "") !== key) continue;
 				hits.push({
 					id: app.id,
 					title: String(app.title || "").trim() || "Sans titre",
-					tab: tab.name,
+					space: tab.name,
 					category: cat.name
 				});
 			}

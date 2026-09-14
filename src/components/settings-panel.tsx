@@ -35,7 +35,7 @@ import { checkLatestRelease } from "@/lib/release";
 import { exportPortal, type PortalSettings, type SessionInfo } from "@/lib/portal";
 import { collectInventory, inventoryCsv, inventoryPdf } from "@/lib/inventory";
 import { TAG_PALETTE, defaultTagHex, remapTagHex, tagInk } from "@/lib/tag-colors";
-import { settingsBase, FIELD_SM, type SettingsPayload, type TagsPayload, type CatalogTab, type DirectoryEntry, type MenuTab, type PortalData } from "@/lib/portal-ui";
+import { settingsBase, FIELD_SM, type SettingsPayload, type TagsPayload, type CatalogSpace, type DirectoryEntry, type MenuSpace, type PortalData } from "@/lib/portal-ui";
 import { lookupTagColor } from "@/lib/tag-ui";
 import { BmcMark, DockitMark, fileToDataUrl, toFaviconDataUrl } from "@/lib/icons";
 import { PORTAL_VERSION, isNewerVersion } from "@/lib/portal-version";
@@ -84,9 +84,9 @@ export function AdminPanel({
   tab: string;
   settings: PortalSettings;
   runtime?: PortalData["runtime"];
-  catalog: CatalogTab[];
+  catalog: CatalogSpace[];
   tags: { name: string; count: number }[];
-  tabs: MenuTab[];
+  spaces: MenuSpace[];
   directory: DirectoryEntry[];
   token: string;
   session: SessionInfo | null;
@@ -736,7 +736,7 @@ export function BackupForm({
 }: {
   token: string;
   busy: boolean;
-  catalog: CatalogTab[];
+  catalog: CatalogSpace[];
   title: string;
   onImport: (payload: unknown) => void;
 }) {

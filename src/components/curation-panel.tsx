@@ -20,10 +20,10 @@ import {
   type CurationCheck,
   type CurationJobView,
   type CustomIcon,
-  type PortalApp,
+  type PortalCard,
   type PortalCategory,
 } from "@/lib/portal";
-import type { CardFormPayload, CatalogTab, CurationViewData } from "@/lib/portal-ui";
+import type { CardFormPayload, CatalogSpace, CurationViewData } from "@/lib/portal-ui";
 export function curationTone(status: CurationCheck["status"]): string {
   if (status === "valid") return "text-ok";
   if (status === "redirect") return "text-muted";
@@ -56,7 +56,7 @@ function curationStatusTitle(check: CurationCheck): string | undefined {
 export function CurationPanel({
   token,
   busy,
-  tabPerms,
+  spacePerms,
   picker,
   catalog,
   probes,
@@ -68,7 +68,7 @@ export function CurationPanel({
 }: {
   token: string;
   busy: boolean;
-  tabPerms: Record<string, "view" | "edit">;
+  spacePerms: Record<string, "view" | "edit">;
   picker: {
     token: string;
     library: CustomIcon[];
@@ -76,14 +76,14 @@ export function CurationPanel({
     navRichIcons: boolean;
     onLibrary: (icons: CustomIcon[]) => void;
   };
-  catalog: CatalogTab[];
+  catalog: CatalogSpace[];
   probes?: boolean;
   knownTags?: { name: string; count: number }[];
   tagColors?: Record<string, string>;
   editContext: (
     cardId: string,
-  ) => { app: PortalApp; categoryId: string; categories: PortalCategory[] } | null;
-  onSaveCard: (app: PortalApp, payload: CardFormPayload, onDone: () => void) => void;
+  ) => { app: PortalCard; categoryId: string; categories: PortalCategory[] } | null;
+  onSaveCard: (app: PortalCard, payload: CardFormPayload, onDone: () => void) => void;
   onClose: () => void;
 }) {
   const [pane, setPane] = useState<"results" | "apps">("results");
@@ -93,7 +93,7 @@ export function CurationPanel({
   const [q, setQ] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [job, setJob] = useState<CurationJobView | null>(null);
-  const [edit, setEdit] = useState<{ app: PortalApp; categoryId: string; categories: PortalCategory[] } | null>(
+  const [edit, setEdit] = useState<{ app: PortalCard; categoryId: string; categories: PortalCategory[] } | null>(
     null,
   );
   const jobRunningRef = useRef(false);
@@ -177,7 +177,7 @@ export function CurationPanel({
     const prio: Record<CurationCheck["status"], number> = { error: 4, timeout: 3, redirect: 2, valid: 1, unknown: 0 };
     const out: {
       cardId: string;
-      tabId: string;
+      spaceId: string;
       title: string;
       icon: string;
       place: string;
@@ -217,10 +217,10 @@ export function CurationPanel({
       if (probeCheck && (!worst || prio[probeCheck.status] > prio[worst.status])) worst = probeCheck;
       out.push({
         cardId: item.cardId,
-        tabId: item.tabId,
+        spaceId: item.spaceId,
         title: item.title,
         icon: item.icon,
-        place: [item.tabName, item.categoryName].filter(Boolean).join(" · "),
+        place: [item.spaceName, item.categoryName].filter(Boolean).join(" · "),
         links,
         probeMode,
         probeHost,
@@ -553,7 +553,7 @@ export function CurationPanel({
                           : -1;
                       })
                       .map((group) => {
-                      const canEdit = tabPerms[group.tabId] === "edit";
+                      const canEdit = spacePerms[group.spaceId] === "edit";
                       const expanded = openId === group.cardId;
                       return (
                         <ExpandRow

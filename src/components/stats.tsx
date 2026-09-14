@@ -4,18 +4,18 @@ import { t, tp, formatNumber, localeTag } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { PortalIcon } from "@/lib/icons";
 import { tagPaint } from "@/lib/tag-ui";
-import type { CatalogTab } from "@/lib/portal-ui";
+import type { CatalogSpace } from "@/lib/portal-ui";
 import type { ClickStats } from "@/lib/portal";
 
 function fmtCount(n: number) {
   return formatNumber(n);
 }
 
-export function collectTopApps(catalog: CatalogTab[] | null | undefined, limit = 10) {
+export function collectTopApps(catalog: CatalogSpace[] | null | undefined, limit = 10) {
   const rows: { id: string; title: string; icon: string; tab: string; clicks: number }[] = [];
   for (const tab of catalog ?? [])
     for (const cat of tab.categories)
-      for (const app of cat.apps) {
+      for (const app of cat.cards) {
         if ((app.kind || "app") !== "app") continue;
         rows.push({
           id: app.id,
@@ -34,7 +34,7 @@ export function StatsPanel({
   scoped,
   onClose,
 }: {
-  catalog: CatalogTab[];
+  catalog: CatalogSpace[];
   scoped: boolean;
   onClose: () => void;
 }) {

@@ -43,6 +43,13 @@ import { LockForm } from "@/components/auth-panel";
 import { AccessFrame } from "@/components/access-frame";
 import { ItemForm, CardForm, FavsForm } from "@/components/editors";
 import { itemKind } from "@/lib/item-kind";
+import {
+  placeCard,
+  placeCarriedCard,
+  placeCarriedCategory,
+  placeCategory,
+  placeSpaces,
+} from "@/lib/layout-place";
 import { collectTags, fold, tagPaint } from "@/lib/tag-ui";
 import {
   applyLiveBox,
@@ -59,28 +66,28 @@ import {
 } from "@/lib/card-resize";
 import { sessionGone } from "@/lib/session-gone";
 import { PORTAL_VERSION } from "@/lib/portal-version";
-import type { MenuTab, PortalData } from "@/lib/portal-ui";
+import type { MenuSpace, PortalData } from "@/lib/portal-ui";
 import { MovePickDialog, MoveSectionDialog } from "@/components/access";
 import { PortalIcon, DockitMark } from "@/lib/icons";
 import { ThemeCss, ThemeToggle } from "@/components/theme";
 import {
-  createApp,
+  createCard,
   createCategory,
-  createTab,
-  deleteApp,
+  createSpace,
+  deleteCard,
   deleteCategory,
-  deleteTab,
-  duplicateTab,
+  deleteSpace,
+  duplicateSpace,
   getPortal,
   importPortal,
   manageTags,
-  rememberTab,
-  moveApp,
+  rememberSpace,
+  moveCard,
   moveCategory,
   previewMoveCategory,
-  reorderApps,
+  reorderCards,
   reorderCategories,
-  reorderTabs,
+  reorderSpaces,
   proxyLogin,
   recordClick,
   resetClicks,
@@ -91,12 +98,12 @@ import {
   updateOidcSettings,
   updateLdapSettings,
   updateLoginOrder,
-  updateApp,
+  updateCard,
   arrangeCategory,
-  appsAlphaDir,
+  cardsAlphaDir,
   updateCategory,
   updateSettings,
-  updateTab,
+  updateSpace,
   updateThemeCss,
   updateFavsOptions,
 } from "@/lib/portal";
@@ -108,7 +115,7 @@ import { tagTone } from "@/lib/tag-colors";
 import type {
   ClickStats,
   CustomIcon,
-  PortalApp,
+  PortalCard,
   PortalCategory,
   PortalSettings,
   SessionInfo,
@@ -174,109 +181,7 @@ function swallowGhostClick() {
   window.addEventListener("click", block, true);
   window.setTimeout(() => window.removeEventListener("click", block, true), 180);
 }
-function reindexApps(apps: PortalApp[], categoryId: string) {
-  return apps.map((a, i) => ({
-    ...a,
-    categoryId,
-    sortOrder: i + 1,
-  }));
-}
-function placeCarriedApp(
-  categories: PortalCategory[],
-  app: PortalApp | null | undefined,
-  destCatId: string | null | undefined,
-  insertAt: number,
-) {
-  if (!app || !destCatId) return null;
-  const stripped = categories.map((c) => ({
-    ...c,
-    apps: c.apps.filter((a) => a.id !== app.id),
-  }));
-  if (!stripped.some((c) => c.id === destCatId)) return null;
-  return stripped.map((c) => {
-    if (c.id !== destCatId) return c;
-    const apps = [...c.apps];
-    const idx = Math.max(0, Math.min(insertAt, apps.length));
-    apps.splice(idx, 0, {
-      ...app,
-      categoryId: c.id,
-    });
-    return {
-      ...c,
-      apps: reindexApps(apps, c.id),
-    };
-  });
-}
-function placeApp(
-  categories: PortalCategory[],
-  appId: string,
-  destCatId: string | null | undefined,
-  insertAt: number,
-) {
-  let moved: PortalApp | undefined;
-  const stripped = categories.map((c) => {
-    const hit = c.apps.find((a) => a.id === appId);
-    if (!hit) return c;
-    moved = hit;
-    return {
-      ...c,
-      apps: c.apps.filter((a) => a.id !== appId),
-    };
-  });
-  if (!moved) return null;
-  const app = moved;
-  return stripped.map((c) => {
-    if (c.id !== destCatId) return c;
-    const apps = [...c.apps];
-    const idx = Math.max(0, Math.min(insertAt, apps.length));
-    apps.splice(idx, 0, {
-      ...app,
-      categoryId: c.id,
-    });
-    return {
-      ...c,
-      apps: reindexApps(apps, c.id),
-    };
-  });
-}
-function placeCategory(categories: PortalCategory[], catId: string, insertAt: number) {
-  const from = categories.findIndex((c) => c.id === catId);
-  if (from < 0) return null;
-  const next = categories.filter((c) => c.id !== catId);
-  const idx = Math.max(0, Math.min(insertAt, next.length));
-  next.splice(idx, 0, categories[from]);
-  return next.map((c, i) => ({
-    ...c,
-    sortOrder: i + 1,
-  }));
-}
-function placeCarriedCategory(
-  categories: PortalCategory[],
-  cat: PortalCategory | null | undefined,
-  insertAt: number,
-) {
-  if (!cat) return null;
-  const stripped = categories.filter((c) => c.id !== cat.id);
-  const idx = Math.max(0, Math.min(insertAt, stripped.length));
-  const next = [...stripped];
-  next.splice(idx, 0, cat);
-  return next.map((c, i) => ({
-    ...c,
-    sortOrder: i + 1,
-  }));
-}
-function placeTabs<T extends { id: string; sortOrder: number }>(tabs: T[], tabId: string, insertAt: number) {
-  const from = tabs.findIndex((t) => t.id === tabId);
-  if (from < 0) return null;
-  const next = tabs.filter((t) => t.id !== tabId);
-  const idx = Math.max(0, Math.min(insertAt, next.length));
-  next.splice(idx, 0, tabs[from]);
-  return next.map((t, i) => ({
-    ...t,
-    sortOrder: i + 1,
-  }));
-}
-function pickVisibleTabIds(
+function pickVisibleSpaceIds(
   tabs: { id: string }[] | null | undefined,
   widths: Map<string, number>,
   activeId: string | null | undefined,
@@ -328,13 +233,13 @@ function pointerAfter(e: { clientX: number; clientY: number }, el: Element) {
 function itemSpanClass(app: { colSpan: number; rowSpan: number }) {
   return `${app.colSpan === 3 ? "item-span-3" : app.colSpan === 2 ? "item-span-2" : ""} ${app.rowSpan === 3 ? "item-h-3" : app.rowSpan === 2 ? "item-h-2" : "item-h-1"}`.trim();
 }
-function allowsFavorite(app: PortalApp, settings: PortalSettings | null | undefined) {
+function allowsFavorite(app: PortalCard, settings: PortalSettings | null | undefined) {
   const kind = app.kind || "app";
   if (kind === "note") return Boolean(settings?.favNotes);
   if (kind === "embed") return Boolean(settings?.favEmbeds);
   return true;
 }
-function itemMatches(app: PortalApp, needle: string, tags: string[], downSet: Set<string> | null | undefined) {
+function itemMatches(app: PortalCard, needle: string, tags: string[], downSet: Set<string> | null | undefined) {
   if (downSet && !downSet.has(app.id)) return false;
   let extra = needle;
   const fromHash: string[] = [];
@@ -431,15 +336,15 @@ function writeEditMode(on: boolean) {
     // ignore
   }
 }
-function sessionCanEditTab(session: SessionInfo | null | undefined, tabId: string | undefined): boolean {
-  if (!session || !tabId) return false;
+function sessionCanEditSpace(session: SessionInfo | null | undefined, spaceId: string | undefined): boolean {
+  if (!session || !spaceId) return false;
   if (session.isOwner) return true;
-  return session.tabPerms?.[tabId] === "edit";
+  return session.spacePerms?.[spaceId] === "edit";
 }
-function sessionCanMoveTab(session: SessionInfo | null | undefined, tabId: string | undefined): boolean {
-  if (!session || !tabId) return false;
+function sessionCanMoveSpace(session: SessionInfo | null | undefined, spaceId: string | undefined): boolean {
+  if (!session || !spaceId) return false;
   if (session.isOwner) return true;
-  return Boolean(session.tabMoves?.[tabId]);
+  return Boolean(session.spaceMoves?.[spaceId]);
 }
 function sessionCanArrange(session: SessionInfo | null | undefined): boolean {
   if (!session) return false;
@@ -451,22 +356,22 @@ function sessionCanManageAcl(session: SessionInfo | null | undefined): boolean {
 }
 function sessionCanCreateSpaces(session: SessionInfo | null | undefined): boolean {
   if (!session) return false;
-  return Boolean(session.isOwner || session.canCreateTabs);
+  return Boolean(session.isOwner || session.canCreateSpaces);
 }
 
-type DragKind = "tab" | "cat" | "app";
+type DragKind = "space" | "cat" | "card";
 type DragState = { kind: DragKind; id: string } | null;
 type OverState =
-  | { kind: "tab"; insertAt: number }
+  | { kind: "space"; insertAt: number }
   | { kind: "cat"; insertAt: number }
-  | { kind: "app"; catId: string; insertAt: number }
-  | { kind: "tab-carry"; tabId: string }
+  | { kind: "card"; catId: string; insertAt: number }
+  | { kind: "space-carry"; spaceId: string }
   | null;
 type DragFoldState = { sourceId: string | undefined; left: boolean; openId: string | null } | null;
-type TabHoverState = { tabId: string; at: number } | null;
+type SpaceHoverState = { spaceId: string; at: number } | null;
 type CatHoverState = { catId: string; at: number } | null;
 type MoreHoverState = { at: number } | null;
-type CarryState = { app?: PortalApp; fromTabId: string; cat?: PortalCategory | null } | null;
+type CarryState = { app?: PortalCard; fromSpaceId: string; cat?: PortalCategory | null } | null;
 type ResizeLiveState = { origin: HTMLElement; placeholder: HTMLElement | null } | null;
 type ModalState = { kind: string; [key: string]: unknown };
 function Home() {
@@ -499,15 +404,15 @@ function Home() {
     },
   );
   const [ui, setUi] = useState(DEFAULT_UI_PREFS);
-  const [page, setPage] = useState("tab");
+  const [page, setPage] = useState("space");
   const [health, setHealth] = useState<Record<string, ProbeResult>>({});
   const healthBusy = useRef(false);
   const [drag, setDrag] = useState<DragState>(null);
   const [over, setOver] = useState<OverState>(null);
   const [dragFold, setDragFold] = useState<DragFoldState>(null);
-  const [tabOverflow, setTabOverflow] = useState<string[]>([]);
+  const [spaceOverflow, setTabOverflow] = useState<string[]>([]);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [tabOverMore, setTabOverMore] = useState(false);
+  const [spaceOverMore, setTabOverMore] = useState(false);
   const dragRef = useRef(drag);
   const overRef = useRef(over);
   const didDragRef = useRef(false);
@@ -524,21 +429,21 @@ function Home() {
     openNewCard: () => {},
     focusSearch: (_extra?: string) => {},
   });
-  const tabListRef = useRef<HTMLDivElement>(null);
-  const tabStripRef = useRef<HTMLDivElement>(null);
-  const tabMoreRef = useRef<HTMLDivElement>(null);
+  const spaceListRef = useRef<HTMLDivElement>(null);
+  const spaceStripRef = useRef<HTMLDivElement>(null);
+  const spaceMoreRef = useRef<HTMLDivElement>(null);
   const morePanelRef = useRef<HTMLDivElement>(null);
-  const tabWidthRef = useRef(new Map<string, number>());
+  const spaceWidthRef = useRef(new Map<string, number>());
   const moreOpenRef = useRef(false);
-  const tabOverMoreRef = useRef(false);
+  const spaceOverMoreRef = useRef(false);
   const moreHoverRef = useRef<MoreHoverState>(null);
-  const tabInsertRef = useRef(0);
-  const activeTabRef = useRef(data.activeTabId);
+  const spaceInsertRef = useRef(0);
+  const activeSpaceRef = useRef(data.activeSpaceId);
   const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
   const ghostRef = useRef<HTMLElement | null>(null);
   const markerRef = useRef<HTMLElement | null>(null);
   const carryRef = useRef<CarryState>(null);
-  const tabHoverRef = useRef<TabHoverState>(null);
+  const spaceHoverRef = useRef<SpaceHoverState>(null);
   const catHoverRef = useRef<CatHoverState>(null);
   const dragFoldRef = useRef<DragFoldState>(null);
   const dragPtrRef = useRef({
@@ -561,7 +466,7 @@ function Home() {
   queryRef.current = query;
   pageRef.current = page;
   tokenRef.current = token;
-  activeTabRef.current = data.activeTabId;
+  activeSpaceRef.current = data.activeSpaceId;
   function unbindDrag() {
     unbindDragRef.current?.();
     unbindDragRef.current = null;
@@ -588,26 +493,26 @@ function Home() {
     const loop = () => {
       dragScrollRafRef.current = 0;
       if (!dragRef.current) return;
-      nudgeScroll(dragPtrRef.current.x, dragPtrRef.current.y, tabListRef.current);
+      nudgeScroll(dragPtrRef.current.x, dragPtrRef.current.y, spaceListRef.current);
       dragScrollRafRef.current = requestAnimationFrame(loop);
     };
     dragScrollRafRef.current = requestAnimationFrame(loop);
   }
   function clearCarry() {
     carryRef.current = null;
-    tabHoverRef.current = null;
+    spaceHoverRef.current = null;
     catHoverRef.current = null;
     dragFoldRef.current = null;
     stopDragScroll();
     setDragFold(null);
   }
-  function canEditTabId(tabId: string) {
-    return sessionCanEditTab(sessionRef.current, tabId);
+  function canEditSpaceId(spaceId: string) {
+    return sessionCanEditSpace(sessionRef.current, spaceId);
   }
   function hitMoreSlot(clientX: number, clientY: number) {
     const pad = 12;
     const panel = morePanelRef.current;
-    const wrap = tabMoreRef.current;
+    const wrap = spaceMoreRef.current;
     if (panel) {
       const r = panel.getBoundingClientRect();
       const w = wrap?.getBoundingClientRect();
@@ -634,49 +539,49 @@ function Home() {
     }
     return false;
   }
-  function hitTabCarry(clientX: number, clientY: number): { tabId: string; blocked: boolean } | null {
+  function hitSpaceCarry(clientX: number, clientY: number): { spaceId: string; blocked: boolean } | null {
     const stack = document.elementsFromPoint(clientX, clientY);
     for (const node of stack) {
       if (!(node instanceof HTMLElement)) continue;
       if (node === ghostRef.current) continue;
-      const el = node.closest("[data-tab-id]");
-      const tabId = (el as HTMLElement | null)?.dataset?.tabId;
-      if (!tabId) continue;
-      if (!canEditTabId(tabId))
+      const el = node.closest("[data-space-id]");
+      const spaceId = (el as HTMLElement | null)?.dataset?.spaceId;
+      if (!spaceId) continue;
+      if (!canEditSpaceId(spaceId))
         return {
-          tabId,
+          spaceId,
           blocked: true,
         };
       return {
-        tabId,
+        spaceId,
         blocked: false,
       };
     }
     return null;
   }
-  function overForCarry(tabId: string): OverState {
+  function overForCarry(spaceId: string): OverState {
     const cur = dataRef.current;
     const cats =
-      (cur.catalog ?? []).find((t) => t.id === tabId)?.categories ||
-      (tabId === cur.activeTabId ? cur.categories : []);
+      (cur.catalog ?? []).find((t) => t.id === spaceId)?.categories ||
+      (spaceId === cur.activeSpaceId ? cur.categories : []);
     const cat = cats[0];
     const appId = carryRef.current?.app?.id;
     if (!cat)
       return {
-        kind: "tab-carry",
-        tabId,
+        kind: "space-carry",
+        spaceId,
       };
     return {
-      kind: "app",
+      kind: "card",
       catId: cat.id,
-      insertAt: cat.apps.filter((a) => a.id !== appId).length,
+      insertAt: cat.cards.filter((a) => a.id !== appId).length,
     };
   }
-  function overForCarryCat(tabId: string): OverState {
+  function overForCarryCat(spaceId: string): OverState {
     const cur = dataRef.current;
     const cats =
-      (cur.catalog ?? []).find((t) => t.id === tabId)?.categories ||
-      (tabId === cur.activeTabId ? cur.categories : []);
+      (cur.catalog ?? []).find((t) => t.id === spaceId)?.categories ||
+      (spaceId === cur.activeSpaceId ? cur.categories : []);
     return {
       kind: "cat",
       insertAt: cats.filter((c) => c.id !== dragRef.current?.id).length,
@@ -692,9 +597,9 @@ function Home() {
     ghostRef.current?.remove();
     const r = rect || from.getBoundingClientRect();
     const node = from.cloneNode(true) as HTMLElement;
-    node.removeAttribute("data-app-id");
+    node.removeAttribute("data-card-id");
     node.removeAttribute("data-cat-id");
-    node.removeAttribute("data-tab-id");
+    node.removeAttribute("data-space-id");
     node.classList.add("drag-ghost");
     node.style.position = "fixed";
     node.style.left = `${r.left}px`;
@@ -721,40 +626,40 @@ function Home() {
   function finishAppDrag(ev?: { clientX: number; clientY: number }) {
     const x = ev?.clientX ?? dragPtrRef.current.x;
     const y = ev?.clientY ?? dragPtrRef.current.y;
-    const tabHit = hitTabCarry(x, y);
+    const tabHit = hitSpaceCarry(x, y);
     if (tabHit?.blocked) {
       unbindDrag();
       if (didDragRef.current) swallowGhostClick();
       killGhost();
-      const from = carryRef.current?.fromTabId;
+      const from = carryRef.current?.fromSpaceId;
       clearCarry();
       setDrag(null);
       setOver(null);
       setDragUi(false);
-      if (from && from !== dataRef.current.activeTabId) goTab(from);
+      if (from && from !== dataRef.current.activeSpaceId) goSpace(from);
       toast.error(t("toast.noEditTab"));
       return;
     }
-    if (tabHit?.tabId) {
+    if (tabHit?.spaceId) {
       unbindDrag();
       if (didDragRef.current) swallowGhostClick();
       killGhost();
-      const from = carryRef.current?.fromTabId;
+      const from = carryRef.current?.fromSpaceId;
       clearCarry();
       setDrag(null);
       setOver(null);
       setDragUi(false);
-      if (from && from !== dataRef.current.activeTabId) goTab(from);
+      if (from && from !== dataRef.current.activeSpaceId) goSpace(from);
       return;
     }
     unbindDrag();
     if (didDragRef.current) swallowGhostClick();
     commitDrag();
   }
-  function bindTabDrag(tabId: string, origin: HTMLElement | null) {
+  function bindSpaceDrag(spaceId: string, origin: HTMLElement | null) {
     unbindDrag();
     const move = (ev: PointerEvent) => {
-      if (dragRef.current?.kind !== "tab" || dragRef.current.id !== tabId) return;
+      if (dragRef.current?.kind !== "space" || dragRef.current.id !== spaceId) return;
       const o = dragOriginRef.current;
       if ((o ? Math.hypot(ev.clientX - o.x, ev.clientY - o.y) : 0) > 10 && !didDragRef.current) {
         didDragRef.current = true;
@@ -763,7 +668,7 @@ function Home() {
           spawnGhost(origin, ev);
           if (ghostRef.current) ghostRef.current.style.zIndex = "95";
         }
-        if (tabOverflow.length) setMoreOpen(true);
+        if (spaceOverflow.length) setMoreOpen(true);
       }
       if (!didDragRef.current) return;
       dragPtrRef.current = {
@@ -771,8 +676,8 @@ function Home() {
         y: ev.clientY,
       };
       moveGhost(ev.clientX, ev.clientY);
-      const row = tabListRef.current?.getBoundingClientRect();
-      const more = tabMoreRef.current?.getBoundingClientRect();
+      const row = spaceListRef.current?.getBoundingClientRect();
+      const more = spaceMoreRef.current?.getBoundingClientRect();
       const overBar =
         row &&
         ev.clientY >= row.top - 8 &&
@@ -781,50 +686,50 @@ function Home() {
         ev.clientX < (more ? more.left - 8 : row.right);
       if (overBar) {
         const dragTab = dragRef.current;
-        const stripTabs = tabListRef.current
-          ? [...tabListRef.current.querySelectorAll<HTMLElement>(".tab-item[data-tab-id]")].filter(
+        const stripTabs = spaceListRef.current
+          ? [...spaceListRef.current.querySelectorAll<HTMLElement>(".tab-item[data-space-id]")].filter(
               (el) => !el.classList.contains("is-overflow") && el.offsetWidth,
             )
           : [];
         const last = stripTabs[stripTabs.length - 1];
         const atEnd =
-          dragTab?.kind === "tab" && last
+          dragTab?.kind === "space" && last
             ? ev.clientX >= last.getBoundingClientRect().right + 8
             : false;
-        if (atEnd && dragTab && tabOverflow.includes(dragTab.id)) {
-          tabOverMoreRef.current = true;
+        if (atEnd && dragTab && spaceOverflow.includes(dragTab.id)) {
+          spaceOverMoreRef.current = true;
           setTabOverMore(true);
         } else {
-          tabOverMoreRef.current = false;
+          spaceOverMoreRef.current = false;
           setTabOverMore(false);
         }
       } else {
         const inMore = hitMoreSlot(ev.clientX, ev.clientY);
         if (inMore) {
           setMoreOpen(true);
-          tabOverMoreRef.current = true;
+          spaceOverMoreRef.current = true;
           setTabOverMore(true);
         }
       }
       const insertAt = tabInsertAt(
         ev.clientX,
         ev.clientY,
-        tabId,
-        tabOverMoreRef.current,
+        spaceId,
+        spaceOverMoreRef.current,
       );
-      tabInsertRef.current = insertAt;
+      spaceInsertRef.current = insertAt;
       setOver((cur) =>
-        cur?.kind === "tab" && cur.insertAt === insertAt
+        cur?.kind === "space" && cur.insertAt === insertAt
           ? cur
           : {
-              kind: "tab",
+              kind: "space",
               insertAt,
             },
       );
     };
     const up = () => {
       unbindDrag();
-      endTabPointer(tabId, didDragRef.current);
+      endSpacePointer(spaceId, didDragRef.current);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up, {
@@ -841,8 +746,8 @@ function Home() {
   }
   function openMoveCat(
     category: PortalCategory,
-    fromTabId: string | undefined,
-    destTabId: string,
+    fromSpaceId: string | undefined,
+    destSpaceId: string,
     insertAt: number | undefined,
   ) {
     setBusy(true);
@@ -850,7 +755,7 @@ function Home() {
       data: {
         token: tokenRef.current,
         categoryId: category.id,
-        destTabId,
+        destSpaceId,
       },
     })
       .then((impact: CategoryMoveImpact & { insertAt?: number }) =>
@@ -885,9 +790,9 @@ function Home() {
         startDragScroll();
       }
       if (!didDragRef.current) return;
-      nudgeScroll(ev.clientX, ev.clientY, tabListRef.current);
+      nudgeScroll(ev.clientX, ev.clientY, spaceListRef.current);
       moveGhost(ev.clientX, ev.clientY);
-      const tabHit = hitTabCarry(ev.clientX, ev.clientY);
+      const tabHit = hitSpaceCarry(ev.clientX, ev.clientY);
       const moreHit = hitMoreSlot(ev.clientX, ev.clientY);
       if (moreHit && !tabHit) {
         const hover = moreHoverRef.current;
@@ -897,29 +802,29 @@ function Home() {
       }
       if (tabHit && !tabHit.blocked) {
         setOver({
-          kind: "tab-carry",
-          tabId: tabHit.tabId,
+          kind: "space-carry",
+          spaceId: tabHit.spaceId,
         });
-        if (tabHit.tabId !== dataRef.current.activeTabId) {
-          const hover = tabHoverRef.current;
-          if (!hover || hover.tabId !== tabHit.tabId)
-            tabHoverRef.current = {
-              tabId: tabHit.tabId,
+        if (tabHit.spaceId !== dataRef.current.activeSpaceId) {
+          const hover = spaceHoverRef.current;
+          if (!hover || hover.spaceId !== tabHit.spaceId)
+            spaceHoverRef.current = {
+              spaceId: tabHit.spaceId,
               at: Date.now(),
             };
           else if (Date.now() - hover.at > 320) {
-            goTab(tabHit.tabId);
+            goSpace(tabHit.spaceId);
             setMoreOpen(false);
-            setOver(overForCarryCat(tabHit.tabId));
-            tabHoverRef.current = {
-              tabId: tabHit.tabId,
+            setOver(overForCarryCat(tabHit.spaceId));
+            spaceHoverRef.current = {
+              spaceId: tabHit.spaceId,
               at: Number.POSITIVE_INFINITY,
             };
           }
         }
         return;
       }
-      tabHoverRef.current = null;
+      spaceHoverRef.current = null;
       moreHoverRef.current = null;
       if (moreOpenRef.current && !moreHit) setMoreOpen(false);
       const insertAt = hitCatInsert(ev.clientY, catId);
@@ -943,32 +848,32 @@ function Home() {
         return;
       }
       swallowGhostClick();
-      const from = carryRef.current?.fromTabId;
+      const from = carryRef.current?.fromSpaceId;
       const cat =
         carryRef.current?.cat || dataRef.current.categories.find((c) => c.id === catId);
-      const tabHit = hitTabCarry(ev.clientX, ev.clientY);
+      const tabHit = hitSpaceCarry(ev.clientX, ev.clientY);
       if (tabHit?.blocked) {
         setDrag(null);
         setOver(null);
         setDragUi(false);
-        if (from && from !== dataRef.current.activeTabId) goTab(from);
+        if (from && from !== dataRef.current.activeSpaceId) goSpace(from);
         clearCarry();
         toast.error(t("toast.noEditTab"));
         return;
       }
-      const destTabId =
-        tabHit?.tabId && tabHit.tabId !== from
-          ? tabHit.tabId
-          : from && dataRef.current.activeTabId !== from
-            ? dataRef.current.activeTabId
+      const destSpaceId =
+        tabHit?.spaceId && tabHit.spaceId !== from
+          ? tabHit.spaceId
+          : from && dataRef.current.activeSpaceId !== from
+            ? dataRef.current.activeSpaceId
             : null;
       const insertAt = overRef.current?.kind === "cat" ? overRef.current.insertAt : undefined;
-      if (destTabId && cat) {
+      if (destSpaceId && cat) {
         setDrag(null);
         setOver(null);
         setDragUi(false);
         clearCarry();
-        openMoveCat(cat, from, destTabId, insertAt);
+        openMoveCat(cat, from, destSpaceId, insertAt);
         return;
       }
       clearCarry();
@@ -987,13 +892,13 @@ function Home() {
       window.removeEventListener("pointercancel", up);
     };
   }
-  function bindAppDrag(appId: string, origin: HTMLElement) {
+  function bindCardDrag(appId: string, origin: HTMLElement) {
     unbindDrag();
     const sourceCatId =
       origin.closest<HTMLElement>("[data-cat-id]")?.dataset?.catId ||
-      dataRef.current.categories.find((c) => c.apps.some((a) => a.id === appId))?.id;
+      dataRef.current.categories.find((c) => c.cards.some((a) => a.id === appId))?.id;
     const move = (ev: PointerEvent) => {
-      if (dragRef.current?.kind !== "app" || dragRef.current.id !== appId) return;
+      if (dragRef.current?.kind !== "card" || dragRef.current.id !== appId) return;
       dragPtrRef.current = {
         x: ev.clientX,
         y: ev.clientY,
@@ -1006,9 +911,9 @@ function Home() {
         startDragScroll();
       }
       if (!didDragRef.current) return;
-      nudgeScroll(ev.clientX, ev.clientY, tabListRef.current);
+      nudgeScroll(ev.clientX, ev.clientY, spaceListRef.current);
       moveGhost(ev.clientX, ev.clientY);
-      const tabHit = hitTabCarry(ev.clientX, ev.clientY);
+      const tabHit = hitSpaceCarry(ev.clientX, ev.clientY);
       const moreHit = hitMoreSlot(ev.clientX, ev.clientY);
       if (moreHit && !tabHit) {
         const hover = moreHoverRef.current;
@@ -1018,31 +923,31 @@ function Home() {
       }
       if (tabHit && !tabHit.blocked) {
         setOver({
-          kind: "tab-carry",
-          tabId: tabHit.tabId,
+          kind: "space-carry",
+          spaceId: tabHit.spaceId,
         });
-        if (tabHit.tabId !== dataRef.current.activeTabId) {
-          const hover = tabHoverRef.current;
-          if (!hover || hover.tabId !== tabHit.tabId)
-            tabHoverRef.current = {
-              tabId: tabHit.tabId,
+        if (tabHit.spaceId !== dataRef.current.activeSpaceId) {
+          const hover = spaceHoverRef.current;
+          if (!hover || hover.spaceId !== tabHit.spaceId)
+            spaceHoverRef.current = {
+              spaceId: tabHit.spaceId,
               at: Date.now(),
             };
           else if (Date.now() - hover.at > 320) {
-            const dest = (dataRef.current.catalog ?? []).find((t) => t.id === tabHit.tabId);
+            const dest = (dataRef.current.catalog ?? []).find((t) => t.id === tabHit.spaceId);
             if (!dest?.categories?.length) {
               toast.error(t("toast.needCategory"));
-              tabHoverRef.current = {
-                tabId: tabHit.tabId,
+              spaceHoverRef.current = {
+                spaceId: tabHit.spaceId,
                 at: Number.POSITIVE_INFINITY,
               };
               return;
             }
-            goTab(tabHit.tabId);
+            goSpace(tabHit.spaceId);
             setMoreOpen(false);
-            setOver(overForCarry(tabHit.tabId));
-            tabHoverRef.current = {
-              tabId: tabHit.tabId,
+            setOver(overForCarry(tabHit.spaceId));
+            spaceHoverRef.current = {
+              spaceId: tabHit.spaceId,
               at: Number.POSITIVE_INFINITY,
             };
             if (dataRef.current.settings.cardDragCollapse !== false) {
@@ -1062,7 +967,7 @@ function Home() {
         }
         return;
       }
-      tabHoverRef.current = null;
+      spaceHoverRef.current = null;
       moreHoverRef.current = null;
       if (moreOpenRef.current && !moreHit) setMoreOpen(false);
       if (
@@ -1125,7 +1030,7 @@ function Home() {
       const hit = hitAppInsert(ev.clientX, ev.clientY, appId);
       if (!hit) return;
       const cur = overRef.current;
-      if (cur?.kind === "app" && cur.catId === hit.catId && cur.insertAt === hit.insertAt) return;
+      if (cur?.kind === "card" && cur.catId === hit.catId && cur.insertAt === hit.insertAt) return;
       setOver(hit);
     };
     const up = (ev: PointerEvent) => finishAppDrag(ev);
@@ -1142,7 +1047,7 @@ function Home() {
       window.removeEventListener("pointercancel", up);
     };
   }
-  function bindAppResize(app: PortalApp, origin: HTMLElement, edge: { x: number; y: number }, ev: { clientX: number; clientY: number; pointerId: number }) {
+  function bindAppResize(app: PortalCard, origin: HTMLElement, edge: { x: number; y: number }, ev: { clientX: number; clientY: number; pointerId: number }) {
     unbindDrag();
     endLiveResize();
     const grid = origin.closest<HTMLElement>("[data-app-grid]");
@@ -1243,16 +1148,16 @@ function Home() {
       }
     };
   }
-  function persistAppSpan(app: PortalApp, colSpan: 1 | 2 | 3, rowSpan: 1 | 2 | 3) {
+  function persistAppSpan(app: PortalCard, colSpan: 1 | 2 | 3, rowSpan: 1 | 2 | 3) {
     const current = dataRef.current;
     const categoryId =
-      app.categoryId || current.categories.find((c) => c.apps.some((a) => a.id === app.id))?.id;
+      app.categoryId || current.categories.find((c) => c.cards.some((a) => a.id === app.id))?.id;
     if (!categoryId) return;
     if (spanSize(app.colSpan) === colSpan && spanSize(app.rowSpan) === rowSpan) return;
     const snapshot = current.categories;
     const nextCats = current.categories.map((c) => ({
       ...c,
-      apps: c.apps.map((a) =>
+      apps: c.cards.map((a) =>
         a.id === app.id
           ? {
               ...a,
@@ -1266,7 +1171,7 @@ function Home() {
       ...current,
       categories: nextCats,
     });
-    updateApp({
+    updateCard({
       data: {
         token: tokenRef.current,
         id: app.id,
@@ -1366,7 +1271,7 @@ function Home() {
       dragRef.current = null;
       overRef.current = null;
       carryRef.current = null;
-      tabHoverRef.current = null;
+      spaceHoverRef.current = null;
       if (dragScrollRafRef.current) cancelAnimationFrame(dragScrollRafRef.current);
       dragScrollRafRef.current = 0;
       setDrag(null);
@@ -1451,7 +1356,7 @@ function Home() {
         // ignore
       }
       const next = await getPortal({
-        data: { token: res.token, tabId: data.activeTabId },
+        data: { token: res.token, spaceId: data.activeSpaceId },
       });
       setData(next);
     } catch {
@@ -1747,7 +1652,7 @@ function Home() {
       requestEdit();
       return;
     }
-    if (!sessionCanEditTab(sess, cur.activeTabId)) {
+    if (!sessionCanEditSpace(sess, cur.activeSpaceId)) {
       toast.error(t("toast.noEditTab"));
       return;
     }
@@ -1758,7 +1663,7 @@ function Home() {
       return;
     }
     setModal({
-      kind: "app",
+      kind: "card",
       categoryId: cat.id,
     });
   }
@@ -1767,9 +1672,9 @@ function Home() {
     openNewCard,
     focusSearch,
   };
-  function duplicateApp(app: PortalApp, categoryId: string) {
+  function duplicateApp(app: PortalCard, categoryId: string) {
     apply(async () => {
-      const next = await createApp({
+      const next = await createCard({
         data: {
           token,
           categoryId,
@@ -1790,12 +1695,12 @@ function Home() {
       return next;
     });
   }
-  function duplicateCategory(cat: PortalCategory, tabId: string) {
+  function duplicateCategory(cat: PortalCategory, spaceId: string) {
     apply(async () => {
       const next = await createCategory({
         data: {
           token,
-          tabId,
+          spaceId,
           name: copyLabel(cat.name, t("item.category")),
           icon: cat.icon || "Folder",
           restricted: Boolean(cat.restricted),
@@ -1808,8 +1713,8 @@ function Home() {
     });
   }
   function sortCategoryCards(cat: PortalCategory) {
-    if (!cat?.apps?.length) return;
-    const nextDir = appsAlphaDir(cat.apps, data.settings.locale) === "az" ? "za" : "alpha";
+    if (!cat?.cards?.length) return;
+    const nextDir = cardsAlphaDir(cat.cards, data.settings.locale) === "az" ? "za" : "alpha";
     apply(async () => {
       const next = await arrangeCategory({
         data: {
@@ -1825,7 +1730,7 @@ function Home() {
     });
   }
   function catSortButton(cat: PortalCategory) {
-    const za = appsAlphaDir(cat.apps, data.settings.locale) === "az";
+    const za = cardsAlphaDir(cat.cards, data.settings.locale) === "az";
     return (
       <button
         type="button"
@@ -1840,7 +1745,7 @@ function Home() {
     );
   }
   async function resetCategoryCards(cat: PortalCategory) {
-    if (!cat?.apps?.length) return;
+    if (!cat?.cards?.length) return;
     if (
       !(await askConfirm({
         title: t("cat.resetLayout"),
@@ -1863,9 +1768,9 @@ function Home() {
       close: false,
     });
   }
-  function duplicateSpace(tab: MenuTab) {
+  function cloneSpace(tab: MenuSpace) {
     apply(async () => {
-      const next = await duplicateTab({
+      const next = await duplicateSpace({
         data: {
           token,
           id: tab.id,
@@ -1875,10 +1780,10 @@ function Home() {
       return next;
     });
   }
-  function bumpClick(app: PortalApp) {
+  function bumpClick(app: PortalCard) {
     if ((app.kind || "app") !== "app") return;
     setData((cur) => {
-      const bump = (item: PortalApp) =>
+      const bump = (item: PortalCard) =>
         item.id === app.id
           ? {
               ...item,
@@ -1889,13 +1794,13 @@ function Home() {
         ...cur,
         categories: cur.categories.map((c) => ({
           ...c,
-          apps: c.apps.map(bump),
+          apps: c.cards.map(bump),
         })),
         catalog: (cur.catalog ?? []).map((t) => ({
           ...t,
           categories: t.categories.map((c) => ({
             ...c,
-            apps: c.apps.map(bump),
+            apps: c.cards.map(bump),
           })),
         })),
       };
@@ -1923,7 +1828,7 @@ function Home() {
       })
       .catch(() => void 0);
   }
-  async function recheckApp(app: PortalApp) {
+  async function recheckApp(app: PortalCard) {
     if (!app.check || app.check === "off") return;
     try {
       const row = (
@@ -1943,20 +1848,20 @@ function Home() {
       toast.error(te(err));
     }
   }
-  async function switchTab(tabId: string) {
-    if (tabId === dataRef.current.activeTabId) return;
+  async function switchSpace(spaceId: string) {
+    if (spaceId === dataRef.current.activeSpaceId) return;
     const current = dataRef.current;
-    const entry = (current.catalog ?? []).find((t) => t.id === tabId);
-    activeTabRef.current = tabId;
+    const entry = (current.catalog ?? []).find((t) => t.id === spaceId);
+    activeSpaceRef.current = spaceId;
     if (entry) {
       setData({
         ...current,
-        activeTabId: tabId,
+        activeSpaceId: spaceId,
         categories: entry.categories,
       });
-      rememberTab({
+      rememberSpace({
         data: {
-          tabId,
+          spaceId,
           token: token || void 0,
         },
       }).catch(() => void 0);
@@ -1965,24 +1870,24 @@ function Home() {
     try {
       const next = await getPortal({
         data: {
-          tabId,
+          spaceId,
           token: token || void 0,
         },
       });
-      if (activeTabRef.current === tabId) setData(next);
+      if (activeSpaceRef.current === spaceId) setData(next);
     } catch (err) {
       if (sessionGone(err)) return;
       toast.error(te(err));
     }
   }
-  function goTab(tabId: string) {
-    setPage("tab");
-    if (tabId !== dataRef.current.activeTabId) switchTab(tabId);
+  function goSpace(spaceId: string) {
+    setPage("space");
+    if (spaceId !== dataRef.current.activeSpaceId) switchSpace(spaceId);
   }
-  function tabHasCards(tabId: string) {
-    const row = (data.catalog ?? []).find((t) => t.id === tabId);
-    const cats = row?.categories || (tabId === data.activeTabId ? data.categories : []);
-    return (cats || []).some((c) => (c.apps || []).length);
+  function spaceHasCards(spaceId: string) {
+    const row = (data.catalog ?? []).find((t) => t.id === spaceId);
+    const cats = row?.categories || (spaceId === data.activeSpaceId ? data.categories : []);
+    return (cats || []).some((c) => (c.cards || []).length);
   }
   function toggleFav(id: string) {
     setUi((cur) => {
@@ -2016,7 +1921,7 @@ function Home() {
   }
   function resetLocalPrefs() {
     setUi(clearUiPrefs());
-    setPage("tab");
+    setPage("space");
     try {
       document.documentElement.classList.remove("dark");
       document.documentElement.classList.add("light");
@@ -2030,14 +1935,14 @@ function Home() {
   const searching = query.trim().length > 0 || tagFilter.length > 0 || downFilter;
   function isCatCollapsed(catId: string) {
     if (searching) return false;
-    if (drag?.kind === "app" && dragFold?.left) return catId !== dragFold.openId;
+    if (drag?.kind === "card" && dragFold?.left) return catId !== dragFold.openId;
     return collapsedSet.has(catId);
   }
   const onFavs = page === "favs" && !searching;
-  const canEditActive = sessionCanEditTab(session, data.activeTabId);
-  const canEditTab = (tabId: string) => sessionCanEditTab(session, tabId);
-  const canMoveActive = sessionCanMoveTab(session, data.activeTabId);
-  const canReorderTabs = Boolean(
+  const canEditActive = sessionCanEditSpace(session, data.activeSpaceId);
+  const canEditSpace = (spaceId: string) => sessionCanEditSpace(session, spaceId);
+  const canMoveActive = sessionCanMoveSpace(session, data.activeSpaceId);
+  const canReorderSpaces = Boolean(
     editMode && !searching && (sessionCanCreateSpaces(session) || session?.canMove),
   );
   const canDrag = editMode && !searching && page !== "favs" && canMoveActive;
@@ -2095,11 +2000,11 @@ function Home() {
               ...c,
               apps:
                 catHit && tags.length === 0 && !downSet
-                  ? c.apps
-                  : c.apps.filter((a) => itemMatches(a, s, tags, downSet)),
+                  ? c.cards
+                  : c.cards.filter((a) => itemMatches(a, s, tags, downSet)),
             };
           })
-          .filter((c) => c.apps.length > 0);
+          .filter((c) => c.cards.length > 0);
         return {
           ...tab,
           categories,
@@ -2134,26 +2039,26 @@ function Home() {
     const groups = [];
     for (const tab of data.catalog ?? [])
       for (const cat of tab.categories) {
-        const apps = cat.apps
+        const apps = cat.cards
           .filter((a) => favSet.has(a.id) && allowsFavorite(a, data.settings))
           .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
         if (apps.length)
           groups.push({
             tab,
             cat,
-            apps,
+            cards: apps,
           });
       }
     return groups;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- settings-only fields used; catalog/favSet/ui.favIds cover the rest
   }, [data.catalog, favSet, ui.favIds]);
-  const favCount = favGroups.reduce((n, g) => n + g.apps.length, 0);
+  const favCount = favGroups.reduce((n, g) => n + g.cards.length, 0);
   const probeList = useMemo(() => {
     if (data.settings.healthChecks === false) return [];
     const out = [];
     for (const tab of data.catalog ?? [])
       for (const cat of tab.categories)
-        for (const app of cat.apps) {
+        for (const app of cat.cards) {
           if ((app.kind || "app") !== "app" || app.check === "off" || !app.check) continue;
           if (app.check === "http")
             out.push({
@@ -2236,66 +2141,66 @@ function Home() {
     if (searching) return searchHits.flatMap((t) => t.categories);
     return data.categories;
   }, [searching, searchHits, data.categories]);
-  const carryFromTabId = carryRef.current?.fromTabId;
-  const carryDestTabId =
-    over?.kind === "tab-carry"
-      ? over.tabId
-      : carryFromTabId && carryFromTabId !== data.activeTabId
-        ? data.activeTabId
+  const carryFromSpaceId = carryRef.current?.fromSpaceId;
+  const carryDestSpaceId =
+    over?.kind === "space-carry"
+      ? over.spaceId
+      : carryFromSpaceId && carryFromSpaceId !== data.activeSpaceId
+        ? data.activeSpaceId
         : null;
-  const displayTabs = useMemo(() => {
-    let tabs = data.tabs;
+  const displaySpaces = useMemo(() => {
+    let tabs = data.spaces;
     if (
-      canReorderTabs &&
+      canReorderSpaces &&
       drag &&
       over &&
-      drag.kind === "tab" &&
-      over.kind === "tab" &&
-      !tabOverMore
+      drag.kind === "space" &&
+      over.kind === "space" &&
+      !spaceOverMore
     )
-      tabs = placeTabs(data.tabs, drag.id, over.insertAt) ?? data.tabs;
+      tabs = placeSpaces(data.spaces, drag.id, over.insertAt) ?? data.spaces;
     if (editMode || searching) return tabs;
-    return tabs.filter((t) => tabHasCards(t.id));
+    return tabs.filter((t) => spaceHasCards(t.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- helper reads refs; list identity deps cover the recompute
   }, [
-    data.tabs,
+    data.spaces,
     data.catalog,
     data.categories,
-    data.activeTabId,
-    canReorderTabs,
+    data.activeSpaceId,
+    canReorderSpaces,
     drag,
     over,
     editMode,
     searching,
-    tabOverMore,
+    spaceOverMore,
   ]);
-  const moreMenuTabs = displayTabs.filter(
-    (tab) => tabOverflow.includes(tab.id) && !(drag?.kind === "tab" && drag.id === tab.id),
+  const moreMenuSpaces = displaySpaces.filter(
+    (tab) => spaceOverflow.includes(tab.id) && !(drag?.kind === "space" && drag.id === tab.id),
   );
   const moreGapAt =
-    drag?.kind === "tab" && tabOverMore && over?.kind === "tab"
-      ? data.tabs
+    drag?.kind === "space" && spaceOverMore && over?.kind === "space"
+      ? data.spaces
           .map((t) => t.id)
           .filter((id) => id !== drag.id)
           .slice(0, over.insertAt)
-          .filter((id) => tabOverflow.includes(id)).length
+          .filter((id) => spaceOverflow.includes(id)).length
       : -1;
   useEffect(() => {
     if (editMode || searching || page !== "tab") return;
-    if (tabHasCards(data.activeTabId)) return;
-    const next = (data.tabs || []).find((t) => t.id !== data.activeTabId && tabHasCards(t.id));
-    if (next) goTab(next.id);
+    if (spaceHasCards(data.activeSpaceId)) return;
+    const next = (data.spaces || []).find((t) => t.id !== data.activeSpaceId && spaceHasCards(t.id));
+    if (next) goSpace(next.id);
     else setPage("favs");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redirect-on-empty guard; helpers read refs, run on data change only
-  }, [editMode, searching, page, data.activeTabId, data.catalog, data.tabs]);
+  }, [editMode, searching, page, data.activeSpaceId, data.catalog, data.spaces]);
   moreOpenRef.current = moreOpen;
-  tabOverMoreRef.current = tabOverMore;
+  spaceOverMoreRef.current = spaceOverMore;
   useLayoutEffect(() => {
-    const row = tabListRef.current;
-    const strip = tabStripRef.current;
+    const row = spaceListRef.current;
+    const strip = spaceStripRef.current;
     if (!row || !strip) return;
     const compute = () => {
-      if (dragRef.current?.kind === "tab") return;
+      if (dragRef.current?.kind === "space") return;
       const gap = Number.parseFloat(getComputedStyle(strip).gap) || 0;
       const avail = strip.clientWidth;
       if (!avail) return;
@@ -2305,15 +2210,15 @@ function Home() {
       const plusW = plus?.offsetWidth || 0;
       const moreEl = strip.querySelector<HTMLElement>("[data-tab-slot=more]");
       const moreW = moreEl?.offsetWidth || 0;
-      for (const el of strip.querySelectorAll<HTMLElement>(".tab-item[data-tab-id]")) {
+      for (const el of strip.querySelectorAll<HTMLElement>(".tab-item[data-space-id]")) {
         if (el.classList.contains("is-overflow")) continue;
-        const id = el.dataset.tabId;
-        if (id && el.offsetWidth) tabWidthRef.current.set(id, el.offsetWidth);
+        const id = el.dataset.spaceId;
+        if (id && el.offsetWidth) spaceWidthRef.current.set(id, el.offsetWidth);
       }
-      const activeId = page === "favs" ? null : data.activeTabId;
-      const hid = pickVisibleTabIds(
-        displayTabs,
-        tabWidthRef.current,
+      const activeId = page === "favs" ? null : data.activeSpaceId;
+      const hid = pickVisibleSpaceIds(
+        displaySpaces,
+        spaceWidthRef.current,
         activeId,
         avail,
         favW,
@@ -2330,13 +2235,13 @@ function Home() {
     ro.observe(row);
     ro.observe(strip);
     return () => ro.disconnect();
-  }, [displayTabs, editMode, data.activeTabId, page, canReorderTabs, searching, drag?.kind]);
+  }, [displaySpaces, editMode, data.activeSpaceId, page, canReorderSpaces, searching, drag?.kind]);
   useEffect(() => {
-    if (!tabOverflow.length && moreOpen) setMoreOpen(false);
-  }, [tabOverflow, moreOpen]);
+    if (!spaceOverflow.length && moreOpen) setMoreOpen(false);
+  }, [spaceOverflow, moreOpen]);
   useLayoutEffect(() => {
     if (!moreOpen) return;
-    const btn = tabMoreRef.current?.querySelector(".tab-more");
+    const btn = spaceMoreRef.current?.querySelector(".tab-more");
     const panel = morePanelRef.current;
     if (!btn || !panel) return;
     const place = () => {
@@ -2353,9 +2258,9 @@ function Home() {
   useEffect(() => {
     if (!moreOpen) return;
     const close = (e: PointerEvent) => {
-      if (dragRef.current?.kind === "tab") return;
+      if (dragRef.current?.kind === "space") return;
       if (
-        tabMoreRef.current?.contains(e.target as Node) ||
+        spaceMoreRef.current?.contains(e.target as Node) ||
         morePanelRef.current?.contains(e.target as Node)
       )
         return;
@@ -2383,16 +2288,16 @@ function Home() {
       }
       if (over.kind === "cat") return placeCategory(base, drag.id, over.insertAt) ?? base;
     }
-    if (drag.kind === "app") {
+    if (drag.kind === "card") {
       const carry = carryRef.current;
-      const inView = base.some((c) => c.apps.some((a) => a.id === drag.id));
+      const inView = base.some((c) => c.cards.some((a) => a.id === drag.id));
       if (carry && !inView) {
-        const catId = over.kind === "app" && over.catId ? over.catId : base[0]?.id;
-        const insertAt = over.kind === "app" ? over.insertAt : base[0]?.apps.length || 0;
+        const catId = over.kind === "card" && over.catId ? over.catId : base[0]?.id;
+        const insertAt = over.kind === "card" ? over.insertAt : base[0]?.cards.length || 0;
         if (!catId) return base;
-        return placeCarriedApp(base, carry.app, catId, insertAt) ?? base;
+        return placeCarriedCard(base, carry.app, catId, insertAt) ?? base;
       }
-      if (over.kind === "app") return placeApp(base, drag.id, over.catId, over.insertAt) ?? base;
+      if (over.kind === "card") return placeCard(base, drag.id, over.catId, over.insertAt) ?? base;
     }
     return base;
   }, [filtered, canDrag, drag, over]);
@@ -2401,37 +2306,37 @@ function Home() {
       JSON.stringify(
         a.map((c) => ({
           id: c.id,
-          apps: c.apps.map((x) => x.id),
+          apps: c.cards.map((x) => x.id),
         })),
       ) ===
       JSON.stringify(
         b.map((c) => ({
           id: c.id,
-          apps: c.apps.map((x) => x.id),
+          apps: c.cards.map((x) => x.id),
         })),
       )
     );
   }
-  function persistMove(app: PortalApp, fromTabId: string, destTabId: string, nextCats: PortalCategory[]) {
+  function persistMove(app: PortalCard, fromSpaceId: string, destSpaceId: string, nextCats: PortalCategory[]) {
     const current = dataRef.current;
     const snapshot = {
       categories: current.categories,
       catalog: current.catalog,
-      activeTabId: current.activeTabId,
+      activeSpaceId: current.activeSpaceId,
     };
-    const dest = nextCats.find((c) => c.apps.some((a) => a.id === app.id));
-    const placed = dest?.apps.find((a) => a.id === app.id);
+    const dest = nextCats.find((c) => c.cards.some((a) => a.id === app.id));
+    const placed = dest?.cards.find((a) => a.id === app.id);
     if (!dest || !placed) return;
     const catalog = (current.catalog ?? []).map((t) => {
-      if (t.id === fromTabId)
+      if (t.id === fromSpaceId)
         return {
           ...t,
           categories: t.categories.map((c) => ({
             ...c,
-            apps: c.apps.filter((a) => a.id !== app.id),
+            apps: c.cards.filter((a) => a.id !== app.id),
           })),
         };
-      if (t.id === destTabId)
+      if (t.id === destSpaceId)
         return {
           ...t,
           categories: nextCats,
@@ -2442,13 +2347,13 @@ function Home() {
       ...current,
       categories: nextCats,
       catalog,
-      activeTabId: destTabId,
+      activeSpaceId: destSpaceId,
     });
-    moveApp({
+    moveCard({
       data: {
         token: tokenRef.current,
         id: app.id,
-        destTabId,
+        destSpaceId,
         destCategoryId: dest.id,
         sortOrder: placed.sortOrder || 1,
       },
@@ -2466,18 +2371,18 @@ function Home() {
         stayEditing();
       });
   }
-  function persistTabs(nextTabs: MenuTab[]) {
+  function persistTabs(nextTabs: MenuSpace[]) {
     const current = dataRef.current;
-    if (nextTabs.map((t) => t.id).join() === current.tabs.map((t) => t.id).join()) return;
-    const snapshot = current.tabs;
+    if (nextTabs.map((t) => t.id).join() === current.spaces.map((t) => t.id).join()) return;
+    const snapshot = current.spaces;
     setData({
       ...current,
-      tabs: nextTabs,
+      spaces: nextTabs,
     });
-    reorderTabs({
+    reorderSpaces({
       data: {
         token,
-        tabId: current.activeTabId,
+        spaceId: current.activeSpaceId,
         order: nextTabs.map((t) => t.id),
       },
     })
@@ -2485,8 +2390,8 @@ function Home() {
         const latest = dataRef.current;
         setData({
           ...next,
-          activeTabId: latest.activeTabId,
-          categories: next.activeTabId === latest.activeTabId ? next.categories : latest.categories,
+          activeSpaceId: latest.activeSpaceId,
+          categories: next.activeSpaceId === latest.activeSpaceId ? next.categories : latest.categories,
         });
         stayEditing();
       })
@@ -2495,7 +2400,7 @@ function Home() {
         toast.error(te(err));
         setData({
           ...current,
-          tabs: snapshot,
+          spaces: snapshot,
         });
         stayEditing();
       });
@@ -2509,7 +2414,7 @@ function Home() {
       categories: nextCats,
     });
     const placements = nextCats.flatMap((c) =>
-      c.apps.map((a, i) => ({
+      c.cards.map((a, i) => ({
         id: a.id,
         categoryId: c.id,
         sortOrder: i + 1,
@@ -2517,34 +2422,34 @@ function Home() {
     );
     const catChanged =
       nextCats.map((c) => c.id).join() !== current.categories.map((c) => c.id).join();
-    const tabId = activeTabRef.current || current.activeTabId;
+    const spaceId = activeSpaceRef.current || current.activeSpaceId;
     (catChanged
       ? reorderCategories({
           data: {
             token,
-            tabId,
+            spaceId,
             order: nextCats.map((c) => c.id),
           },
         }).then(() =>
-          reorderApps({
+          reorderCards({
             data: {
               token,
-              tabId,
+              spaceId,
               placements,
             },
           }),
         )
-      : reorderApps({
+      : reorderCards({
           data: {
             token,
-            tabId,
+            spaceId,
             placements,
           },
         })
     )
       .then((next) => {
         const latest = dataRef.current;
-        if (next.activeTabId !== latest.activeTabId && next.activeTabId !== current.activeTabId) {
+        if (next.activeSpaceId !== latest.activeSpaceId && next.activeSpaceId !== current.activeSpaceId) {
           stayEditing();
           return;
         }
@@ -2577,23 +2482,23 @@ function Home() {
       didDragRef.current = false;
     }, 50);
     if (!d || !o) return;
-    if (d.kind === "tab" && o.kind === "tab") {
-      const next = placeTabs(current.tabs, d.id, o.insertAt);
+    if (d.kind === "space" && o.kind === "space") {
+      const next = placeSpaces(current.spaces, d.id, o.insertAt);
       if (next) persistTabs(next);
       return;
     }
-    if (d.kind === "app" && o.kind === "app") {
+    if (d.kind === "card" && o.kind === "card") {
       const carry = carryRef.current;
-      const destTabId = current.activeTabId;
-      if (carry && carry.fromTabId !== destTabId && carry.app) {
-        const nextCats = placeCarriedApp(current.categories, carry.app, o.catId, o.insertAt);
-        if (nextCats) persistMove(carry.app, carry.fromTabId, destTabId, nextCats);
+      const destSpaceId = current.activeSpaceId;
+      if (carry && carry.fromSpaceId !== destSpaceId && carry.app) {
+        const nextCats = placeCarriedCard(current.categories, carry.app, o.catId, o.insertAt);
+        if (nextCats) persistMove(carry.app, carry.fromSpaceId, destSpaceId, nextCats);
         clearCarry();
         return;
       }
       const next =
-        placeApp(current.categories, d.id, o.catId, o.insertAt) ||
-        (carry && placeCarriedApp(current.categories, carry.app, o.catId, o.insertAt));
+        placeCard(current.categories, d.id, o.catId, o.insertAt) ||
+        (carry && placeCarriedCard(current.categories, carry.app, o.catId, o.insertAt));
       clearCarry();
       if (next) persistLayout(next);
       return;
@@ -2604,7 +2509,7 @@ function Home() {
     }
   }
   function tabInsertAt(clientX: number, clientY: number, dragId: string, forceMore: boolean) {
-    const ids = dataRef.current.tabs.map((t) => t.id).filter((id) => id !== dragId);
+    const ids = dataRef.current.spaces.map((t) => t.id).filter((id) => id !== dragId);
     const panel = morePanelRef.current;
     const useMore = forceMore || Boolean(panel);
     if (useMore && panel) {
@@ -2616,10 +2521,10 @@ function Home() {
           clientY >= box.top &&
           clientY <= box.bottom);
       if (inPanel) {
-        const nodes = [...panel.querySelectorAll<HTMLElement>("[data-tab-id]")];
+        const nodes = [...panel.querySelectorAll<HTMLElement>("[data-space-id]")];
         let last = -1;
         for (const el of nodes) {
-          const id = el.dataset.tabId;
+          const id = el.dataset.spaceId;
           if (!id || id === dragId) continue;
           const at = ids.indexOf(id);
           if (at >= 0) last = at;
@@ -2630,19 +2535,19 @@ function Home() {
       }
     }
     if (forceMore) {
-      const ov = tabOverflow.filter((id) => id !== dragId);
+      const ov = spaceOverflow.filter((id) => id !== dragId);
       if (!ov.length) return ids.length;
       const at = ids.indexOf(ov[0]);
       return at < 0 ? ids.length : at;
     }
-    const root = tabListRef.current;
+    const root = spaceListRef.current;
     if (!root) return ids.length;
-    const nodes = [...root.querySelectorAll<HTMLElement>(".tab-item[data-tab-id]")].filter(
+    const nodes = [...root.querySelectorAll<HTMLElement>(".tab-item[data-space-id]")].filter(
       (el) => !el.classList.contains("is-overflow") && el.offsetWidth,
     );
     let last = -1;
     for (const el of nodes) {
-      const id = el.dataset.tabId;
+      const id = el.dataset.spaceId;
       if (!id || id === dragId) continue;
       const at = ids.indexOf(id);
       if (at >= 0) last = at;
@@ -2651,19 +2556,19 @@ function Home() {
     }
     return last < 0 ? ids.length : last + 1;
   }
-  function endTabPointer(tabId: string, moved: boolean) {
-    tabOverMoreRef.current = false;
+  function endSpacePointer(spaceId: string, moved: boolean) {
+    spaceOverMoreRef.current = false;
     setTabOverMore(false);
     if (!moved) {
       setDrag(null);
       setOver(null);
       killGhost();
       setDragUi(false);
-      goTab(tabId);
+      goSpace(spaceId);
       return;
     }
     swallowGhostClick();
-    const next = placeTabs(dataRef.current.tabs, tabId, tabInsertRef.current);
+    const next = placeSpaces(dataRef.current.spaces, spaceId, spaceInsertRef.current);
     setDrag(null);
     setOver(null);
     killGhost();
@@ -2677,7 +2582,7 @@ function Home() {
     clientX: number,
     clientY: number,
     dragId: string,
-  ): { kind: "app"; catId: string; insertAt: number } | null {
+  ): { kind: "card"; catId: string; insertAt: number } | null {
     const stack = document.elementsFromPoint(clientX, clientY);
     let card: HTMLElement | undefined;
     let section: HTMLElement | undefined;
@@ -2685,7 +2590,7 @@ function Home() {
     for (const node of stack) {
       if (!(node instanceof HTMLElement)) continue;
       if (node === ghostRef.current || node === markerRef.current) continue;
-      const c = node.closest<HTMLElement>("[data-app-id]");
+      const c = node.closest<HTMLElement>("[data-card-id]");
       if (c?.dataset.appId === dragId) overSelf = true;
       else if (c?.dataset.appId && !card) card = c;
       const s = node.closest<HTMLElement>("[data-cat-id]");
@@ -2693,7 +2598,7 @@ function Home() {
     }
     if (overSelf) {
       const cur = overRef.current;
-      if (cur?.kind === "app") return cur;
+      if (cur?.kind === "card") return cur;
     }
     if (!section?.dataset.catId) return null;
     const catId = section.dataset.catId;
@@ -2709,10 +2614,10 @@ function Home() {
         card,
       );
       return {
-        kind: "app",
+        kind: "card",
         catId,
         insertAt: hoverInsertAt(
-          cat.apps.map((a) => a.id),
+          cat.cards.map((a) => a.id),
           dragId,
           destId,
           after,
@@ -2720,9 +2625,9 @@ function Home() {
       };
     }
     return {
-      kind: "app",
+      kind: "card",
       catId,
-      insertAt: cat.apps.filter((a) => a.id !== dragId).length,
+      insertAt: cat.cards.filter((a) => a.id !== dragId).length,
     };
   }
   function hitCatInsert(clientY: number, dragId: string) {
@@ -2992,9 +2897,9 @@ function Home() {
             ) : null}
           </div>
         </div>
-        {displayTabs.length > 0 && (
-          <div ref={tabListRef} className="tab-row">
-            <div ref={tabStripRef} className="tab-strip">
+        {displaySpaces.length > 0 && (
+          <div ref={spaceListRef} className="tab-row">
+            <div ref={spaceStripRef} className="tab-strip">
             <button
               type="button"
               data-tab-slot="fav"
@@ -3021,7 +2926,7 @@ function Home() {
               {editMode && onFavs && session?.canEdit ? (
                 <span
                   className="ml-1 flex items-center gap-[0.35rem]"
-                  data-tab-action=""
+                  data-space-action=""
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
@@ -3043,13 +2948,13 @@ function Home() {
                 </span>
               ) : null}
             </button>
-            {displayTabs.map((tab, tabIndex) => (
+            {displaySpaces.map((tab, tabIndex) => (
               <Fragment key={tab.id}>
-                {tabOverflow.includes(tab.id) &&
-                drag?.kind === "tab" &&
+                {spaceOverflow.includes(tab.id) &&
+                drag?.kind === "space" &&
                 drag.id === tab.id &&
-                !tabOverMore &&
-                displayTabs.slice(tabIndex + 1).some((t) => !tabOverflow.includes(t.id)) ? (
+                !spaceOverMore &&
+                displaySpaces.slice(tabIndex + 1).some((t) => !spaceOverflow.includes(t.id)) ? (
                   <div className="drop-slot tab-gap">
                     <span className="drop-slot-label">{t("nav.dropHere")}</span>
                   </div>
@@ -3057,17 +2962,17 @@ function Home() {
               <button
                 key={tab.id}
                 type="button"
-                data-tab-id={tab.id}
+                data-space-id={tab.id}
                 onClick={() => {
                   if (didDragRef.current) {
                     didDragRef.current = false;
                     return;
                   }
-                  goTab(tab.id);
+                  goSpace(tab.id);
                 }}
                 onPointerDown={(e) => {
-                  if (!canReorderTabs) return;
-                  if ((e.target as HTMLElement).closest("[data-tab-action]")) return;
+                  if (!canReorderSpaces) return;
+                  if ((e.target as HTMLElement).closest("[data-space-action]")) return;
                   lockSelection(e);
                   didDragRef.current = false;
                   dragOriginRef.current = {
@@ -3076,21 +2981,21 @@ function Home() {
                   };
                   writeEditMode(true);
                   setDrag({
-                    kind: "tab",
+                    kind: "space",
                     id: tab.id,
                   });
-                  tabInsertRef.current = tabIndex;
+                  spaceInsertRef.current = tabIndex;
                   setOver({
-                    kind: "tab",
+                    kind: "space",
                     insertAt: tabIndex,
                   });
-                  bindTabDrag(tab.id, e.currentTarget);
+                  bindSpaceDrag(tab.id, e.currentTarget);
                 }}
-                className={`tab-item ${canReorderTabs ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${drag?.kind === "tab" && drag.id === tab.id ? "is-src" : ""} ${carryDestTabId === tab.id ? "is-drop" : ""} ${tab.id === data.activeTabId && page !== "favs" ? "is-on" : searching && searchHits.some((h) => h.id === tab.id) ? "text-fg" : searching ? "text-subtle" : ""} ${tab.hideLabel ? "is-icon" : ""} ${tabOverflow.includes(tab.id) ? "is-overflow" : ""}`}
+                className={`tab-item ${canReorderSpaces ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${drag?.kind === "space" && drag.id === tab.id ? "is-src" : ""} ${carryDestSpaceId === tab.id ? "is-drop" : ""} ${tab.id === data.activeSpaceId && page !== "favs" ? "is-on" : searching && searchHits.some((h) => h.id === tab.id) ? "text-fg" : searching ? "text-subtle" : ""} ${tab.hideLabel ? "is-icon" : ""} ${spaceOverflow.includes(tab.id) ? "is-overflow" : ""}`}
                 title={tab.name}
                 aria-label={tab.name}
               >
-                {canReorderTabs ? (
+                {canReorderSpaces ? (
                   <GripVertical className="tab-ico text-subtle" aria-hidden />
                 ) : null}{" "}
                 <PortalIcon name={tab.icon} className="tab-ico" />
@@ -3101,11 +3006,11 @@ function Home() {
                   </span>
                 ) : null}
                 {editMode &&
-                  tab.id === data.activeTabId &&
-                  canEditTab(tab.id) && (
+                  tab.id === data.activeSpaceId &&
+                  canEditSpace(tab.id) && (
                     <span
                       className="ml-1 flex items-center gap-[0.35rem]"
-                      data-tab-action=""
+                      data-space-action=""
                       onClick={(e) => e.stopPropagation()}
                       onPointerDown={(e) => e.stopPropagation()}
                     >
@@ -3116,7 +3021,7 @@ function Home() {
                           className="card-tool"
                           aria-label={t("aria.duplicateSpace")}
                           title={t("aria.duplicateSpace")}
-                          onClick={() => duplicateSpace(tab)}
+                          onClick={() => cloneSpace(tab)}
                         >
                           {" "}
                           <Copy className="size-3.5" />
@@ -3129,7 +3034,7 @@ function Home() {
                         title={t("aria.editSpace")}
                         onClick={() =>
                           setModal({
-                            kind: "tab",
+                            kind: "space",
                             tab,
                           })
                         }
@@ -3137,7 +3042,7 @@ function Home() {
                         {" "}
                         <Pencil className="size-3.5" />
                       </span>
-                      {data.tabs.length > 1 && (
+                      {data.spaces.length > 1 && (
                         <span
                           role="button"
                           className="card-tool is-danger"
@@ -3145,7 +3050,7 @@ function Home() {
                           title={t("aria.deleteSpace")}
                           onClick={() =>
                             setModal({
-                              kind: "confirm-tab",
+                              kind: "confirm-space",
                               tab,
                             })
                           }
@@ -3161,10 +3066,10 @@ function Home() {
             ))}
             </div>
             <div className="tab-row-end">
-            <div ref={tabMoreRef} className="tab-more-wrap" data-tab-slot="more">
+            <div ref={spaceMoreRef} className="tab-more-wrap" data-tab-slot="more">
               <button
                 type="button"
-                className={`tab-item tab-more ${tabOverflow.length ? "" : "is-off"}`}
+                className={`tab-item tab-more ${spaceOverflow.length ? "" : "is-off"}`}
                 aria-label={t("nav.moreSpaces")}
                 title={t("nav.moreSpaces")}
                 aria-haspopup="menu"
@@ -3176,11 +3081,11 @@ function Home() {
                 }}
               >
                 <MoreHorizontal className="tab-ico" />
-                {tabOverflow.length > 1 ? (
-                  <span className="count-chip">{tabOverflow.length}</span>
+                {spaceOverflow.length > 1 ? (
+                  <span className="count-chip">{spaceOverflow.length}</span>
                 ) : null}
               </button>
-              {moreOpen && tabOverflow.length && typeof document !== "undefined"
+              {moreOpen && spaceOverflow.length && typeof document !== "undefined"
                 ? createPortal(
                     <div
                       ref={morePanelRef}
@@ -3189,7 +3094,7 @@ function Home() {
                       onPointerDown={(e) => e.stopPropagation()}
                     >
                       <p className="menu-kicker">{t("nav.moreSpaces")}</p>
-                      {moreMenuTabs.map((tab, i) => (
+                      {moreMenuSpaces.map((tab, i) => (
                         <Fragment key={tab.id}>
                           {moreGapAt === i ? (
                             <div className="drop-slot tab-more-gap">
@@ -3198,19 +3103,19 @@ function Home() {
                           ) : null}
                           <button
                             type="button"
-                            data-tab-id={tab.id}
+                            data-space-id={tab.id}
                             role="menuitem"
-                            className={`${canReorderTabs ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${carryDestTabId === tab.id ? "is-drop" : ""}`}
+                            className={`${canReorderSpaces ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${carryDestSpaceId === tab.id ? "is-drop" : ""}`}
                             onClick={() => {
                               if (didDragRef.current) {
                                 didDragRef.current = false;
                                 return;
                               }
-                              goTab(tab.id);
+                              goSpace(tab.id);
                               setMoreOpen(false);
                             }}
                             onPointerDown={(e) => {
-                              if (!canReorderTabs) return;
+                              if (!canReorderSpaces) return;
                               e.stopPropagation();
                               lockSelection(e);
                               didDragRef.current = false;
@@ -3219,22 +3124,22 @@ function Home() {
                                 y: e.clientY,
                               };
                               writeEditMode(true);
-                              tabOverMoreRef.current = true;
+                              spaceOverMoreRef.current = true;
                               setTabOverMore(true);
                               setDrag({
-                                kind: "tab",
+                                kind: "space",
                                 id: tab.id,
                               });
-                              const idx = displayTabs.findIndex((t) => t.id === tab.id);
-                              tabInsertRef.current = idx < 0 ? displayTabs.length : idx;
+                              const idx = displaySpaces.findIndex((t) => t.id === tab.id);
+                              spaceInsertRef.current = idx < 0 ? displaySpaces.length : idx;
                               setOver({
-                                kind: "tab",
-                                insertAt: idx < 0 ? displayTabs.length : idx,
+                                kind: "space",
+                                insertAt: idx < 0 ? displaySpaces.length : idx,
                               });
-                              bindTabDrag(tab.id, e.currentTarget);
+                              bindSpaceDrag(tab.id, e.currentTarget);
                             }}
                           >
-                            {canReorderTabs ? (
+                            {canReorderSpaces ? (
                               <GripVertical className="tab-ico text-subtle" aria-hidden />
                             ) : null}
                             <PortalIcon name={tab.icon} className="tab-ico" />
@@ -3245,7 +3150,7 @@ function Home() {
                           </button>
                         </Fragment>
                       ))}
-                      {moreGapAt === moreMenuTabs.length ? (
+                      {moreGapAt === moreMenuSpaces.length ? (
                         <div className="drop-slot tab-more-gap">
                           <span className="drop-slot-label">{t("nav.dropHere")}</span>
                         </div>
@@ -3264,7 +3169,7 @@ function Home() {
                 title={t("actions.addSpace")}
                 onClick={() =>
                   setModal({
-                    kind: "tab",
+                    kind: "space",
                   })
                 }
               >
@@ -3300,7 +3205,7 @@ function Home() {
                         {" "}
                         <button
                           type="button"
-                          onClick={() => goTab(group.tab.id)}
+                          onClick={() => goSpace(group.tab.id)}
                           className="flex min-w-0 items-center gap-3 text-muted hover:text-fg"
                         >
                           {" "}
@@ -3322,13 +3227,13 @@ function Home() {
                         </h2>
                         {data.settings.catCounts ? (
                           <span className="count-chip" data-tone={tagTone(group.cat.name)}>
-                            {group.apps.length}
+                            {group.cards.length}
                           </span>
                         ) : null}
                       </div>
                     </div>{" "}
                     <div className={ITEM_GRID}>
-                      {group.apps.map((app) => (
+                      {group.cards.map((app) => (
                         <AppCard
                           key={app.id}
                           app={app}
@@ -3369,7 +3274,7 @@ function Home() {
               ? filtered.length === 0
               : editMode
                 ? filtered.length === 0
-                : !displayCategories.some((c) => c.apps.length)
+                : !displayCategories.some((c) => c.cards.length)
           ) ? (
           searching ? (
             <p className="py-16 text-center text-sm text-muted">
@@ -3406,7 +3311,7 @@ function Home() {
               {tp(
                 "empty.hits",
                 searchHits.reduce(
-                  (n, tab) => n + tab.categories.reduce((m, c) => m + c.apps.length, 0),
+                  (n, tab) => n + tab.categories.reduce((m, c) => m + c.cards.length, 0),
                   0,
                 ),
               )}{" "}
@@ -3417,14 +3322,14 @@ function Home() {
                 {" "}
                 <button
                   type="button"
-                  onClick={() => goTab(tab.id)}
+                  onClick={() => goSpace(tab.id)}
                   className="flex items-center gap-2 text-sm font-medium text-muted hover:text-fg"
                 >
                   {" "}
                   <PortalIcon name={tab.icon} className="size-4" />
                   {tab.name}
                   <span className="count-chip" data-tone={tagTone(tab.name)}>
-                    {tab.categories.reduce((n, c) => n + c.apps.length, 0)}
+                    {tab.categories.reduce((n, c) => n + c.cards.length, 0)}
                   </span>
                 </button>
                 {tab.categories.map((cat) => (
@@ -3443,11 +3348,11 @@ function Home() {
                         </h2>
                         {data.settings.catCounts ? (
                           <span className="count-chip" data-tone={tagTone(cat.name)}>
-                            {cat.apps.length}
+                            {cat.cards.length}
                           </span>
                         ) : null}
                       </div>
-                      {editMode && canEditTab(tab.id) ? (
+                      {editMode && canEditSpace(tab.id) ? (
                         <div className="flex items-center gap-[0.35rem]">
                           {" "}
                           <button
@@ -3457,7 +3362,7 @@ function Home() {
                             title={t("actions.addCard")}
                             onClick={() =>
                               setModal({
-                                kind: "app",
+                                kind: "card",
                                 categoryId: cat.id,
                               })
                             }
@@ -3474,14 +3379,14 @@ function Home() {
                               setModal({
                                 kind: "move-pick",
                                 category: cat,
-                                fromTabId: tab.id,
+                                fromSpaceId: tab.id,
                               })
                             }
                           >
                             {" "}
                             <ArrowRightLeft className="size-3.5" />
                           </button>{" "}
-                          {cat.apps.length ? (
+                          {cat.cards.length ? (
                             <>
                               {catSortButton(cat)}{" "}
                               <button
@@ -3540,11 +3445,11 @@ function Home() {
                       ) : null}
                     </div>{" "}
                     <div className={ITEM_GRID}>
-                      {cat.apps.map((app) => (
+                      {cat.cards.map((app) => (
                         <AppCard
                           key={app.id}
                           app={app}
-                          editMode={editMode && canEditTab(tab.id)}
+                          editMode={editMode && canEditSpace(tab.id)}
                           className={itemSpanClass(app)}
                           onTag={toggleTag}
                           activeTags={tagFilter}
@@ -3572,7 +3477,7 @@ function Home() {
                           ctxHideUrl={Boolean(data.settings.ctxHideUrl)}
                           onEdit={() =>
                             setModal({
-                              kind: "app",
+                              kind: "card",
                               categoryId: cat.id,
                               app,
                             })
@@ -3595,7 +3500,7 @@ function Home() {
         ) : (
           <div className={drag?.kind === "cat" ? "space-y-3" : "space-y-12"}>
             {displayCategories.map((cat, catIndex) => {
-              if (!editMode && cat.apps.length === 0) return null;
+              if (!editMode && cat.cards.length === 0) return null;
               if (drag?.kind === "cat" && drag.id === cat.id)
                 return (
                   <div key={cat.id} data-cat-id={cat.id} className="drop-slot drop-slot-cat">
@@ -3608,7 +3513,7 @@ function Home() {
                 <section
                   key={cat.id}
                   data-cat-id={cat.id}
-                  className={`cat-section${drag?.kind === "app" && over?.kind === "app" && over.catId === cat.id ? " is-drop" : ""}`}
+                  className={`cat-section${drag?.kind === "card" && over?.kind === "card" && over.catId === cat.id ? " is-drop" : ""}`}
                 >
                   {" "}
                   <div className={`cat-head ${collapsed ? "is-collapsed" : ""}`}>
@@ -3633,7 +3538,7 @@ function Home() {
                           cat: {
                             ...cat,
                           },
-                          fromTabId: dataRef.current.activeTabId,
+                          fromSpaceId: dataRef.current.activeSpaceId,
                         };
                         bindCatDrag(
                           cat.id,
@@ -3661,7 +3566,7 @@ function Home() {
                       <h2 className="truncate text-xl font-semibold tracking-tight">{cat.name}</h2>{" "}
                       {data.settings.catCounts ? (
                         <span className="count-chip" data-tone={tagTone(cat.name)}>
-                          {cat.apps.length}
+                          {cat.cards.length}
                         </span>
                       ) : null}
                     </div>{" "}
@@ -3696,7 +3601,7 @@ function Home() {
                             title={t("actions.addCard")}
                             onClick={() =>
                               setModal({
-                                kind: "app",
+                                kind: "card",
                                 categoryId: cat.id,
                               })
                             }
@@ -3713,14 +3618,14 @@ function Home() {
                               setModal({
                                 kind: "move-pick",
                                 category: cat,
-                                fromTabId: data.activeTabId,
+                                fromSpaceId: data.activeSpaceId,
                               })
                             }
                           >
                             {" "}
                             <ArrowRightLeft className="size-3.5" />
                           </button>{" "}
-                          {cat.apps.length ? (
+                          {cat.cards.length ? (
                             <>
                               {catSortButton(cat)}{" "}
                               <button
@@ -3740,7 +3645,7 @@ function Home() {
                             className="card-tool"
                             aria-label={t("actions.duplicate")}
                             title={t("actions.duplicate")}
-                            onClick={() => duplicateCategory(cat, data.activeTabId)}
+                            onClick={() => duplicateCategory(cat, data.activeSpaceId)}
                           >
                             {" "}
                             <Copy className="size-3.5" />
@@ -3779,7 +3684,7 @@ function Home() {
                       )}
                     </div>
                   </div>
-                  {collapsed || drag?.kind === "cat" ? null : cat.apps.length === 0 ? (
+                  {collapsed || drag?.kind === "cat" ? null : cat.cards.length === 0 ? (
                     <p className="empty-well flex items-center justify-center gap-1 px-4 py-8 text-center text-sm text-muted">
                       {canDrag
                         ? [t("empty.noCardsDrop"), " ", <Plus className="size-3.5" />]
@@ -3787,14 +3692,14 @@ function Home() {
                     </p>
                   ) : (
                     <div data-app-grid="" className={ITEM_GRID}>
-                      {cat.apps.map((app) => (
+                      {cat.cards.map((app) => (
                         <AppCard
                           key={app.id}
                           app={app}
                           editMode={editMode && canEditActive}
                           canDrag={canDrag}
                           canResize={canResize && app.kind !== "app"}
-                          dragging={drag?.kind === "app" && drag.id === app.id}
+                          dragging={drag?.kind === "card" && drag.id === app.id}
                           className={itemSpanClass(app)}
                           onTag={toggleTag}
                           activeTags={tagFilter}
@@ -3843,25 +3748,25 @@ function Home() {
                               app: {
                                 ...app,
                               },
-                              fromTabId: dataRef.current.activeTabId,
+                              fromSpaceId: dataRef.current.activeSpaceId,
                             };
                             setDrag({
-                              kind: "app",
+                              kind: "card",
                               id: app.id,
                             });
                             const from = dataRef.current.categories.find((c) =>
-                              c.apps.some((a) => a.id === app.id),
+                              c.cards.some((a) => a.id === app.id),
                             );
                             setOver({
-                              kind: "app",
+                              kind: "card",
                               catId: from?.id ?? cat.id,
-                              insertAt: from?.apps.findIndex((a) => a.id === app.id) ?? 0,
+                              insertAt: from?.cards.findIndex((a) => a.id === app.id) ?? 0,
                             });
-                            bindAppDrag(app.id, e.currentTarget);
+                            bindCardDrag(app.id, e.currentTarget);
                           }}
                           onEdit={() =>
                             setModal({
-                              kind: "app",
+                              kind: "card",
                               categoryId: cat.id,
                               app,
                             })
@@ -3928,11 +3833,11 @@ function Home() {
             modal.kind === "admin" ||
             modal.kind === "stats" ||
             modal.kind === "legend" ||
-            modal.kind === "app" ||
+            modal.kind === "card" ||
             modal.kind === "history" ||
             modal.kind === "curation" ||
             modal.kind === "users" ||
-            modal.kind === "tab" ||
+            modal.kind === "space" ||
             modal.kind === "category"
           }
           onClose={() => {
@@ -4011,7 +3916,7 @@ function Home() {
                   const next = await getPortal({
                     data: {
                       token: res.token,
-                      tabId: data.activeTabId,
+                      spaceId: data.activeSpaceId,
                     },
                   });
                   setData(next);
@@ -4074,7 +3979,7 @@ function Home() {
             <AccessFrame
               token={token}
               session={session}
-              tabs={data.tabs}
+              spaces={data.spaces}
               settings={data.settings}
               busy={busy}
               onClose={() =>
@@ -4088,7 +3993,7 @@ function Home() {
                     const next = await updateOidcSettings({
                       data: {
                         token,
-                        tabId: data.activeTabId,
+                        spaceId: data.activeSpaceId,
                         ...payload,
                       },
                     });
@@ -4106,7 +4011,7 @@ function Home() {
                     const next = await updateLdapSettings({
                       data: {
                         token,
-                        tabId: data.activeTabId,
+                        spaceId: data.activeSpaceId,
                         ...payload,
                       },
                     });
@@ -4124,7 +4029,7 @@ function Home() {
                     const next = await updateLoginOrder({
                       data: {
                         token,
-                        tabId: data.activeTabId,
+                        spaceId: data.activeSpaceId,
                         loginOrder,
                       },
                     });
@@ -4160,7 +4065,7 @@ function Home() {
             <CurationPanel
               token={token}
               busy={busy}
-              tabPerms={session?.tabPerms || {}}
+              spacePerms={session?.spacePerms || {}}
               picker={picker}
               catalog={data.catalog}
               probes={data.settings.healthChecks !== false}
@@ -4169,7 +4074,7 @@ function Home() {
               editContext={(cardId) => {
                 for (const tb of data.catalog) {
                   for (const cat of tb.categories) {
-                    const app = cat.apps.find((a) => a.id === cardId);
+                    const app = cat.cards.find((a) => a.id === cardId);
                     if (app) {
                       return {
                         app,
@@ -4182,7 +4087,7 @@ function Home() {
                 return null;
               }}
               onSaveCard={(app, payload, onDone) =>
-                apply(() => updateApp({ data: { token, id: app.id, ...payload } }), {
+                apply(() => updateCard({ data: { token, id: app.id, ...payload } }), {
                   close: false,
                   onDone,
                 })
@@ -4201,7 +4106,7 @@ function Home() {
               runtime={data.runtime}
               catalog={data.catalog}
               tags={allTags}
-              tabs={data.tabs}
+              spaces={data.spaces}
               directory={data.directory || []}
               token={token}
               session={session}
@@ -4223,7 +4128,7 @@ function Home() {
                     updateSettings({
                       data: {
                         token,
-                        tabId: data.activeTabId,
+                        spaceId: data.activeSpaceId,
                         ...payload,
                       },
                     }),
@@ -4236,7 +4141,7 @@ function Home() {
                   const next = await resetClicks({
                     data: {
                       token,
-                      tabId: data.activeTabId,
+                      spaceId: data.activeSpaceId,
                     },
                   });
                   setData(next);
@@ -4264,7 +4169,7 @@ function Home() {
                   const next = await resetProbes({
                     data: {
                       token,
-                      tabId: data.activeTabId,
+                      spaceId: data.activeSpaceId,
                     },
                   });
                   setData(next);
@@ -4284,7 +4189,7 @@ function Home() {
                   const next = await manageTags({
                     data: {
                       token,
-                      tabId: data.activeTabId,
+                      spaceId: data.activeSpaceId,
                       ...payload,
                     },
                   });
@@ -4303,7 +4208,7 @@ function Home() {
                     const next = await updateThemeCss({
                       data: {
                         token,
-                        tabId: data.activeTabId,
+                        spaceId: data.activeSpaceId,
                         ...payload,
                       },
                     });
@@ -4342,10 +4247,10 @@ function Home() {
               }
             />
           )}
-          {modal.kind === "tab" && (
+          {modal.kind === "space" && (
             <ItemForm
-              kind="tab"
-              initial={(modal.tab as MenuTab | null) ?? null}
+              kind="space"
+              initial={(modal.tab as MenuSpace | null) ?? null}
               busy={busy}
               picker={picker}
               canAcl={sessionCanManageAcl(session)}
@@ -4358,16 +4263,16 @@ function Home() {
               onSave={(name, icon, access) =>
                 apply(() =>
                   modal.tab
-                    ? updateTab({
+                    ? updateSpace({
                         data: {
                           token,
-                          id: (modal.tab as MenuTab).id,
+                          id: (modal.tab as MenuSpace).id,
                           name,
                           icon,
                           ...access,
                         },
                       })
-                    : createTab({
+                    : createSpace({
                         data: {
                           token,
                           name,
@@ -4394,7 +4299,7 @@ function Home() {
                     data: {
                       token,
                       hideLabel,
-                      tabId: data.activeTabId,
+                      spaceId: data.activeSpaceId,
                     },
                   }),
                 )
@@ -4429,7 +4334,7 @@ function Home() {
                     : createCategory({
                         data: {
                           token,
-                          tabId: data.activeTabId,
+                          spaceId: data.activeSpaceId,
                           name,
                           icon,
                           ...access,
@@ -4439,18 +4344,18 @@ function Home() {
               }
             />
           )}
-          {modal.kind === "app" && (
+          {modal.kind === "card" && (
             <CardForm
               categories={
-                modal.app && !data.categories.some((c) => c.id === (modal.app as PortalApp).categoryId)
+                modal.app && !data.categories.some((c) => c.id === (modal.app as PortalCard).categoryId)
                   ? (data.catalog.find((tb) =>
-                      tb.categories.some((c) => c.id === (modal.app as PortalApp).categoryId),
+                      tb.categories.some((c) => c.id === (modal.app as PortalCard).categoryId),
                     )?.categories ?? data.categories)
                   : data.categories
               }
               categoryId={(modal.categoryId as string) || ""}
               catalog={data.catalog}
-              initial={(modal.app as PortalApp | null) ?? null}
+              initial={(modal.app as PortalCard | null) ?? null}
               busy={busy}
               picker={picker}
               probes={data.settings.healthChecks !== false}
@@ -4464,14 +4369,14 @@ function Home() {
               onSave={(payload) =>
                 apply(() =>
                   modal.app
-                    ? updateApp({
+                    ? updateCard({
                         data: {
                           token,
-                          id: (modal.app as PortalApp).id,
+                          id: (modal.app as PortalCard).id,
                           ...payload,
                         },
                       })
-                    : createApp({
+                    : createCard({
                         data: {
                           token,
                           ...payload,
@@ -4484,19 +4389,19 @@ function Home() {
           {modal.kind === "move-pick" && (
             <MovePickDialog
               category={modal.category as Category | null | undefined}
-              tabs={data.tabs}
-              fromTabId={modal.fromTabId as string | undefined}
+              spaces={data.spaces}
+              fromSpaceId={modal.fromSpaceId as string | undefined}
               busy={busy}
               onCancel={() =>
                 setModal({
                   kind: "none",
                 })
               }
-              onContinue={(destTabId) =>
+              onContinue={(destSpaceId) =>
                 openMoveCat(
                   modal.category as PortalCategory,
-                  modal.fromTabId as string | undefined,
-                  destTabId,
+                  modal.fromSpaceId as string | undefined,
+                  destSpaceId,
                   undefined,
                 )
               }
@@ -4517,7 +4422,7 @@ function Home() {
                     data: {
                       token,
                       categoryId: (modal.impact as CategoryMoveImpact).categoryId,
-                      destTabId: (modal.impact as CategoryMoveImpact).toId,
+                      destSpaceId: (modal.impact as CategoryMoveImpact).toId,
                       ...(typeof (modal.impact as { insertAt?: number }).insertAt === "number"
                         ? { insertAt: (modal.impact as { insertAt?: number }).insertAt }
                         : {}),
@@ -4555,11 +4460,11 @@ function Home() {
           {modal.kind === "confirm-app" && (
             <ConfirmDialog
               inline
-              title={itemKind((modal.app as PortalApp).kind).remove}
+              title={itemKind((modal.app as PortalCard).kind).remove}
               body={t("item.removedBody", {
                 name:
-                String((modal.app as PortalApp).title || "").trim() ||
-                itemKind((modal.app as PortalApp).kind).option,
+                String((modal.app as PortalCard).title || "").trim() ||
+                itemKind((modal.app as PortalCard).kind).option,
               })}
               busy={busy}
               onCancel={() =>
@@ -4569,22 +4474,22 @@ function Home() {
               }
               onOk={() =>
                 apply(() =>
-                  deleteApp({
+                  deleteCard({
                     data: {
                       token,
-                      id: (modal.app as PortalApp).id,
+                      id: (modal.app as PortalCard).id,
                     },
                   }),
                 )
               }
             />
           )}
-          {modal.kind === "confirm-tab" && (
+          {modal.kind === "confirm-space" && (
             <ConfirmDialog
               inline
               title={t("confirm.deleteSpace")}
               body={t("confirm.deleteSpaceBody", {
-                name: (modal.tab as MenuTab).name,
+                name: (modal.tab as MenuSpace).name,
               })}
               busy={busy}
               onCancel={() =>
@@ -4594,10 +4499,10 @@ function Home() {
               }
               onOk={() =>
                 apply(() =>
-                  deleteTab({
+                  deleteSpace({
                     data: {
                       token,
-                      id: (modal.tab as MenuTab).id,
+                      id: (modal.tab as MenuSpace).id,
                     },
                   }),
                 )

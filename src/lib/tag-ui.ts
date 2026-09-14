@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { DocTab, PortalApp } from "@/lib/portal";
+import type { DocSpace, PortalCard } from "@/lib/portal";
 import { localeTag } from "@/lib/i18n";
 import { defaultTagHex, remapTagHex, tagInk, tagTone } from "@/lib/tag-colors";
 
@@ -11,15 +11,15 @@ export function fold(s: unknown) {
 }
 
 export function collectTags(
-  catalog: DocTab[] | null | undefined,
+  catalog: DocSpace[] | null | undefined,
   tagColors: Record<string, string> | null | undefined,
   alpha: boolean,
-  match?: (app: PortalApp) => boolean,
+  match?: (app: PortalCard) => boolean,
 ) {
   const map = new Map<string, { name: string; count: number }>();
   for (const tab of catalog ?? [])
     for (const cat of tab.categories)
-      for (const app of cat.apps) {
+      for (const app of cat.cards) {
         if ((app.kind || "app") !== "app") continue;
         if (match && !match(app)) continue;
         for (const tag of app.tags) {
