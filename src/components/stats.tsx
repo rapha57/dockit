@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import { AlertTriangle, BarChart3, CircleHelp, MousePointerClick, SquareMenu, Star, X } from "lucide-react";
-import { t, tp, formatNumber, localeTag } from "@/lib/i18n";
+import { t, tp, formatNumber, localeTag, modKeyLabel } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { PortalIcon } from "@/lib/icons";
 import { tagPaint } from "@/lib/tag-ui";
@@ -96,12 +96,6 @@ function LegendSample({ children }: { children: ReactNode }) {
       {children}
     </span>
   );
-}
-
-function modKey() {
-  if (typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent))
-    return t("legend.modCmd");
-  return t("legend.modCtrl");
 }
 
 function LegendKeys({ keys }: { keys: string[] }) {
@@ -202,8 +196,8 @@ export function LegendPanel({ onClose }: { onClose: () => void }) {
         {[
           { id: "search", keys: ["/"], title: t("legend.keySearch"), hint: t("legend.keySearchHint") },
           { id: "type", keys: ["A–Z"], title: t("legend.keyType"), hint: t("legend.keyTypeHint") },
-          { id: "edit", keys: [modKey(), "E"], title: t("legend.keyEdit"), hint: t("legend.keyEditHint") },
-          { id: "new", keys: [modKey(), "N"], title: t("legend.keyNew"), hint: t("legend.keyNewHint") },
+          { id: "edit", keys: [modKeyLabel(), "E"], title: t("legend.keyEdit"), hint: t("legend.keyEditHint") },
+          { id: "new", keys: [modKeyLabel(), "N"], title: t("legend.keyNew"), hint: t("legend.keyNewHint") },
           { id: "esc", keys: ["Esc"], title: t("legend.keyEsc"), hint: t("legend.keyEscHint") },
         ].map((row) => (
           <li key={row.id} className="legend-row">
@@ -280,6 +274,20 @@ export function StatsBar({
       <div className="info-bar-inner">
         {metrics.length || onStats || onLegend ? (
           <div className="info-metrics">
+            {onLegend ? (
+              <button
+                type="button"
+                className="info-stats-btn"
+                aria-label={t("legend.title")}
+                title={t("legend.title")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onLegend();
+                }}
+              >
+                <CircleHelp className="size-3" />
+              </button>
+            ) : null}
             <MousePointerClick className="info-click-ico" aria-hidden />
             {metrics.map((m, i) => (
               <span key={m.key} className="info-metric" title={m.hint}>
@@ -310,20 +318,6 @@ export function StatsBar({
                 onClick={onStats}
               >
                 <BarChart3 className="size-3" />
-              </button>
-            ) : null}
-            {onLegend ? (
-              <button
-                type="button"
-                className="info-stats-btn"
-                aria-label={t("legend.title")}
-                title={t("legend.title")}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onLegend();
-                }}
-              >
-                <CircleHelp className="size-3" />
               </button>
             ) : null}
           </div>

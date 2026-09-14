@@ -54,7 +54,7 @@ import {
 import { probeTargets } from "@/lib/probe";
 import type { ProbeResult } from "@/lib/probe";
 import { DEFAULT_UI_PREFS, clearUiPrefs, readUiPrefs, writeUiPrefs } from "@/lib/ui-prefs";
-import { t, te, asLocale, applyDisplayPrefs } from "@/lib/i18n";
+import { t, te, asLocale, applyDisplayPrefs, modKeyLabel } from "@/lib/i18n";
 import type {
   ClickStats,
   CustomIcon,
@@ -1648,7 +1648,7 @@ function Home() {
                   setTagFilter((cur) => cur.slice(0, -1));
               }}
               placeholder={tagFilter.length ? t("nav.addTagOrName") : t("nav.search")}
-              title={t("nav.searchTitle")}
+              title={t("nav.searchTitle", { mod: modKeyLabel() })}
               type="search"
               autoComplete="off"
               role="combobox"

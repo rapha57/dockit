@@ -16,8 +16,9 @@ import { ExpandRow } from "@/components/expand-row";
 import { askConfirm } from "@/components/confirm-dialog";
 import { t, te, td } from "@/lib/i18n";
 import { ICON_OPTIONS, PRODUCT_ICONS, PortalIcon, fileToDataUrl, iconifySrc, urlToDataUrl } from "@/lib/icons";
-import { grabSiteFavicon, probePreview, saveCustomIcon, type CustomIcon, type ItemKind, type PortalCard, type PortalCategory, type CheckMode } from "@/lib/portal";
-import { safeAppHref } from "@/lib/safe-href";
+import { exportSpace, grabSiteFavicon, probePreview, saveCustomIcon, type CustomIcon, type ItemKind, type PortalCard, type PortalCategory, type CheckMode } from "@/lib/portal";
+import { canClearUrl, clampHubInsert, hasSiblingUrlDupes, hubTurnsOffOnDelete, isPrimaryRow, linkRowRules, siblingUrlDupes } from "@/lib/card-links";
+import { hasLinkScheme, safeAppHref, safeEmbedHref } from "@/lib/safe-href";
 import { findUrlDuplicates } from "@/lib/dup-url";
 import { FIELD_SM, type AccessPayload, type CardFormPayload, type CatalogSpace, type DirectoryEntry, type MenuSpace } from "@/lib/portal-ui";
 import { itemKind } from "@/lib/item-kind";
@@ -122,7 +123,7 @@ export function IconPicker({
     }
   }
   async function grabFavicon() {
-    const href = safeAppHref(siteUrl);
+    const href = safeEmbedHref(siteUrl);
     if (!href) {
       toast.error(t("icons.needUrl"));
       return;
@@ -403,6 +404,9 @@ export function ItemForm({
   picker,
   people,
   canAcl,
+  token,
+  canImportSpace,
+  onImportSpace,
   onCancel,
   onSave,
 }: {
@@ -418,6 +422,9 @@ export function ItemForm({
   };
   people: DirectoryEntry[];
   canAcl: boolean;
+  token?: string;
+  canImportSpace?: boolean;
+  onImportSpace?: (payload: unknown) => void | Promise<void>;
   onCancel: () => void;
   onSave: (name: string, icon: string, access: AccessPayload) => void;
 }) {
@@ -429,11 +436,76 @@ export function ItemForm({
   const [hideLabel, setHideLabel] = useState(Boolean(isSpace && initial && "hideLabel" in initial ? (initial as MenuSpace).hideLabel : false));
   const [viewers, setViewers] = useState(initial?.viewers ?? []);
   const [editors, setEditors] = useState(initial?.editors ?? []);
+  const [xferBusy, setXferBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (initial) return;
     const id = window.requestAnimationFrame(() => nameRef.current?.focus());
     return () => window.cancelAnimationFrame(id);
   }, [initial]);
+  async function exportThisSpace() {
+    if (!token || !initial?.id) return;
+    setXferBusy(true);
+    try {
+      const payload = await exportSpace({
+        data: {
+          token,
+          id: initial.id,
+        },
+      });
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const slug = String(initial.name || "space")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 40) || "space";
+      a.href = url;
+      a.download = `dockit-space-${slug}-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(t("toast.spaceExported"));
+    } catch (err) {
+      if (!sessionGone(err)) toast.error(te(err));
+    } finally {
+      setXferBusy(false);
+    }
+  }
+  async function importThisSpace(file: File) {
+    if (!file || !onImportSpace) return;
+    if (file.size > 5e6) {
+      toast.error(t("backup.fileTooBig"));
+      return;
+    }
+    if (
+      !(await askConfirm({
+        title: t("space.importNew"),
+        body: t("confirm.importSpace"),
+        okLabel: t("space.importNew"),
+      }))
+    )
+      return;
+    setXferBusy(true);
+    try {
+      const text = await file.text();
+      let payload: unknown;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        throw new Error("errors.badSpaceFile");
+      }
+      await onImportSpace(payload);
+    } catch (err) {
+      if (!sessionGone(err)) toast.error(te(err));
+    } finally {
+      setXferBusy(false);
+    }
+  }
   return (
     <form
       className="settings-frame is-item is-narrow"
@@ -520,9 +592,48 @@ export function ItemForm({
                 editHint={isSpace ? t("space.editHint") : t("category.editHint")}
               />
             ) : null}
+            {isSpace && initial && token ? (
+              <div className="settings-card">
+                <p className="settings-kicker">{t("space.xfer")}</p>
+                <p className="settings-hint">{t("space.xferHint")}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="am-create"
+                    disabled={busy || xferBusy}
+                    onClick={() => void exportThisSpace()}
+                  >
+                    {t("space.export")}
+                  </button>
+                  {canImportSpace ? (
+                    <button
+                      type="button"
+                      className="am-create"
+                      disabled={busy || xferBusy}
+                      onClick={() => {
+                        if (fileRef.current) fileRef.current.value = "";
+                        fileRef.current?.click();
+                      }}
+                    >
+                      {t("space.importNew")}
+                    </button>
+                  ) : null}
+                </div>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void importThisSpace(file);
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
         </EdgeFade>
-        <FormActions busy={busy} hideCancel onCancel={onCancel} />
+        <FormActions busy={busy || xferBusy} hideCancel onCancel={onCancel} />
       </div>
     </form>
   );
@@ -579,12 +690,14 @@ export function ExtraLinksField({
   linkMenu,
   setLinkMenu,
   onHubEnable,
+  cardTitle,
 }: {
   links: { key: string; title: string; url: string; openIn: "_blank" | "_self" }[];
   setLinks: React.Dispatch<React.SetStateAction<{ key: string; title: string; url: string; openIn: "_blank" | "_self" }[]>>;
   linkMenu?: boolean;
   setLinkMenu?: React.Dispatch<React.SetStateAction<boolean>>;
   onHubEnable?: () => void;
+  cardTitle?: string;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ key: string; pointerId: number } | null>(null);
@@ -595,8 +708,55 @@ export function ExtraLinksField({
     return first && !first.url ? first.key : null;
   });
   const INPUT_SM = FIELD_SM;
+  const cardName = String(cardTitle || "").trim();
+  const inheritFirst = useRef(
+    Boolean(links[0]) && (!links[0].title.trim() || links[0].title.trim() === cardName),
+  );
+  const firstKey = useRef(links[0]?.key);
+  useEffect(() => {
+    const first = links[0];
+    if (!first) return;
+    if (first.key !== firstKey.current) {
+      firstKey.current = first.key;
+      inheritFirst.current = !first.title.trim() || first.title.trim() === cardName;
+    }
+    if (!inheritFirst.current) return;
+    if (first.title === cardName) return;
+    setLinks((cur) => {
+      const head = cur[0];
+      if (!head || head.title === cardName) return cur;
+      return [{ ...head, title: cardName }, ...cur.slice(1)];
+    });
+  }, [cardName, links, setLinks]);
   function patch(key: string, next: Partial<{ title: string; url: string; openIn: "_blank" | "_self" }>) {
+    const index = links.findIndex((r) => r.key === key);
+    if (next.title !== undefined && index === 0) {
+      const typed = String(next.title || "").trim();
+      inheritFirst.current = !typed || typed === cardName;
+    }
+    if (
+      next.url !== undefined &&
+      index === 0 &&
+      !canClearUrl(Boolean(linkMenu), 0, links[0]?.url || "") &&
+      !String(next.url || "").trim()
+    )
+      return;
     setLinks((cur) => cur.map((r) => (r.key === key ? { ...r, ...next } : r)));
+  }
+  async function removeRow(key: string, index: number) {
+    if (!rules.canDelete(index)) return;
+    if (hubTurnsOffOnDelete(Boolean(linkMenu), links.length)) {
+      const ok = await askConfirm({
+        title: t("item.linkMenu"),
+        body: t("confirm.hubLastLink"),
+        okLabel: t("item.removeLink"),
+        danger: true,
+      });
+      if (!ok) return;
+      setLinkMenu?.(false);
+    }
+    setLinks((cur) => cur.filter((r) => r.key !== key));
+    if (openId === key) setOpenId(null);
   }
   function endDrag(el: HTMLElement | null, pointerId?: number) {
     dragRef.current = null;
@@ -607,8 +767,11 @@ export function ExtraLinksField({
       // ignore
     }
   }
+  const rules = linkRowRules(Boolean(linkMenu), links.length);
+  const lockedKey = rules.lockFirst ? links[0]?.key : null;
   function onGripDown(e: ReactPointerEvent<HTMLElement>, key: string) {
     if (links.length < 2 || e.button !== 0) return;
+    if (lockedKey && key === lockedKey) return;
     e.preventDefault();
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -638,10 +801,12 @@ export function ExtraLinksField({
     }
     setLinks((cur) => {
       const from = cur.findIndex((r) => r.key === drag.key);
-      if (from < 0 || from === to) return cur;
+      const dest = clampHubInsert(to, !linkMenu && cur.length > 1);
+      if (from < 0 || from === dest) return cur;
+      if (!linkMenu && from === 0) return cur;
       didDrag.current = true;
       const rest = cur.filter((r) => r.key !== drag.key);
-      rest.splice(to, 0, cur[from]);
+      rest.splice(dest, 0, cur[from]);
       return rest;
     });
   }
@@ -675,33 +840,39 @@ export function ExtraLinksField({
     <div className="am-work">
       {links.length ? (
         <div ref={listRef} className="am-providers" role="list">
-          {links.map((row) => (
+          {links.map((row, index) => (
             <ExpandRow
               key={row.key}
               id={row.key}
               className="is-provider is-link"
               expanded={openId === row.key}
               dragging={dragKey === row.key}
-              grip
+              grip={rules.canGrip(index)}
               onToggle={() => toggle(row.key)}
               onGripDown={(e) => onGripDown(e, row.key)}
               onGripMove={onGripMove}
               onGripUp={onGripUp}
               cells={[
                 <span key="n" className="am-row-title">
-                  {row.title.trim() || t("item.name")}
+                  {row.title.trim() || (row.key === links[0]?.key ? cardName : "") || t("item.name")}
+                  {isPrimaryRow(Boolean(linkMenu), index) ? (
+                    <span className="am-dim"> · {t("item.primaryLink")}</span>
+                  ) : null}
                   {row.url.trim() ? <span className="am-row-sub">{row.url.trim()}</span> : null}
                 </span>,
               ]}
             >
               <div className="settings-stack">
+                {isPrimaryRow(Boolean(linkMenu), index) ? (
+                  <p className="settings-kicker">{t("item.primaryLink")}</p>
+                ) : null}
                 <Field label={t("item.name")}>
                   <Input
                     className={INPUT_SM}
                     value={row.title}
                     onChange={(e) => patch(row.key, { title: e.target.value })}
                     maxLength={40}
-                    placeholder={t("item.name")}
+                    placeholder={row.key === links[0]?.key && cardName ? cardName : t("item.name")}
                   />
                 </Field>
                 <Field label={t("item.url")}>
@@ -710,8 +881,18 @@ export function ExtraLinksField({
                     value={row.url}
                     onChange={(e) => patch(row.key, { url: e.target.value })}
                     placeholder="https://"
+                    required={isPrimaryRow(Boolean(linkMenu), index)}
                   />
                 </Field>
+                {isPrimaryRow(Boolean(linkMenu), index) ? (
+                  <p className="settings-hint">{t("item.primaryLinkHint")}</p>
+                ) : null}
+                {row.url.trim() && !hasLinkScheme(row.url) ? (
+                  <p className="settings-hint is-warn">{t("item.urlNeedScheme")}</p>
+                ) : null}
+                {siblingUrlDupes(links, row.key, row.url).length ? (
+                  <p className="settings-hint is-warn">{t("item.urlDupOnCard")}</p>
+                ) : null}
                 <div className="settings-toggles">
                   <label>
                     <input
@@ -723,18 +904,17 @@ export function ExtraLinksField({
                   </label>
                   <p className="settings-hint">{t("item.sameWindowHint")}</p>
                 </div>
-                <div className="am-actions">
-                  <button
-                    type="button"
-                    className="am-text-btn is-danger"
-                    onClick={() => {
-                      setLinks((cur) => cur.filter((r) => r.key !== row.key));
-                      if (openId === row.key) setOpenId(null);
-                    }}
-                  >
-                    {t("item.removeLink")}
-                  </button>
-                </div>
+                {rules.canDelete(index) ? (
+                  <div className="am-actions">
+                    <button
+                      type="button"
+                      className="am-text-btn is-danger"
+                      onClick={() => void removeRow(row.key, index)}
+                    >
+                      {t("item.removeLink")}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </ExpandRow>
           ))}
@@ -862,6 +1042,8 @@ export function CardForm({
       const key = crypto.randomUUID();
       rows.push({ key, title: "", url: "", openIn: "_blank" });
     }
+    const cardName = String(initial?.title || "").trim();
+    if (rows[0] && !rows[0].title.trim() && cardName) rows[0].title = cardName;
     return rows;
   });
   const [linkMenu, setLinkMenu] = useState(Boolean(initial?.linkMenu));
@@ -974,12 +1156,14 @@ export function CardForm({
     </span>
   );
   const mainLink = kind === "app" ? links[0]?.url || "" : url;
+  const linksSchemeOk =
+    kind !== "app" || links.every((row) => !row.url.trim() || Boolean(safeAppHref(row.url)));
   const canSave =
     kind === "app"
-      ? Boolean(title.trim() && safeAppHref(mainLink))
+      ? Boolean(title.trim() && safeAppHref(mainLink) && linksSchemeOk && !hasSiblingUrlDupes(links))
       : kind === "note"
         ? Boolean(description.trim())
-        : Boolean(safeAppHref(mainLink));
+        : Boolean(safeEmbedHref(mainLink));
   const urlDupes = useMemo(
     () => (kind === "note" ? [] : findUrlDuplicates(catalog, mainLink, initial?.id)),
     [catalog, mainLink, kind, initial?.id],
@@ -1013,11 +1197,19 @@ export function CardForm({
           toast.error(t("errors.urlRequired"));
           return;
         }
+        if (kind === "app" && !links.every((row) => !row.url.trim() || Boolean(safeAppHref(row.url)))) {
+          toast.error(t("item.urlNeedScheme"));
+          return;
+        }
+        if (kind === "app" && hasSiblingUrlDupes(links)) {
+          toast.error(t("item.urlDupOnCard"));
+          return;
+        }
         if (kind === "note" && !description.trim()) {
           toast.error(t("errors.contentRequired"));
           return;
         }
-        if (kind === "embed" && !safeAppHref(url)) {
+        if (kind === "embed" && !safeEmbedHref(url)) {
           toast.error(t("errors.embedUrlRequired"));
           return;
         }
@@ -1163,6 +1355,9 @@ export function CardForm({
                       placeholder="https://"
                       required
                     />
+                    {url.trim() && !hasLinkScheme(url) ? (
+                      <p className="settings-hint is-warn">{t("item.urlNeedScheme")}</p>
+                    ) : null}
                     {urlDupHint}
                   </Field>
                   <div className="settings-toggles">
@@ -1189,6 +1384,7 @@ export function CardForm({
                   linkMenu={linkMenu}
                   setLinkMenu={setLinkMenu}
                   onHubEnable={() => setCheck("off")}
+                  cardTitle={title}
                 />
               </div>
             ) : null}

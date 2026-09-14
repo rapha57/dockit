@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { randomBytes, scryptSync } from "node:crypto";
-import { safeAppHref } from "./safe-href";
-import { MAX_CUSTOM_ICONS, toClientAsset } from "./assets-url";
+import { safeAppHref, safeEmbedHref } from "./safe-href";
+import { ASSET_PREFIX, ASSET_URL, MAX_CUSTOM_ICONS, isAssetRef, toClientAsset } from "./assets-url";
+import { SPACE_XFER_KIND, SPACE_XFER_VERSION, collectIconValues, parseSpaceXfer } from "./space-xfer";
 import { CSS_MAX, sanitizeThemeCss } from "./theme-css";
 import { isWeakPassword, passwordPolicyError, PASSWORD_MAX } from "./security";
 import { assertProductionSecrets, clientIp, isDevRuntime, trustProxy } from "./security-runtime";
@@ -462,7 +463,7 @@ function normalizeItem(a: any, categoryId: string, sortOrder: number): PortalCar
 		kind,
 		title: String(a.title || (kind === "note" || kind === "embed" ? "" : "Untitled")).slice(0, 80),
 		description: String(a.description || "").slice(0, 8e3),
-		url: kind === "app" ? undefined : (safeAppHref(a.url) || (String(a.url || "").trim().toLowerCase().startsWith("http") ? String(a.url).trim().slice(0, 2e3) : "")),
+		url: kind === "app" ? undefined : kind === "embed" ? (safeEmbedHref(a.url) || "") : (safeAppHref(a.url) || ""),
 		icon: String(a.icon || (kind === "note" ? "FileText" : kind === "embed" ? "AppWindow" : "Link")),
 		openIn: a.openIn === "_self" ? "_self" : "_blank",
 		tags: kind === "app" ? asTags(a.tags) : [],
@@ -2999,7 +3000,11 @@ const itemPayload = {
 };
 function requireUrl(kind: unknown, url: string) {
 	if (kind === "note") return;
-	if (!safeAppHref(url)) throw new Error(kind === "embed" ? "errors.embedUrlRequired" : "errors.urlRequired");
+	if (kind === "embed") {
+		if (!safeEmbedHref(url)) throw new Error("errors.embedUrlRequired");
+		return;
+	}
+	if (!safeAppHref(url)) throw new Error("errors.urlRequired");
 }
 function requireTitle(kind: unknown, title: string) {
 	if (kind === "note" || kind === "embed") return;
@@ -3413,6 +3418,157 @@ export const exportAudit = createServerFn({ method: "POST" }).validator(z.object
 		rows: publicAudit(visible, 0)
 	};
 }));
+async function resolveExportIcon(value: string, library: CustomIcon[], assetToDataUrl: (ref: string) => Promise<string>) {
+	const s = String(value || "");
+	if (!s) return s;
+	const hit = library.find((ic) => ic.id === s || ic.dataUrl === s || toClientAsset(ic.dataUrl) === s);
+	if (hit) return assetToDataUrl(hit.dataUrl);
+	if (isAssetRef(s)) return assetToDataUrl(s);
+	if (s.startsWith(ASSET_URL)) return assetToDataUrl(ASSET_PREFIX + s.slice(ASSET_URL.length));
+	return s;
+}
+function catalogOfSpace(space: DocSpace) {
+	return {
+		name: space.name,
+		icon: space.icon || "Layers",
+		hideLabel: Boolean(space.hideLabel),
+		categories: (space.categories || []).map((c) => ({
+			name: c.name,
+			icon: c.icon || "AppWindow",
+			cards: (c.cards || []).map((a) => ({
+				kind: a.kind,
+				title: a.title,
+				description: a.description,
+				url: a.url,
+				icon: a.icon,
+				openIn: a.openIn,
+				tags: a.tags,
+				colSpan: a.colSpan,
+				rowSpan: a.rowSpan,
+				check: a.check,
+				checkHost: a.checkHost,
+				links: a.links,
+				linkMenu: a.linkMenu,
+				embedBorder: a.embedBorder,
+				embedBg: a.embedBg
+			}))
+		}))
+	};
+}
+export const exportSpace = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	id: z.string().min(1)
+})).handler(async ({ data, request }: any) => withLock(async () => {
+	const { assetToDataUrl } = await import("./assets");
+	const doc = await readDocUnlocked();
+	requireEdit(doc, tok(data, request), data.id);
+	const space = doc.spaces.find((row) => row.id === data.id);
+	if (!space) throw new Error("errors.spaceNotFound");
+	const packed = catalogOfSpace(space);
+	const library = doc.customIcons || [];
+	const refs = new Set(collectIconValues(packed as Record<string, unknown>));
+	const customIcons = [];
+	for (const ic of library) {
+		if (!refs.has(ic.id) && !refs.has(ic.dataUrl) && !refs.has(toClientAsset(ic.dataUrl))) continue;
+		customIcons.push({
+			id: ic.id,
+			name: ic.name,
+			dataUrl: await assetToDataUrl(ic.dataUrl)
+		});
+	}
+	packed.icon = await resolveExportIcon(packed.icon, library, assetToDataUrl);
+	for (const cat of packed.categories) {
+		cat.icon = await resolveExportIcon(cat.icon, library, assetToDataUrl);
+		for (const card of cat.cards) {
+			if (card.icon) card.icon = await resolveExportIcon(String(card.icon), library, assetToDataUrl);
+		}
+	}
+	return {
+		version: SPACE_XFER_VERSION,
+		kind: SPACE_XFER_KIND,
+		exportedAt: new Date().toISOString(),
+		space: packed,
+		customIcons
+	};
+}));
+export const importSpace = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	payload: z.unknown(),
+	afterId: z.string().optional()
+})).handler(async ({ data, request }: any) => mutate((doc) => {
+	const user = requireCreateSpace(doc, tok(data, request));
+	const parsed = parseSpaceXfer(data.payload);
+	if (!parsed) throw new Error("errors.badSpaceFile");
+	if (!doc.customIcons) doc.customIcons = [];
+	const iconMap = new Map<string, string>();
+	for (const ic of parsed.customIcons) {
+		const dataUrl = String(ic.dataUrl || "");
+		if (!dataUrl.startsWith("data:image/")) continue;
+		if (doc.customIcons.length >= MAX_CUSTOM_ICONS) break;
+		const id = crypto.randomUUID();
+		doc.customIcons.push({
+			id,
+			name: String(ic.name || "").slice(0, 80),
+			dataUrl
+		});
+		if (ic.id) iconMap.set(String(ic.id), dataUrl);
+		iconMap.set(dataUrl, dataUrl);
+	}
+	function mapIcon(value: unknown) {
+		const s = String(value || "");
+		return iconMap.get(s) || s;
+	}
+	const src = parsed.space;
+	const spaceId = crypto.randomUUID();
+	const name = String(src.name || "").trim().slice(0, 40) || tt(doc, "nav.space");
+	const space: DocSpace = {
+		id: spaceId,
+		name,
+		icon: mapIcon(src.icon) || "Layers",
+		sortOrder: 0,
+		restricted: false,
+		viewers: [],
+		editors: [],
+		hideLabel: Boolean(src.hideLabel),
+		categories: (Array.isArray(src.categories) ? src.categories : []).map((c: any, ci: number) => {
+			const catId = crypto.randomUUID();
+			return {
+				id: catId,
+				name: String(c?.name || "").trim().slice(0, 60) || tt(doc, "seed.category"),
+				icon: mapIcon(c?.icon) || "AppWindow",
+				sortOrder: ci + 1,
+				restricted: false,
+				viewers: [] as string[],
+				editors: [] as string[],
+				cards: (Array.isArray(c?.cards) ? c.cards : []).map((a: any, ai: number) => normalizeItem({
+					...a,
+					id: crypto.randomUUID(),
+					icon: mapIcon(a?.icon) || a?.icon,
+					clicks: 0
+				}, catId, ai + 1))
+			};
+		})
+	};
+	if (!isOwnerUser(user)) {
+		const live = doc.users.find((u) => u.id === user.id);
+		if (live) live.grants = mergeGrant(asGrants(live.grants), { res: "space", id: spaceId, allow: ["view", "open", "edit", "create", "delete", "move"] });
+	}
+	doc.spaces.push(space);
+	const ordered = [...doc.spaces].sort((a, b) => a.sortOrder - b.sortOrder);
+	const ids = ordered.map((row) => row.id).filter((id) => id !== spaceId);
+	const at = data.afterId ? ids.indexOf(data.afterId) : -1;
+	ids.splice(at < 0 ? ids.length : at + 1, 0, spaceId);
+	ids.forEach((id, i) => {
+		const row = doc.spaces.find((s) => s.id === id);
+		if (row) row.sortOrder = i + 1;
+	});
+	appendHistory(doc, user, {
+		type: "space.import",
+		label: name,
+		snapshot: { space: snapshotSpace(space) }
+	});
+	return emit(doc, user, spaceId);
+}));
 export const importPortal = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	payload: z.unknown()
@@ -3462,7 +3618,7 @@ async function resolveProbeByIds(token: string, ids: string[]) {
 		const app = found.app;
 		if (app.kind !== "app" || app.check === "off") continue;
 		if (app.check === "http") {
-			const url = safeAppHref(cardUrl(app));
+			const url = safeEmbedHref(cardUrl(app));
 			if (url) out.push({
 				id: app.id,
 				mode: "http",
@@ -3678,7 +3834,7 @@ export const probePreview = createServerFn({ method: "POST" }).validator(z.objec
 	const doc = await readDoc();
 	const tlsVerify = Boolean(doc.settings.probeTlsVerify);
 	if (ctx.data.mode === "icmp") return probeIcmp("preview", ctx.data.host || "");
-	const url = safeAppHref(ctx.data.url);
+	const url = safeEmbedHref(ctx.data.url);
 	if (!url) throw new Error("errors.httpRequired");
 	return probeHttp("preview", url, tlsVerify);
 });
@@ -3688,7 +3844,7 @@ export const grabSiteFavicon = createServerFn({ method: "POST" }).validator(z.ob
 	url: z.string().max(2000)
 })).handler(async (ctx) => {
 	await requireEditorSession(tok(ctx.data, (ctx as any).request));
-	const href = safeAppHref(ctx.data.url);
+	const href = safeEmbedHref(ctx.data.url);
 	if (!href) throw new Error("errors.httpRequired");
 	const { fetchSiteFavicon } = await import("./favicon-runtime");
 	return fetchSiteFavicon(href);

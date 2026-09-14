@@ -24,6 +24,7 @@ import {
   deleteSpace,
   getPortal,
   importPortal,
+  importSpace,
   manageTags,
   moveCategory,
   resetClicks,
@@ -503,6 +504,21 @@ export function PortalOverlays({
           picker={picker}
           canAcl={sessionCanManageAcl(session)}
           people={data.directory || []}
+          token={token}
+          canImportSpace={Boolean(session?.isOwner || session?.canCreateSpaces)}
+          onImportSpace={(payload) =>
+            apply(async () => {
+              const next = await importSpace({
+                data: {
+                  token,
+                  payload,
+                  afterId: (modal.space as MenuSpace | null)?.id,
+                },
+              });
+              toast.success(t("toast.spaceImported"));
+              return next;
+            })
+          }
           onCancel={close}
           onSave={(name, icon, access) =>
             apply(() =>

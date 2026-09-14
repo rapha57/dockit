@@ -62,6 +62,16 @@ export function settingsSections() {
     lead: t(`sections.${id}.lead`),
   }));
 }
+function catalogHasProbes(catalog: CatalogSpace[]): boolean {
+  for (const space of catalog)
+    for (const cat of space.categories)
+      for (const card of cat.cards) {
+        if ((card.kind || "app") !== "app") continue;
+        if (card.check && card.check !== "off") return true;
+      }
+  return false;
+}
+
 export function AdminPanel({
   tab,
   settings,
@@ -209,7 +219,7 @@ export function AdminPanel({
                   type="button"
                   variant="danger"
                   className="am-create self-start"
-                  disabled={busy}
+                  disabled={busy || !catalogHasProbes(catalog)}
                   onClick={async () => {
                     if (
                       !(await askConfirm({
@@ -1727,7 +1737,7 @@ export function TagColorPick({
       <button
         type="button"
         ref={btnRef}
-        className="tag-color-btn"
+        className="picker-color-btn"
         disabled={disabled}
         style={
           {

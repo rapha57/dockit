@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { Bold, Code, Code2, Eraser, Italic, Link, Palette } from "lucide-react";
 import { htmlToMd, mdToHtml, safeHref, escapeHtml, NOTE_COLORS, toHex } from "@/lib/note-md";
+import { tagInk } from "@/lib/tag-colors";
 import { t } from "@/lib/i18n";
 import { EdgeFade } from "@/components/edge-fade";
 
@@ -334,13 +335,27 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
               role="option"
               title={t(`note.${c.id || "default"}`)}
               aria-label={t(`note.${c.id || "default"}`)}
-              className={`note-swatch ${c.id ? `is-${c.id}` : "is-default"}`}
-              style={c.hex ? { background: c.hex } : undefined}
+              className={`picker-color-btn${c.hex ? "" : " is-note-default"}`}
+              style={
+                {
+                  ["--tag-bg"]: c.hex || "var(--color-surface)",
+                  ["--tag-fg"]: c.hex ? tagInk(c.hex) : "var(--color-muted)",
+                } as CSSProperties
+              }
               onMouseDown={keepSelection}
               onClick={() => applyColor(c.hex)}
             />
           ))}
-          <label className="note-swatch-custom" title={t("note.customColor")}>
+          <label
+            className="picker-color-btn note-swatch-custom"
+            title={t("note.customColor")}
+            style={
+              {
+                ["--tag-bg"]: "var(--color-elevated)",
+                ["--tag-fg"]: "var(--color-muted)",
+              } as CSSProperties
+            }
+          >
             <input
               type="color"
               className="note-swatch-custom-input"
@@ -352,8 +367,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
                 if (hex) applyColor(hex);
               }}
             />
-            <Palette className="size-3.5" />
-            {t("note.customColor")}
+            <Palette className="size-3.5" aria-hidden />
           </label>
         </div>
       ) : null}
@@ -361,7 +375,7 @@ export function NoteEditor({ value, onChange }: NoteEditorProps) {
         <div className="note-linkbar">
           <input
             ref={linkRef}
-            className="field-input h-9 flex-1 rounded-lg border border-border bg-elevated/80 px-2 text-sm outline-none"
+            className="field-input h-9 flex-1 rounded-lg border border-border bg-transparent px-2 text-sm outline-none"
             placeholder={t("note.linkPlaceholder")}
             value={linkHref}
             onChange={(e) => setLinkHref(e.target.value)}

@@ -257,6 +257,12 @@ export function formatWhen(at: unknown, withSeconds = false, prefs?: WhenPrefs):
 	return `${date} ${time}`;
 }
 
+export function modKeyLabel(): string {
+	if (typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent))
+		return t("legend.modCmd");
+	return t("legend.modCtrl");
+}
+
 export function t(key: string, vars?: Vars): string {
 	const table = catalogs[current] || catalogs.en;
 	let s = table[key] ?? catalogs.en[key] ?? catalogs.fr[key] ?? key;

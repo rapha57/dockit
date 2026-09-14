@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { AppWindow, Copy, FileText, GripVertical, MousePointerClick, Pencil, SquareMenu, Star, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -6,7 +6,7 @@ import { NoteBody } from "@/components/note-editor";
 import { t, td, tp } from "@/lib/i18n";
 import { PortalIcon } from "@/lib/icons";
 import { cardUrl, type PortalCard } from "@/lib/portal";
-import { safeAppHref } from "@/lib/safe-href";
+import { safeAppHref, safeEmbedHref } from "@/lib/safe-href";
 import { orderedTags, tagPaint } from "@/lib/tag-ui";
 import { clearResizeCursor, finePointer, hoverResizeCursor } from "@/lib/card-resize";
 import type { ProbeResult } from "@/lib/probe";
@@ -124,12 +124,33 @@ export function AppCard({
   ctxMenu,
   ctxHideUrl,
 }: AppCardProps) {
-  const extra = (app.kind || "app") === "app" ? (app.links ?? []).slice(1) : [];
-  const primaryHref = safeAppHref(cardUrl(app));
-  const extraLinks = extra.filter((row) => safeAppHref(row.url));
-  const menuMode = (app.kind || "app") === "app" && Boolean(app.linkMenu) && extraLinks.length > 0;
+  const menuLinks = (() => {
+    const rows: { title: string; url: string; openIn?: "_blank" | "_self" }[] = [];
+    if ((app.kind || "app") === "app") {
+      (app.links ?? []).forEach((row, i) => {
+        const url = safeAppHref(row.url);
+        if (!url) return;
+        rows.push({
+          title: String(row.title || "").trim() || t("annex.linkN", { n: i + 1 }),
+          url,
+          openIn: row.openIn,
+        });
+      });
+    }
+    if (rows.length) return rows;
+    const href = safeAppHref(cardUrl(app));
+    if (!href) return rows;
+    rows.push({
+      title: String(app.title || "").trim() || t("annex.one"),
+      url: href,
+      openIn: app.links?.[0]?.openIn || app.openIn,
+    });
+    return rows;
+  })();
+  const multi = menuLinks.length > 1;
+  const menuMode = (app.kind || "app") === "app" && Boolean(app.linkMenu) && multi;
   const ctxOn = ctxMenu !== false;
-  const canCtx = extraLinks.length > 0 || (ctxOn && Boolean(primaryHref));
+  const canCtx = menuLinks.length > 0 && (ctxOn || multi);
   const [menu, setMenu] = useState<AppCardMenu | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -216,12 +237,12 @@ export function AppCard({
         onRecheck={() => onRecheck?.()}
       />
     ) : null;
-  const annexHint = extra.length > 1 ? t("annex.hint_other") : t("annex.hint");
-  const annexBtn = extra.length ? (
+  const annexHint = menuMode ? t("item.linkMenu") : t("annex.hint");
+  const annexBtn = multi ? (
     <button
       type="button"
-      className={`card-tool${menu ? " is-open" : ""}${app.linkMenu ? " is-hub" : ""}`}
-      aria-label={extra.length > 1 ? t("annex.others") : t("annex.other")}
+      className={`card-tool${menu ? " is-open" : ""}${menuMode ? " is-hub" : ""}`}
+      aria-label={menuMode ? t("item.linkMenu") : t("annex.linksTitle")}
       aria-expanded={Boolean(menu)}
       aria-haspopup="menu"
       title={annexHint}
@@ -349,10 +370,10 @@ export function AppCard({
             <h3 className="min-w-0 flex-1 truncate font-medium tracking-tight">{app.title}</h3>
           </div>
         )}
-        {safeAppHref(app.url) ? (
+        {safeEmbedHref(app.url) ? (
           <iframe
             title={app.title || t("item.embed.option")}
-            src={safeAppHref(app.url)}
+            src={safeEmbedHref(app.url)}
             className={`min-h-0 w-full flex-1 rounded-lg${app.embedBorder ? " border border-border" : ""} ${
               app.embedBg === "default" ? "bg-elevated" : "bg-transparent"
             }`}
@@ -456,10 +477,7 @@ export function AppCard({
       </div>
     );
   }
-  const showPrimary = Boolean((ctxOn || menuMode) && primaryHref);
-  const primaryLabel = String(app.links?.[0]?.title || "").trim() || String(app.title || "").trim();
-  const ctxCount = (showPrimary ? 1 : 0) + extraLinks.length;
-  const ctxHeading = ctxCount === 1 ? t("annex.one") : t("annex.linksTitle");
+  const ctxHeading = menuLinks.length === 1 ? t("annex.one") : t("annex.linksTitle");
   const linkMenu =
     menu && canCtx && typeof document !== "undefined"
       ? createPortal(
@@ -485,10 +503,12 @@ export function AppCard({
               <p className="menu-kicker truncate" title={ctxHeading}>
                 {ctxHeading}
               </p>
-              {showPrimary ? ctxRow(primaryHref, primaryLabel || t("annex.one"), "primary", app.links[0]?.openIn) : null}
-              {extraLinks.map((row, i) =>
-                ctxRow(row.url, row.title, `x-${i}-${row.url}`, row.openIn),
-              )}
+              {menuLinks.map((row, i) => (
+                <Fragment key={`l-${i}-${row.url}`}>
+                  {i === 1 && !menuMode ? <div className="menu-sep" /> : null}
+                  {ctxRow(row.url, row.title, `l-${i}-${row.url}`, row.openIn)}
+                </Fragment>
+              ))}
             </div>
           </>,
           document.body,
