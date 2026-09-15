@@ -15,6 +15,7 @@ Self-hosted. One JSON file. No database.</p>
   <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite 8" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4" />
   <img src="https://img.shields.io/badge/license-MIT-2EA043?style=flat-square" alt="MIT" />
+  <a href="https://github.com/rapha57/dockit/actions/workflows/ci.yml"><img src="https://github.com/rapha57/dockit/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
 </p>
 
 <p align="center">

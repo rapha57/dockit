@@ -298,8 +298,8 @@
     "documentTitle": "Browser tab title",
     "sectionsAria": "Settings sections",
     "brandClick": "Click a thumbnail to import. A logo also copies the favicon.",
-    "resetBody": "Reset the portal: base setup, statistics cleared, accounts removed, admin / admin access, a single Home space with an empty Applications category.",
-    "resetConfirm": "Reset the whole portal? Spaces, cards, themes, tags, statistics and accounts are replaced. Admin access becomes admin / admin again.",
+    "resetBody": "Factory reset: English and default formats, statistics cleared, accounts, groups and custom roles removed, admin / admin access, a single Home space with an empty Applications category.",
+    "resetConfirm": "Reset the whole portal? Spaces, cards, themes, tags, statistics, accounts, groups, custom roles, language and formats are replaced. Admin access becomes admin / admin again.",
     "resetAction": "Reset the portal",
     "importBrand": "Import {label}"
   },

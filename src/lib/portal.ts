@@ -20,7 +20,7 @@ import {
 	publicTrash,
 	emptyTrash
 } from "./history";
-import { t, withLocale, asLocale, asNumberFormat, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "./i18n";
+import { t, withLocale, asNumberFormat, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "./i18n";
 import {
 	curationJobRunning,
 	curationJobSnapshot,
@@ -1901,28 +1901,26 @@ export const resetProbes = createServerFn({ method: "POST" }).validator(z.object
 }));
 export const resetPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => mutate(async (doc) => {
 	requireAdmin(doc, tok(data, request));
-	const keep = {
-		locale: asLocale(doc.settings.locale),
-		dateFormat: doc.settings.dateFormat,
-		timeFormat: doc.settings.timeFormat,
-		timezone: doc.settings.timezone,
-		numberFormat: doc.settings.numberFormat
-	};
-	const fresh = blankSpaces(keep.locale);
-	doc.settings = {
-		...defaultSettings(),
-		...keep
-	};
+	const fresh = blankSpaces("en");
+	doc.settings = defaultSettings();
 	doc.customIcons = [];
 	doc.clickDays = {};
 	doc.lastSpaceId = fresh.lastSpaceId;
 	doc.spaces = fresh.spaces;
+	doc.groups = [];
+	doc.roles = defaultRoles();
 	if (process.env.NODE_ENV === "production") requireStrongPassword(envPassword());
 	doc.users = [{
 		id: "admin",
 		username: envUser(),
 		passHash: await hashPassword(envPassword()),
-		role: "admin"
+		role: "owner",
+		roleIds: ["owner"],
+		groupIds: [],
+		grants: [],
+		disabled: false,
+		source: "local",
+		externalId: ""
 	}];
 	for (const [tok, row] of sessions) if (row.userId !== "admin") sessions.delete(tok);
 	doc.history = [];

@@ -298,8 +298,8 @@
     "documentTitle": "Titre de l’onglet (navigateur)",
     "sectionsAria": "Sections des réglages",
     "brandClick": "Cliquer une vignette pour importer. Un logo recopie aussi le favicon.",
-    "resetBody": "Remettre le portail à zéro : paramétrage de base, statistiques vidées, comptes supprimés, accès admin / admin, un seul espace Accueil avec une catégorie Applications vide.",
-    "resetConfirm": "Réinitialiser tout le portail ? Espaces, cartes, thèmes, étiquettes, statistiques et comptes sont remplacés. L’accès admin redevient admin / admin.",
+    "resetBody": "Remise d’usine : anglais et formats par défaut, statistiques vidées, comptes, groupes et rôles personnalisés supprimés, accès admin / admin, un seul espace Accueil avec une catégorie Applications vide.",
+    "resetConfirm": "Réinitialiser tout le portail ? Espaces, cartes, thèmes, étiquettes, statistiques, comptes, groupes, rôles personnalisés, langue et formats sont remplacés. L’accès admin redevient admin / admin.",
     "resetAction": "Réinitialiser le portail",
     "importBrand": "Importer {label}"
   },
