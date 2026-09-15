@@ -119,7 +119,7 @@ npm run dev
 
 The pre-commit hook runs `typecheck` and `lint` (zero warnings).
 
-**Docker** — set `PORTAL_EDIT_PASSWORD` (≥ 12 characters) in `docker-compose.yml`. Port **3000**. Data in the `portal-data` volume.
+**Docker** — set `PORTAL_EDIT_PASSWORD` (≥ 12 characters) in `docker-compose.yml`. Port **3000**. Data in the `portal-data` volume. The image is two-stage: build tools stay in the first stage, the run image is production `npm ci --omit=dev` plus `.output`. `data/` is not copied into the image (`.dockerignore`).
 
 ```bash
 docker compose up -d --build
@@ -132,6 +132,8 @@ PORTAL_PUBLIC_ORIGIN=https://portal.example
 PORTAL_TRUST_PROXY=1
 ```
 
+**OpenShift / Kubernetes** — HTTP probes need no extra capabilities. ICMP (ping) needs `NET_RAW`. The default `restricted` SCC does not grant it: omit `cap_add` and leave ICMP off, or use a dedicated SCC. HTTP probes still work. Mount `/app/data`; do not bake `portal.json` into the image.
+
 **Production** — `PORTAL_EDIT_PASSWORD` required, no default. Intranet + reverse proxy. HTTPS.
 
 ```bash
@@ -142,6 +144,15 @@ npm run build
 node .output/server/index.mjs
 ```
 
+SSO client secret and LDAP bind password stay **out of** `portal.json`. Set them on the process (OpenShift: a Secret):
+
+```bash
+export PORTAL_OIDC_CLIENT_SECRET="…"
+export PORTAL_LDAP_BIND_PASSWORD="…"
+```
+
+Optional, per directory id (`ad` → `_AD`): `PORTAL_LDAP_BIND_PASSWORD_AD`. When these are set, Settings shows the fields as provided by the server and the next save writes them empty in the JSON. Until then, an old value in the file still works.
+
 ## Data
 
 No database. The whole portal is one file: `data/portal.json`. Backup, move, restore = copy it.
@@ -150,7 +161,7 @@ No database. The whole portal is one file: `data/portal.json`. Backup, move, res
 PORTAL_DATA_FILE=/path/to/portal.json
 ```
 
-Treat it as a secret (password hashes, OIDC secret, LDAP bind).
+Password hashes live in that file (scrypt). The OIDC client secret and LDAP bind password do not — use the env vars above. Treat the JSON as sensitive anyway (hashes, who has access to what).
 
 | Path | What |
 | --- | --- |
@@ -160,12 +171,15 @@ Treat it as a secret (password hashes, OIDC secret, LDAP bind).
 
 ## Security
 
-Built for internal networks, typically behind a reverse proxy.
+Built for internal networks, typically behind a reverse proxy. Not a public SaaS.
 
-- Strong `PORTAL_EDIT_PASSWORD`, HTTPS, protected `portal.json`
+**Threat model.** One JSON file, no database. Attack surface is the portal process plus whatever the reverse proxy exposes. The server does not fetch cloud metadata (`169.254.169.254`, GCP metadata, link-local). HTTP probes are http(s) only, no embedded credentials, DNS-checked, timeout-capped (4s), rate-limited, and can be limited to signed-in sessions. ICMP is optional and needs `NET_RAW` (see OpenShift above). Production requires `PORTAL_EDIT_PASSWORD` (≥ 12 characters, no default). Local login always stays, even with LDAP / OIDC. OIDC and LDAP bind secrets belong in the environment, not in `portal.json`.
+
 - scrypt, login rate limiting, ACL, OIDC PKCE
 - Security headers, iframes without `allow-same-origin`
-- Bounded probes, HttpOnly session cookie, non-root Docker image
+- Theme CSS without `url(` / `@import`
+- HttpOnly session cookie (off by default), TLS probe verify (off by default)
+- Non-root Docker image (`USER node`)
 
 More under **Settings → Security**.
 

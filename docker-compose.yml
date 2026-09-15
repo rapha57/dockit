@@ -7,6 +7,9 @@ services:
       PORTAL_EDIT_USER: admin
       # 12 caractères min. Obligatoire en production (pas admin / change-moi).
       PORTAL_EDIT_PASSWORD: ""
+      # SSO / AD secrets — keep out of portal.json (OpenShift: a Secret).
+      # PORTAL_OIDC_CLIENT_SECRET: ""
+      # PORTAL_LDAP_BIND_PASSWORD: ""
       PORTAL_DATA_FILE: /app/data/portal.json
       PORT: "3000"
       # Derrière un reverse proxy :
@@ -14,6 +17,8 @@ services:
       # PORTAL_TRUST_PROXY: "1"
     volumes:
       - portal-data:/app/data
+    # ICMP probes (ping). HTTP probes work without this.
+    # OpenShift restricted SCC: omit cap_add — ICMP will report unavailable.
     cap_add:
       - NET_RAW
 

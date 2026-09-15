@@ -102,4 +102,35 @@ describe("fromDisk / toDisk", () => {
 		expect(bob).toBeTruthy();
 		expect((bob!.grants || []).some((g) => g.res === "space" && g.id === "s1" && (g.allow || []).includes("view"))).toBe(true);
 	});
+
+	it("keeps OIDC and LDAP secrets off disk when they come from the environment", () => {
+		process.env.PORTAL_OIDC_CLIENT_SECRET = "env-oidc";
+		process.env.PORTAL_LDAP_BIND_PASSWORD = "env-bind";
+		try {
+			const doc = fromDisk({
+				settings: {
+					...settings,
+					oidcClientSecret: "json-oidc",
+					ldapDirectories: [
+						{
+							id: "ad",
+							enabled: true,
+							host: "dc.example.local",
+							domain: "EXAMPLE",
+							bindPassword: "json-bind",
+						},
+					],
+				},
+				spaces: [],
+			});
+			expect(doc).not.toBeNull();
+			const out = toDisk(doc!);
+			expect(out.settings.oidcClientSecret).toBe("");
+			expect(out.settings.ldapBindPassword).toBe("");
+			expect(out.settings.ldapDirectories[0].bindPassword).toBe("");
+		} finally {
+			delete process.env.PORTAL_OIDC_CLIENT_SECRET;
+			delete process.env.PORTAL_LDAP_BIND_PASSWORD;
+		}
+	});
 });

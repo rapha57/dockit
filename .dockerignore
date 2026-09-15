@@ -1,11 +1,26 @@
+# Build context — never bake instance data or the working tree into the image.
 node_modules
 .git
 .output
 .vercel
 .nitro
+.turbo
+.vite
+coverage
+docs
 screenshots
 test-results
+playwright-report
+blob-report
+tests
+data
+data/**
 *.log
 .DS_Store
 .env
 .env.*
+.idea
+.vscode
+*.tsbuildinfo
+*.md
+!README.md

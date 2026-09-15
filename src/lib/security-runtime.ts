@@ -9,6 +9,26 @@ export function trustProxy(): boolean {
 	return v === "1" || v === "true" || v === "yes";
 }
 
+function envTrimmed(name: string): string {
+	return String(process.env[name] || "").trim().slice(0, 200);
+}
+
+export function envOidcClientSecret(): string {
+	return envTrimmed("PORTAL_OIDC_CLIENT_SECRET");
+}
+
+export function envLdapBindPassword(directoryId?: string): string {
+	const id = String(directoryId || "").trim();
+	if (id) {
+		const suffix = id.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").toUpperCase();
+		if (suffix) {
+			const specific = envTrimmed(`PORTAL_LDAP_BIND_PASSWORD_${suffix}`);
+			if (specific) return specific;
+		}
+	}
+	return envTrimmed("PORTAL_LDAP_BIND_PASSWORD");
+}
+
 export function assertProductionSecrets(): void {
 	if (process.env.NODE_ENV !== "production") return;
 	const pass = String(process.env.PORTAL_EDIT_PASSWORD || "").trim();

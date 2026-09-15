@@ -101,13 +101,21 @@ export function OidcForm({
             required={oidcEnabled}
           />
         </Field>
-        <Field label={t("oidc.clientSecret")} hint={t("oidc.secretHint")}>
+        <Field
+          label={t("oidc.clientSecret")}
+          hint={initial.oidcSecretFromEnv ? t("oidc.secretFromEnv") : t("oidc.secretHint")}
+        >
           <Input
             type="password"
             value={oidcClientSecret}
+            disabled={Boolean(initial.oidcSecretFromEnv)}
             onChange={(e) => setOidcClientSecret(e.target.value)}
             placeholder={
-              initial.oidcHasSecret ? t("oidc.secretUnchanged") : t("oidc.secretOptional")
+              initial.oidcSecretFromEnv
+                ? t("oidc.secretFromEnvPlaceholder")
+                : initial.oidcHasSecret
+                  ? t("oidc.secretUnchanged")
+                  : t("oidc.secretOptional")
             }
           />
         </Field>
@@ -119,7 +127,7 @@ export function OidcForm({
     </form>
   );
 }
-export type LdapDirRow = Directory & { hasBindPassword?: boolean };
+export type LdapDirRow = Directory & { hasBindPassword?: boolean; bindFromEnv?: boolean };
 export function blankLdapDir(): LdapDirRow {
   return {
     id: crypto.randomUUID(),
@@ -161,6 +169,7 @@ export function seedLdapDirs(initial: PortalSettings): LdapDirRow[] {
         domain: initial.ldapDomain || "",
         autoCreate: Boolean(initial.ldapAutoCreate),
         hasBindPassword: Boolean(initial.ldapHasBindPassword),
+        bindFromEnv: Boolean(initial.ldapBindFromEnv),
       },
     ];
   }
@@ -878,16 +887,26 @@ export function LdapDirFields({ d, patch }: { d: LdapDirRow; patch: (next: Parti
           placeholder="CN=dockit,OU=Services,DC=example,DC=local"
         />
       </Field>
-      <Field label={t("ldap.bindPassword")}>
+      <Field
+        label={t("ldap.bindPassword")}
+        hint={d.bindFromEnv ? t("ldap.bindFromEnv") : undefined}
+      >
         <Input
           type="password"
           value={d.bindPassword}
+          disabled={Boolean(d.bindFromEnv)}
           onChange={(e) =>
             patch({
               bindPassword: e.target.value,
             })
           }
-          placeholder={d.hasBindPassword ? t("oidc.secretUnchanged") : t("oidc.secretOptional")}
+          placeholder={
+            d.bindFromEnv
+              ? t("ldap.bindFromEnvPlaceholder")
+              : d.hasBindPassword
+                ? t("oidc.secretUnchanged")
+                : t("oidc.secretOptional")
+          }
         />
       </Field>
       <Field label={t("ldap.baseDn")}>

@@ -6,7 +6,7 @@ import { ASSET_PREFIX, ASSET_URL, MAX_CUSTOM_ICONS, isAssetRef, toClientAsset } 
 import { SPACE_XFER_KIND, SPACE_XFER_VERSION, collectIconValues, parseSpaceXfer } from "./space-xfer";
 import { CSS_MAX, sanitizeThemeCss } from "./theme-css";
 import { isWeakPassword, passwordPolicyError, PASSWORD_MAX } from "./security";
-import { assertProductionSecrets, clientIp, isDevRuntime, trustProxy } from "./security-runtime";
+import { assertProductionSecrets, clientIp, envLdapBindPassword, envOidcClientSecret, isDevRuntime, trustProxy } from "./security-runtime";
 import { parseSessCookie } from "./session-cookie";
 import {
 	asHistory,
@@ -227,7 +227,11 @@ export type PortalSettings = {
   /** Present on client payloads only (see clientSettings). */
   oidcHasSecret?: boolean;
   /** Present on client payloads only (see clientSettings). */
+  oidcSecretFromEnv?: boolean;
+  /** Present on client payloads only (see clientSettings). */
   ldapHasBindPassword?: boolean;
+  /** Present on client payloads only (see clientSettings). */
+  ldapBindFromEnv?: boolean;
 };
 
 export type CustomIcon = {
@@ -1333,10 +1337,39 @@ function historyToDisk(row: any): any {
 		snapshot: snapshotToDisk(row.snapshot)
 	};
 }
+function persistableSettings(s: PortalSettings): PortalSettings {
+	const dirs = asDirectories(s).map((d) => ({
+		...d,
+		bindPassword: envLdapBindPassword(d.id) ? "" : String(d.bindPassword || "")
+	}));
+	const legacy = syncLegacyLdap(dirs);
+	return {
+		...s,
+		...legacy,
+		oidcClientSecret: envOidcClientSecret() ? "" : String(s.oidcClientSecret || ""),
+		ldapDirectories: dirs
+	};
+}
+function applyEnvSecrets(doc: Doc) {
+	const oidc = envOidcClientSecret();
+	if (oidc) doc.settings.oidcClientSecret = oidc;
+	const dirs = asDirectories(doc.settings);
+	let touch = Boolean(oidc);
+	for (const d of dirs) {
+		const password = envLdapBindPassword(d.id);
+		if (!password) continue;
+		d.bindPassword = password;
+		touch = true;
+	}
+	if (!touch) return;
+	doc.settings.ldapDirectories = dirs;
+	Object.assign(doc.settings, syncLegacyLdap(dirs));
+}
 export function toDisk(doc: Doc) {
-	const { spaces, lastSpaceId, history, ...rest } = doc;
+	const { spaces, lastSpaceId, history, settings, ...rest } = doc;
 	return {
 		...rest,
+		settings: persistableSettings(settings),
 		lastSpaceId: lastSpaceId,
 		spaces: (spaces || []).map((t) => ({
 			...t,
@@ -1381,6 +1414,7 @@ async function readDocUnlocked(): Promise<Doc> {
 		const parsed = parseStoreText(text);
 		ensureRoles(parsed);
 		ensureGroups(parsed);
+		applyEnvSecrets(parsed);
 		liveDoc = parsed;
 		return parsed;
 	} catch (err) {
@@ -1392,6 +1426,8 @@ async function readDocUnlocked(): Promise<Doc> {
 }
 async function persistDoc(doc: Doc) {
 	await persistDocMedia(doc);
+	const disk = toDisk(doc);
+	applyEnvSecrets(doc);
 	liveDoc = doc;
 	const { mkdir, rename, writeFile, unlink } = await import("node:fs/promises");
 	const { dirname: dirn, join } = await import("node:path");
@@ -1399,7 +1435,7 @@ async function persistDoc(doc: Doc) {
 	await mkdir(dirn(path), { recursive: true });
 	const tmp = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
 	try {
-		await writeFile(tmp, `${JSON.stringify(toDisk(doc), null, 2)}\n`, "utf8");
+		await writeFile(tmp, `${JSON.stringify(disk, null, 2)}\n`, "utf8");
 		await rename(tmp, path);
 	} catch (err) {
 		await unlink(tmp).catch(() => void 0);
@@ -1495,12 +1531,15 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 		oidcLabel: String(s.oidcLabel || "SSO").slice(0, 40) || "SSO",
 		oidcAutoRedirect: Boolean(s.oidcAutoRedirect),
 		proxyAuthEnabled: Boolean(s.proxyAuthEnabled),
-		oidcHasSecret: Boolean(s.oidcClientSecret),
+		oidcHasSecret: Boolean(envOidcClientSecret() || s.oidcClientSecret),
+		oidcSecretFromEnv: Boolean(envOidcClientSecret()),
 		ldapEnabled: realms.length > 0,
 		ldapDomain: realms[0]?.label || "",
-		ldapHasBindPassword: dirs.some((d) => Boolean(d.bindPassword)),
+		ldapHasBindPassword: dirs.some((d) => Boolean(envLdapBindPassword(d.id) || d.bindPassword)),
+		ldapBindFromEnv: dirs.some((d) => Boolean(envLdapBindPassword(d.id))) || Boolean(envLdapBindPassword()),
 		ldapDirectories: dirs.map((d) => {
-			const row: any = { ...d, hasBindPassword: Boolean(d.bindPassword) };
+			const fromEnv = Boolean(envLdapBindPassword(d.id));
+			const row: any = { ...d, hasBindPassword: fromEnv || Boolean(d.bindPassword), bindFromEnv: fromEnv };
 			delete row.bindPassword;
 			return row;
 		}),
@@ -1540,7 +1579,8 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 		out.ldapUserFilter = String(s.ldapUserFilter || "");
 		out.ldapAutoCreate = Boolean(s.ldapAutoCreate);
 		out.ldapDirectories = dirs.map((d) => {
-			const row: any = { ...d, hasBindPassword: Boolean(d.bindPassword) };
+			const fromEnv = Boolean(envLdapBindPassword(d.id));
+			const row: any = { ...d, hasBindPassword: fromEnv || Boolean(d.bindPassword), bindFromEnv: fromEnv };
 			delete row.bindPassword;
 			return row;
 		});
@@ -2167,8 +2207,9 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 		normalizeIssuer(issuer);
 		if (!clientId) throw new Error("errors.oidcClientId");
 	}
-	let secret = doc.settings.oidcClientSecret || "";
-	if (typeof data.oidcClientSecret === "string" && data.oidcClientSecret && data.oidcClientSecret !== "********") {
+	const fromEnv = envOidcClientSecret();
+	let secret = fromEnv || doc.settings.oidcClientSecret || "";
+	if (!fromEnv && typeof data.oidcClientSecret === "string" && data.oidcClientSecret && data.oidcClientSecret !== "********") {
 		secret = data.oidcClientSecret.slice(0, 200);
 	}
 	doc.settings = {
@@ -2176,7 +2217,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 		oidcEnabled: Boolean(data.oidcEnabled),
 		oidcIssuer: issuer.slice(0, 300),
 		oidcClientId: clientId.slice(0, 120),
-		oidcClientSecret: secret,
+		oidcClientSecret: fromEnv ? "" : secret,
 		oidcLabel: String(data.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
 		oidcAutoCreate: Boolean(data.oidcAutoCreate),
 		oidcAutoRedirect: Boolean(data.oidcAutoRedirect)
@@ -2224,8 +2265,9 @@ export const updateLdapSettings = createServerFn({ method: "POST" }).validator(z
 			if (bindDn && !baseDn) throw new Error("errors.ldapBaseDn");
 		}
 		const old = prevById.get(row.id);
-		let bindPassword = old?.bindPassword || "";
-		if (typeof row.bindPassword === "string" && row.bindPassword && row.bindPassword !== "********") {
+		const bindFromEnv = envLdapBindPassword(row.id);
+		let bindPassword = bindFromEnv ? "" : old?.bindPassword || "";
+		if (!bindFromEnv && typeof row.bindPassword === "string" && row.bindPassword && row.bindPassword !== "********") {
 			bindPassword = row.bindPassword.slice(0, 200);
 		}
 		const tls = row.tls !== false;
@@ -2362,7 +2404,7 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 		const disc = await discoverOidc(s.oidcIssuer);
 		const tokens = await exchangeCode(disc, {
 			clientId: s.oidcClientId,
-			clientSecret: s.oidcClientSecret || "",
+			clientSecret: envOidcClientSecret() || s.oidcClientSecret || "",
 			code: ctx.data.code,
 			redirectUri: pending.redirectUri,
 			verifier: pending.verifier
