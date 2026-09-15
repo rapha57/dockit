@@ -1432,7 +1432,7 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   border: 0;
   border-radius: 4px;
   background: none;
-  color: #111;
+  color: inherit;
   line-height: 0;
   cursor: pointer;
   opacity: 0.72;
@@ -1447,8 +1447,7 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
 }
 .security-banner .banner-close:hover {
   opacity: 1;
-  color: #000;
-  background: color-mix(in oklab, #000 10%, transparent);
+  background: color-mix(in oklab, currentColor 12%, transparent);
   transform: scale(1.08);
 }
 .security-banner.is-dev {

@@ -167,7 +167,14 @@ function Home() {
   const initial: PortalData = Route.useLoaderData();
   const [data, setData] = useState<PortalData>(initial);
   applyDisplayPrefs(data.settings);
-  const [editMode, setEditMode] = useState(false);
+  const [editMode, setEditMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return Boolean(editArmed || sessionStorage.getItem(EDIT_MODE_KEY) === "1");
+    } catch {
+      return false;
+    }
+  });
   const [token, setToken] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [hideDevBanner, setHideDevBanner] = useState(false);
@@ -328,7 +335,11 @@ function Home() {
   useEffect(() => {
     const prefs = readUiPrefs();
     setUi(prefs);
-    if (prefs.openFavs) setPage("favs");
+    const hasCards = (initial.catalog ?? []).some((space) =>
+      (space.categories || []).some((cat) => (cat.cards || []).length > 0),
+    );
+    if (prefs.openFavs && hasCards) setPage("favs");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boot-only prefs restore
   }, []);
   useEffect(() => {
     setHideDevBanner(false);
@@ -1177,7 +1188,6 @@ function Home() {
     if (spaceHasCards(data.activeSpaceId)) return;
     const next = (data.spaces || []).find((t) => t.id !== data.activeSpaceId && spaceHasCards(t.id));
     if (next) goSpace(next.id);
-    else setPage("favs");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redirect-on-empty guard; helpers read refs, run on data change only
   }, [editMode, searching, page, data.activeSpaceId, data.catalog, data.spaces]);
   moreOpenRef.current = moreOpen;
@@ -1832,6 +1842,15 @@ function Home() {
         oidcNextKey={OIDC_NEXT_KEY}
         sessionCanArrange={sessionCanArrange}
         sessionCanManageAcl={sessionCanManageAcl}
+        afterPortalReset={() => {
+          setPage("space");
+          setUi((cur) =>
+            writeUiPrefs({
+              ...cur,
+              openFavs: false,
+            }),
+          );
+        }}
       />
     </div>
   );

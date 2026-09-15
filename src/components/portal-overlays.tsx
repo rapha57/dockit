@@ -84,6 +84,7 @@ export function PortalOverlays({
   oidcNextKey,
   sessionCanArrange,
   sessionCanManageAcl,
+  afterPortalReset,
 }: {
   modal: PortalModal;
   setModal: Dispatch<SetStateAction<PortalModal>>;
@@ -114,6 +115,7 @@ export function PortalOverlays({
   oidcNextKey: string;
   sessionCanArrange: (session: SessionInfo | null | undefined) => boolean;
   sessionCanManageAcl: (session: SessionInfo | null | undefined) => boolean;
+  afterPortalReset: () => void;
 }) {
   if (modal.kind === "none") return null;
   const close = () =>
@@ -471,16 +473,21 @@ export function PortalOverlays({
             )
           }
           onResetPortal={() =>
-            apply(async () => {
-              const next = await resetPortal({
-                data: {
-                  token,
-                },
-              });
-              if (next.clickStats) setClickStats(next.clickStats);
-              toast.success(t("toast.portalReset"));
-              return next;
-            })
+            apply(
+              async () => {
+                const next = await resetPortal({
+                  data: {
+                    token,
+                  },
+                });
+                if (next.clickStats) setClickStats(next.clickStats);
+                toast.success(t("toast.portalReset"));
+                return next;
+              },
+              {
+                onDone: afterPortalReset,
+              },
+            )
           }
           onImportPortal={(payload) =>
             apply(async () => {
