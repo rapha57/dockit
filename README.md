@@ -144,14 +144,28 @@ npm run build
 node .output/server/index.mjs
 ```
 
-SSO client secret and LDAP bind password stay **out of** `portal.json`. Set them on the process (OpenShift: a Secret):
+### SSO and LDAP bind secrets
+
+Two ways. Neither is required; pick one.
+
+**In the product** — Settings → Sign-in. Paste the OIDC client secret and the LDAP bind password as usual. Dockit stores them in `portal.json`. Fine on a box you trust. This is the default if you set nothing extra.
+
+**On the server** — put them in the environment instead (OpenShift: a Secret). The fields in Settings turn grey (“set on the server”). The next save writes those fields **empty** in the JSON. An old value in the file still works until then.
 
 ```bash
 export PORTAL_OIDC_CLIENT_SECRET="…"
 export PORTAL_LDAP_BIND_PASSWORD="…"
 ```
 
-Optional, per directory id (`ad` → `_AD`): `PORTAL_LDAP_BIND_PASSWORD_AD`. When these are set, Settings shows the fields as provided by the server and the next save writes them empty in the JSON. Until then, an old value in the file still works.
+One LDAP bind for every directory: the single `PORTAL_LDAP_BIND_PASSWORD` is enough. That same password is used for all directories, and every bind-password field in Settings is greyed.
+
+Several directories with **different** bind accounts: do **not** set the generic variable. Set one variable per directory, from the directory **id** (in `portal.json` under `ldapDirectories`, or a short id like `ad`):
+
+- id `ad` → `PORTAL_LDAP_BIND_PASSWORD_AD`
+- id `corp-emea` → `PORTAL_LDAP_BIND_PASSWORD_CORP_EMEA`
+- a UUID keeps its hex, hyphens become underscores, then uppercase
+
+The specific variable wins over the generic one. User passwords (local Dockit accounts) are unchanged: they stay hashed in the JSON either way.
 
 ## Data
 
@@ -161,7 +175,7 @@ No database. The whole portal is one file: `data/portal.json`. Backup, move, res
 PORTAL_DATA_FILE=/path/to/portal.json
 ```
 
-Password hashes live in that file (scrypt). The OIDC client secret and LDAP bind password do not — use the env vars above. Treat the JSON as sensitive anyway (hashes, who has access to what).
+Treat it as sensitive (password hashes, who can see what). If you chose the environment for SSO / LDAP bind, restore is the JSON **plus** those variables. If you pasted the secrets in Settings, they are already in the file.
 
 | Path | What |
 | --- | --- |
@@ -173,7 +187,7 @@ Password hashes live in that file (scrypt). The OIDC client secret and LDAP bind
 
 Built for internal networks, typically behind a reverse proxy. Not a public SaaS.
 
-**Threat model.** One JSON file, no database. Attack surface is the portal process plus whatever the reverse proxy exposes. The server does not fetch cloud metadata (`169.254.169.254`, GCP metadata, link-local). HTTP probes are http(s) only, no embedded credentials, DNS-checked, timeout-capped (4s), rate-limited, and can be limited to signed-in sessions. ICMP is optional and needs `NET_RAW` (see OpenShift above). Production requires `PORTAL_EDIT_PASSWORD` (≥ 12 characters, no default). Local login always stays, even with LDAP / OIDC. OIDC and LDAP bind secrets belong in the environment, not in `portal.json`.
+**Threat model.** One JSON file, no database. Attack surface is the portal process plus whatever the reverse proxy exposes. The server does not fetch cloud metadata (`169.254.169.254`, GCP metadata, link-local). HTTP probes are http(s) only, no embedded credentials, DNS-checked, timeout-capped (4s), rate-limited, and can be limited to signed-in sessions. ICMP is optional and needs `NET_RAW` (see OpenShift above). Production requires `PORTAL_EDIT_PASSWORD` (≥ 12 characters, no default). Local login always stays, even with LDAP / OIDC. The OIDC client secret and LDAP bind password can live in Settings (`portal.json`) or in the environment — see above.
 
 - scrypt, login rate limiting, ACL, OIDC PKCE
 - Security headers, iframes without `allow-same-origin`
