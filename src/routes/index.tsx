@@ -1318,22 +1318,29 @@ function Home() {
     document.documentElement.lang = loc;
     const name = String(data.settings.documentTitle || "").trim() || "Dockit";
     document.title = name;
-    const raw = String(data.settings.favicon || "").trim() || "/favicon.svg";
+    const custom = String(data.settings.favicon || "").trim();
+    const raw = custom || "/favicon.svg";
     const href = raw.startsWith("data:")
       ? raw
       : `${raw}${raw.includes("?") ? "&" : "?"}v=${PORTAL_VERSION}`;
     document
       .querySelectorAll("link[rel='icon'], link[rel='shortcut icon']")
       .forEach((el) => el.remove());
-    const link = document.createElement("link");
-    link.rel = "icon";
-    link.href = href;
-    if (raw.startsWith("data:image/svg") || raw.includes(".svg")) link.type = "image/svg+xml";
-    else if (raw.startsWith("data:image/png") || raw.includes(".png")) link.type = "image/png";
-    else if (raw.startsWith("data:image/webp")) link.type = "image/webp";
-    else if (raw.startsWith("data:image/jpeg")) link.type = "image/jpeg";
-    else if (raw.includes("image/x-icon") || raw.includes(".ico")) link.type = "image/x-icon";
-    document.head.appendChild(link);
+    const addIcon = (iconHref: string, type: string, sizes?: string) => {
+      const link = document.createElement("link");
+      link.rel = "icon";
+      link.href = iconHref;
+      link.type = type;
+      if (sizes) link.sizes = sizes;
+      document.head.appendChild(link);
+    };
+    if (raw.startsWith("data:image/svg") || raw.includes(".svg")) addIcon(href, "image/svg+xml");
+    else if (raw.startsWith("data:image/png") || raw.includes(".png")) addIcon(href, "image/png");
+    else if (raw.startsWith("data:image/webp")) addIcon(href, "image/webp");
+    else if (raw.startsWith("data:image/jpeg")) addIcon(href, "image/jpeg");
+    else if (raw.includes("image/x-icon") || raw.includes(".ico")) addIcon(href, "image/x-icon");
+    else addIcon(href, "");
+    if (!custom) addIcon(`/favicon.png?v=${PORTAL_VERSION}`, "image/png", "32x32");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- document title/favicon effect; settings identity not needed
   }, [
     data.settings.documentTitle,
