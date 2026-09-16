@@ -9,6 +9,7 @@ import { EdgeFade } from "@/components/edge-fade";
 import { ExpandRow, useExpandSession } from "@/components/expand-row";
 import { ConfirmPopup } from "@/components/access";
 import { t } from "@/lib/i18n";
+import { newClientId } from "@/lib/utils";
 import type { Directory } from "@/lib/ldap-runtime";
 import type { PortalSettings } from "@/lib/portal";
 import type { OidcPayload, LdapPayload } from "@/lib/portal-ui";
@@ -130,7 +131,7 @@ export function OidcForm({
 export type LdapDirRow = Directory & { hasBindPassword?: boolean; bindFromEnv?: boolean };
 export function blankLdapDir(): LdapDirRow {
   return {
-    id: crypto.randomUUID(),
+    id: newClientId(),
     enabled: false,
     host: "",
     port: 636,
