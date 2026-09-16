@@ -31,6 +31,26 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          load: true
+          tags: dockit:scan
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.tag.outputs.name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: dockit:scan
+          scanners: vuln,secret
+          vuln-type: library
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          format: table
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
           push: true
           tags: |
             ${{ steps.image.outputs.name }}:${{ steps.tag.outputs.name }}
@@ -40,4 +60,4 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.tag.outputs.name }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+
