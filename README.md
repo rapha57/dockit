@@ -121,7 +121,10 @@ The pre-commit hook runs `typecheck` and `lint` (zero warnings).
 
 **Docker** — set `PORTAL_EDIT_PASSWORD` (≥ 12 characters) in `docker-compose.yml`. Port **3000**. Data in the `portal-data` volume. The image is two-stage: build tools stay in the first stage, the run image is production `npm ci --omit=dev` plus `.output`. `data/` is not copied into the image (`.dockerignore`).
 
+Each GitHub release publishes `ghcr.io/rapha57/dockit:<tag>` and `:latest`. First time: Packages → dockit → Change visibility → Public.
+
 ```bash
+docker pull ghcr.io/rapha57/dockit:latest
 docker compose up -d --build
 ```
 
