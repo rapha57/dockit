@@ -6,6 +6,7 @@
  */
 
 import { dirname } from "node:path";
+import { newId } from "./id";
 import { t, withLocale } from "./i18n";
 import { clientIp, isDevRuntime } from "./security-runtime";
 
@@ -320,7 +321,7 @@ export async function writeCurationStore(store: CurationStore): Promise<void> {
 	const { dirname: dirn, join } = await import("node:path");
 	const path = curationPath(join);
 	await mkdir(dirn(path), { recursive: true });
-	const tmp = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
+	const tmp = `${path}.${process.pid}.${newId()}.tmp`;
 	try {
 		await writeFile(tmp, `${JSON.stringify(store, null, 2)}\n`, "utf8");
 		await rename(tmp, path);

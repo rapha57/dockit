@@ -1,4 +1,5 @@
 import type { Client } from "ldapts";
+import { newId } from "./id";
 
 const TIMEOUT_MS = 8000;
 export const LDAP_FILTER_DEFAULT = "(&(objectClass=user)(sAMAccountName={username}))";
@@ -75,7 +76,7 @@ export function adGroupKey(dirId: unknown, dn: unknown): string {
 export function asDirectory(row: any): Directory | null {
 	if (!row || typeof row !== "object") return null;
 	const tls = row.tls !== false && row.ldapTls !== false;
-	const id = String(row.id || "").trim().slice(0, 80) || crypto.randomUUID();
+	const id = String(row.id || "").trim().slice(0, 80) || newId();
 	return {
 		id,
 		enabled: Boolean(row.enabled ?? row.ldapEnabled),

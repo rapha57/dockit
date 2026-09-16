@@ -1,4 +1,5 @@
 import { t, formatWhen } from "./i18n";
+import { newId } from "./id";
 
 export const HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 export const MAX_HISTORY = 400;
@@ -126,7 +127,7 @@ export function asHistory(raw: unknown): HistoryEvent[] {
 		if (!type) continue;
 		const restored = row.restored && typeof row.restored === "object" ? row.restored : {};
 		out.push({
-			id: String(row.id || crypto.randomUUID()),
+			id: String(row.id || newId()),
 			at: Number(row.at) || Date.now(),
 			actor: String(row.actor || "").slice(0, 40),
 			type,
@@ -168,7 +169,7 @@ export function appendHistory(
 	if (!Array.isArray(doc.history)) doc.history = [];
 	pruneHistory(doc);
 	doc.history.push({
-		id: crypto.randomUUID(),
+		id: newId(),
 		at: Date.now(),
 		actor: String(user?.username || "").slice(0, 40),
 		type: String(payload.type || "").slice(0, 40),

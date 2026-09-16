@@ -39,6 +39,19 @@ export default tseslint.config(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/no-explicit-any": "off",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.property.name='randomUUID']",
+          message:
+            "Use newId() from src/lib/id.ts — crypto.randomUUID is missing on Orion/WebKit and HTTP.",
+        },
+        {
+          selector: "CallExpression[callee.name='randomUUID']",
+          message:
+            "Use newId() from src/lib/id.ts — crypto.randomUUID is missing on Orion/WebKit and HTTP.",
+        },
+      ],
     },
   },
   prettier,

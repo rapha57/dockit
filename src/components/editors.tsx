@@ -25,6 +25,7 @@ import { itemKind } from "@/lib/item-kind";
 import { fold, lookupTagColor, tagPaint } from "@/lib/tag-ui";
 import { randomTagHex } from "@/lib/tag-colors";
 import { sessionGone } from "@/lib/session-gone";
+import { newId } from "@/lib/id";
 
 export function IconPicker({
   value,
@@ -824,7 +825,7 @@ export function ExtraLinksField({
   }
   function addLink() {
     if (links.length >= 20) return;
-    const key = crypto.randomUUID();
+    const key = newId();
     setLinks((cur) => [
       ...cur,
       {
@@ -1028,7 +1029,7 @@ export function CardForm({
   const [links, setLinks] = useState<{ key: string; title: string; url: string; openIn: "_blank" | "_self" }[]>(() => {
     const rows = (Array.isArray(initial?.links) ? initial.links : [])
       .map((r) => ({
-        key: crypto.randomUUID(),
+        key: newId(),
         title: String(r.title || ""),
         url: String(r.url || ""),
         openIn: (r.openIn === "_self" ? "_self" : "_blank") as "_blank" | "_self",
@@ -1037,9 +1038,9 @@ export function CardForm({
     const kind0 = initial?.kind || "app";
     const legacy = safeAppHref(initial?.url);
     if (kind0 === "app" && legacy && rows[0]?.url !== legacy)
-      rows.unshift({ key: crypto.randomUUID(), title: "", url: legacy, openIn: "_blank" });
+      rows.unshift({ key: newId(), title: "", url: legacy, openIn: "_blank" });
     if (!rows.length && kind0 === "app") {
-      const key = crypto.randomUUID();
+      const key = newId();
       rows.push({ key, title: "", url: "", openIn: "_blank" });
     }
     const cardName = String(initial?.title || "").trim();
@@ -1102,7 +1103,7 @@ export function CardForm({
     setTags([]);
     setTagDraft("");
     setDraftColors({});
-    setLinks(next === "app" ? [{ key: crypto.randomUUID(), title: "", url: "", openIn: "_blank" }] : []);
+    setLinks(next === "app" ? [{ key: newId(), title: "", url: "", openIn: "_blank" }] : []);
     setLinkMenu(false);
     setEmbedBorder(false);
     setEmbedBg("");
@@ -1136,7 +1137,7 @@ export function CardForm({
       return;
     if (next === "embed" && kind === "app") setUrl(links[0]?.url?.trim() || "");
     if (next === "app" && kind === "embed" && safeAppHref(url))
-      setLinks([{ key: crypto.randomUUID(), title: "", url: safeAppHref(url) || "", openIn: "_blank" }]);
+      setLinks([{ key: newId(), title: "", url: safeAppHref(url) || "", openIn: "_blank" }]);
     resetFieldsForKind(next);
   }
   const kindMeta = itemKind(kind);

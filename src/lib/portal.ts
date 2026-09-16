@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { randomBytes, scryptSync } from "node:crypto";
+import { newId } from "./id";
 import { safeAppHref, safeEmbedHref } from "./safe-href";
 import { ASSET_PREFIX, ASSET_URL, MAX_CUSTOM_ICONS, isAssetRef, toClientAsset } from "./assets-url";
 import { SPACE_XFER_KIND, SPACE_XFER_VERSION, collectIconValues, parseSpaceXfer } from "./space-xfer";
@@ -462,7 +463,7 @@ function normalizeItem(a: any, categoryId: string, sortOrder: number): PortalCar
 		linksFull = extras.slice(0, 20);
 	}
 	return {
-		id: a.id || crypto.randomUUID(),
+		id: a.id || newId(),
 		categoryId,
 		kind,
 		title: String(a.title || (kind === "note" || kind === "embed" ? "" : "Untitled")).slice(0, 80),
@@ -547,8 +548,8 @@ function defaultSettings(): PortalSettings {
 	};
 }
 function blankSpaces(locale?: unknown): { lastSpaceId: string; spaces: DocSpace[] } {
-	const spaceId = crypto.randomUUID();
-	const catId = crypto.randomUUID();
+	const spaceId = newId();
+	const catId = newId();
 	const name = withLocale(locale ?? "en", () => t("seed.space"));
 	const category = withLocale(locale ?? "en", () => t("seed.category"));
 	return {
@@ -643,7 +644,7 @@ function asUsers(raw: unknown): StoredUser[] {
 	if (!Array.isArray(raw)) return [];
 	return raw.map((u: any) => {
 		const row = u;
-		const id = String(row.id || crypto.randomUUID());
+		const id = String(row.id || newId());
 		let roleIds = roleIdsOf(row).map((r) => String(r).slice(0, 80));
 		if (id === "admin") roleIds = ["owner"];
 		else {
@@ -707,7 +708,7 @@ function asGroups(raw: unknown): Group[] {
 		let roleIds = roleIdsOf(g).map((r) => String(r).slice(0, 80)).filter((r) => r !== "owner");
 		if (!roleIds.length && source === "local") roleIds = ["lecteur"];
 		return {
-			id: String(g?.id || crypto.randomUUID()),
+			id: String(g?.id || newId()),
 			name: String(g?.name || "").trim().slice(0, 60),
 			members: asIdList(g?.members),
 			role: roleIds[0] || "",
@@ -726,7 +727,7 @@ function ensureGroups(doc: Doc) {
 function asRoles(raw: unknown): Role[] {
 	if (!Array.isArray(raw)) return [];
 	return raw.slice(0, 40).map((r: any) => {
-		const id = String(r?.id || crypto.randomUUID()).slice(0, 80);
+		const id = String(r?.id || newId()).slice(0, 80);
 		const system = isSystemRole(id);
 		let grants: GrantInput[] = grantsFromLegacyRole(r);
 		if (id === "owner") grants = [{ res: "portal", id: "*", allow: ["*"] }];
@@ -1032,7 +1033,7 @@ function upsertAdGroups(doc: Doc, _dir: unknown, listed: { key?: string; name?: 
 		}
 		if (doc.groups.length >= GROUP_CAP) break;
 		doc.groups.push({
-			id: crypto.randomUUID(),
+			id: newId(),
 			name: String(row.name).trim().slice(0, 60),
 			members: [],
 			role: "",
@@ -1064,7 +1065,7 @@ function upsertOidcGroups(doc: Doc, issuer: string, names: string[]) {
 		if (existing) continue;
 		if (doc.groups.length >= GROUP_CAP) break;
 		doc.groups.push({
-			id: crypto.randomUUID(),
+			id: newId(),
 			name: name.slice(0, 60),
 			members: [],
 			role: "",
@@ -1308,7 +1309,7 @@ function asStore(raw: any): Doc | null {
 		roles: asRoles(doc.roles),
 		history: asHistory(doc.history),
 		spaces: spaces.map((t: any, i: number) => ({
-			id: t.id || crypto.randomUUID(),
+			id: t.id || newId(),
 			name: t.name,
 			icon: t.icon || "Layers",
 			sortOrder: Number(t.sortOrder ?? i + 1),
@@ -1394,7 +1395,7 @@ async function persistDocMedia(doc: Doc) {
 	const icons = Array.isArray(doc.customIcons) ? doc.customIcons : [];
 	const next: CustomIcon[] = [];
 	for (const ic of icons.slice(0, MAX_CUSTOM_ICONS)) {
-		const id = String(ic.id || crypto.randomUUID());
+		const id = String(ic.id || newId());
 		next.push({
 			id,
 			name: String(ic.name || "").slice(0, 80),
@@ -1433,7 +1434,7 @@ async function persistDoc(doc: Doc) {
 	const { dirname: dirn, join } = await import("node:path");
 	const path = dataPath(join);
 	await mkdir(dirn(path), { recursive: true });
-	const tmp = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
+	const tmp = `${path}.${process.pid}.${newId()}.tmp`;
 	try {
 		await writeFile(tmp, `${JSON.stringify(disk, null, 2)}\n`, "utf8");
 		await rename(tmp, path);
@@ -1667,7 +1668,7 @@ function ensureRestoredSpace(doc: Doc, meta: MetaShape | null | undefined): DocS
 	const byName = doc.spaces.find((t) => t.name.toLowerCase() === String(meta.name || "").toLowerCase());
 	if (byName) return byName;
 	const space: DocSpace = {
-		id: meta.id && !doc.spaces.some((t) => t.id === meta.id) ? meta.id : crypto.randomUUID(),
+		id: meta.id && !doc.spaces.some((t) => t.id === meta.id) ? meta.id : newId(),
 		name: meta.name || "Space",
 		icon: meta.icon || "Layers",
 		sortOrder: Math.max(0, ...doc.spaces.map((t) => t.sortOrder)) + 1,
@@ -1688,7 +1689,7 @@ function ensureRestoredCat(space: DocSpace, meta: MetaShape | null | undefined):
 	const byName = cats.find((c) => c.name.toLowerCase() === String(meta.name || "").toLowerCase());
 	if (byName) return byName;
 	const cat: PortalCategory = {
-		id: meta.id && !cats.some((c) => c.id === meta.id) ? meta.id : crypto.randomUUID(),
+		id: meta.id && !cats.some((c) => c.id === meta.id) ? meta.id : newId(),
 		name: meta.name || "Category",
 		icon: meta.icon || "AppWindow",
 		sortOrder: Math.max(0, ...cats.map((c) => c.sortOrder)) + 1,
@@ -1701,7 +1702,7 @@ function ensureRestoredCat(space: DocSpace, meta: MetaShape | null | undefined):
 function putRestoredCard(doc: Doc, spaceMeta: MetaShape | null | undefined, catMeta: MetaShape | null | undefined, app: any) {
 	const space = ensureRestoredSpace(doc, spaceMeta);
 	const cat = ensureRestoredCat(space, catMeta);
-	const id = app.id && !liveCardId(doc, app.id) ? app.id : crypto.randomUUID();
+	const id = app.id && !liveCardId(doc, app.id) ? app.id : newId();
 	const sortOrder = Math.max(0, ...cat.cards.map((a) => a.sortOrder)) + 1;
 	cat.cards.push(normalizeItem({
 		...app,
@@ -2116,7 +2117,7 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 					throw new Error("errors.ldapUnknownUser");
 				}
 				user = {
-					id: crypto.randomUUID(),
+					id: newId(),
 					username,
 					passHash: await hashPassword(randomBytes(24).toString("hex")),
 					role: "lecteur",
@@ -2433,7 +2434,7 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 				throw new Error("errors.oidcUnknownUser");
 			}
 			user = {
-				id: crypto.randomUUID(),
+				id: newId(),
 				username,
 				passHash: await hashPassword(randomBytes(24).toString("hex")),
 				role: "lecteur",
@@ -2500,7 +2501,7 @@ export const proxyLogin = createServerFn({ method: "POST" }).validator(z.object(
 				throw new Error("errors.proxyUnknownUser");
 			}
 			user = {
-				id: crypto.randomUUID(),
+				id: newId(),
 				username,
 				passHash: await hashPassword(randomBytes(24).toString("hex")),
 				role: "lecteur",
@@ -2603,7 +2604,7 @@ export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
 		requireStrongPassword(data.password || "");
 		if (doc.users.some((u) => u.username === username)) throw new Error("errors.usernameTaken");
 		target = {
-			id: crypto.randomUUID(),
+			id: newId(),
 			username,
 			passHash: await hashPassword(data.password),
 			role: roleIds[0],
@@ -2670,7 +2671,7 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 	} else {
 		if (doc.groups.some((g) => (g.name || "").toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
 		target = {
-			id: crypto.randomUUID(),
+			id: newId(),
 			name,
 			members: [],
 			role: roleIds[0],
@@ -2741,7 +2742,7 @@ export const saveRole = createServerFn({ method: "POST" }).validator(z.object({
 		if (doc.roles.length >= 40) throw new Error("errors.tooManyIcons");
 		if (doc.roles.some((r) => (r.name || "").toLowerCase() === name.toLowerCase())) throw new Error("errors.usernameTaken");
 		target = {
-			id: crypto.randomUUID(),
+			id: newId(),
 			name,
 			description,
 			system: false,
@@ -2784,7 +2785,7 @@ export const createSpace = createServerFn({ method: "POST" }).validator(z.object
 	hideLabel: z.boolean().optional()
 })).handler(async ({ data, request }: any) => mutate((doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
-	const id = crypto.randomUUID();
+	const id = newId();
 	const next = Math.max(0, ...doc.spaces.map((t) => t.sortOrder)) + 1;
 	doc.spaces.push({
 		id,
@@ -2816,7 +2817,7 @@ export const duplicateSpace = createServerFn({ method: "POST" }).validator(z.obj
 	const src = doc.spaces.find((t) => t.id === data.id);
 	if (!src) throw new Error("errors.spaceNotFound");
 	requireEdit(doc, tok(data, request), src.id);
-	const spaceId = crypto.randomUUID();
+	const spaceId = newId();
 	const suffix = tt(doc, "copy.suffix");
 	const base = String(src.name || "").trim().replace(/\s*\((copie|copy)\)\s*$/i, "") || tt(doc, "nav.space");
 	const ordered = [...doc.spaces].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -2831,7 +2832,7 @@ export const duplicateSpace = createServerFn({ method: "POST" }).validator(z.obj
 		editors: [...(src.editors || [])],
 		hideLabel: Boolean(src.hideLabel),
 		categories: (src.categories || []).map((c, ci) => {
-			const catId = crypto.randomUUID();
+			const catId = newId();
 			return {
 				id: catId,
 				name: c.name,
@@ -2840,7 +2841,7 @@ export const duplicateSpace = createServerFn({ method: "POST" }).validator(z.obj
 				...normalizeCatAccess(c),
 				cards: (c.cards || []).map((a, ai) => normalizeItem({
 					...a,
-					id: crypto.randomUUID(),
+					id: newId(),
 					clicks: 0
 				}, catId, ai + 1))
 			};
@@ -2937,7 +2938,7 @@ export const createCategory = createServerFn({ method: "POST" }).validator(z.obj
 		editors: []
 	};
 	space.categories.push({
-		id: crypto.randomUUID(),
+		id: newId(),
 		name: data.name,
 		icon: data.icon,
 		sortOrder: next,
@@ -3406,7 +3407,7 @@ export const saveCustomIcon = createServerFn({ method: "POST" }).validator(z.obj
 	requireEdit(doc, tok(data, request));
 	if ((doc.customIcons || []).length >= MAX_CUSTOM_ICONS) throw new Error("errors.tooManyIcons");
 	doc.customIcons.push({
-		id: crypto.randomUUID(),
+		id: newId(),
 		name: data.name,
 		dataUrl: data.dataUrl
 	});
@@ -3545,7 +3546,7 @@ export const importSpace = createServerFn({ method: "POST" }).validator(z.object
 		const dataUrl = String(ic.dataUrl || "");
 		if (!dataUrl.startsWith("data:image/")) continue;
 		if (doc.customIcons.length >= MAX_CUSTOM_ICONS) break;
-		const id = crypto.randomUUID();
+		const id = newId();
 		doc.customIcons.push({
 			id,
 			name: String(ic.name || "").slice(0, 80),
@@ -3559,7 +3560,7 @@ export const importSpace = createServerFn({ method: "POST" }).validator(z.object
 		return iconMap.get(s) || s;
 	}
 	const src = parsed.space;
-	const spaceId = crypto.randomUUID();
+	const spaceId = newId();
 	const name = String(src.name || "").trim().slice(0, 40) || tt(doc, "nav.space");
 	const space: DocSpace = {
 		id: spaceId,
@@ -3571,7 +3572,7 @@ export const importSpace = createServerFn({ method: "POST" }).validator(z.object
 		editors: [],
 		hideLabel: Boolean(src.hideLabel),
 		categories: (Array.isArray(src.categories) ? src.categories : []).map((c: any, ci: number) => {
-			const catId = crypto.randomUUID();
+			const catId = newId();
 			return {
 				id: catId,
 				name: String(c?.name || "").trim().slice(0, 60) || tt(doc, "seed.category"),
@@ -3582,7 +3583,7 @@ export const importSpace = createServerFn({ method: "POST" }).validator(z.object
 				editors: [] as string[],
 				cards: (Array.isArray(c?.cards) ? c.cards : []).map((a: any, ai: number) => normalizeItem({
 					...a,
-					id: crypto.randomUUID(),
+					id: newId(),
 					icon: mapIcon(a?.icon) || a?.icon,
 					clicks: 0
 				}, catId, ai + 1))
