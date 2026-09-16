@@ -39,6 +39,7 @@ jobs:
             org.opencontainers.image.version=${{ steps.tag.outputs.name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # Node's bundled npm under usr/local/lib/node_modules is base-image noise.
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: dockit:scan
@@ -48,6 +49,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           format: table
+          skip-dirs: usr/local/lib/node_modules
       - uses: docker/build-push-action@v6
         with:
           context: .
