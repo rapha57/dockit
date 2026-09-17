@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ModalShell } from "@/components/modal-shell";
@@ -117,6 +117,7 @@ export function PortalOverlays({
   sessionCanManageAcl: (session: SessionInfo | null | undefined) => boolean;
   afterPortalReset: () => void;
 }) {
+  const adminGuardRef = useRef<{ dirty: () => boolean; prompt: () => void } | null>(null);
   if (modal.kind === "none") return null;
   const close = () =>
     setModal({
@@ -137,6 +138,10 @@ export function PortalOverlays({
       }
       onClose={() => {
         setBusy(false);
+        if (modal.kind === "admin" && adminGuardRef.current?.dirty()) {
+          adminGuardRef.current.prompt();
+          return;
+        }
         close();
       }}
     >
@@ -375,6 +380,9 @@ export function PortalOverlays({
             })
           }
           onCancel={close}
+          registerGuard={(guard) => {
+            adminGuardRef.current = guard;
+          }}
           onSaveSettings={(payload, opts) =>
             apply(
               () =>
@@ -454,7 +462,7 @@ export function PortalOverlays({
               if (!colorOnly) setBusy(false);
             }
           }}
-          onSaveTheme={(payload) =>
+          onSaveTheme={(payload, opts) =>
             apply(
               async () => {
                 const next = await updateThemeCss({
@@ -467,9 +475,7 @@ export function PortalOverlays({
                 toast.success(t("toast.themesSaved"));
                 return next;
               },
-              {
-                close: false,
-              },
+              opts,
             )
           }
           onResetPortal={() =>

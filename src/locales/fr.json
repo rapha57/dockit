@@ -301,7 +301,13 @@
     "resetBody": "Remise d’usine : anglais et formats par défaut, statistiques vidées, comptes, groupes et rôles personnalisés supprimés, accès admin / admin, un seul espace Accueil avec une catégorie Applications vide.",
     "resetConfirm": "Réinitialiser tout le portail ? Espaces, cartes, thèmes, étiquettes, statistiques, comptes, groupes, rôles personnalisés, langue et formats sont remplacés. L’accès admin redevient admin / admin.",
     "resetAction": "Réinitialiser le portail",
-    "importBrand": "Importer {label}"
+    "importBrand": "Importer {label}",
+    "closePromptTitle": "Modifications non enregistrées",
+    "closePromptBody": "Des sections ont des changements non enregistrés. Les enregistrer avant de fermer ?",
+    "closePromptSave": "Enregistrer et fermer",
+    "closePromptDiscard": "Fermer sans enregistrer",
+    "switchPromptBody": "Cette section a des changements non enregistrés. Les enregistrer avant de changer ?",
+    "switchPromptDiscard": "Ne pas enregistrer"
   },
   "sections": {
     "general": {

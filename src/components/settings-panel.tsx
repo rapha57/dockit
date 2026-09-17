@@ -25,6 +25,7 @@ import { Select } from "@/components/ui/select";
 import { Field } from "@/components/field";
 import { EdgeFade } from "@/components/edge-fade";
 import { askConfirm } from "@/components/confirm-dialog";
+import { ModalShell } from "@/components/modal-shell";
 import { BrandPick } from "@/components/brand-pick";
 import { FormActions } from "@/components/form-actions";
 import { useColSort, SortLabel } from "@/components/access";
@@ -81,6 +82,29 @@ function catalogHasClicks(catalog: CatalogSpace[]): boolean {
   return false;
 }
 
+type SaveOpts = { close?: boolean; onDone?: () => void };
+type ThemeDraft = { light: ThemeColors; dark: ThemeColors; lightExtra: string; darkExtra: string };
+type TabDraft =
+  | { kind: "settings"; patch: Partial<SettingsPayload> }
+  | { kind: "theme"; theme: ThemeDraft };
+
+const FORM_TABS = ["general", "locales", "themes", "presentation", "reachability", "security", "info", "tags"];
+
+function themeDraftOf(settings: PortalSettings): ThemeDraft {
+  const light = parseThemeCss(settings.cssLight || "", LIGHT_COLORS);
+  const dark = parseThemeCss(settings.cssDark || "", DARK_COLORS);
+  return { light: light.colors, dark: dark.colors, lightExtra: light.extra, darkExtra: dark.extra };
+}
+
+function normalizeSettingsPatch(patch: Partial<SettingsPayload>): Partial<SettingsPayload> {
+  const out = { ...patch };
+  if (typeof out.title === "string") out.title = out.title.trim() || "Dockit";
+  if (typeof out.subtitle === "string") out.subtitle = out.subtitle.trim();
+  if (typeof out.documentTitle === "string") out.documentTitle = out.documentTitle.trim() || "Dockit";
+  if (typeof out.proxyAuthHeader === "string") out.proxyAuthHeader = out.proxyAuthHeader.trim().slice(0, 64);
+  return out;
+}
+
 export function AdminPanel({
   tab,
   settings,
@@ -100,6 +124,7 @@ export function AdminPanel({
   onResetPortal,
   onImportPortal,
   clickStats,
+  registerGuard,
 }: {
   tab: string;
   settings: PortalSettings;
@@ -114,19 +139,120 @@ export function AdminPanel({
   busy: boolean;
   onTab: (id: string) => void;
   onCancel: () => void;
-  onSaveSettings: (payload: SettingsPayload, opts?: { close?: boolean }) => void;
+  onSaveSettings: (payload: SettingsPayload, opts?: SaveOpts) => Promise<void> | void;
   onResetClicks: () => void;
   onResetProbes: () => void;
   onApplyTags: (payload: TagsPayload) => void;
-  onSaveTheme: (payload: { cssLight: string; cssDark: string }) => void;
+  onSaveTheme: (payload: { cssLight: string; cssDark: string }, opts?: SaveOpts) => Promise<void> | void;
   onResetPortal: () => void;
   onImportPortal: (payload: unknown) => void;
+  registerGuard: (guard: { dirty: () => boolean; prompt: () => void }) => void;
 }) {
   const sections = settingsSections().filter((s) => {
     if (s.id === "about") return true;
     return session?.canManageSettings;
   });
   const current = sections.find((s) => s.id === tab) ?? sections[0];
+  const base = useMemo(() => settingsBase(settings), [settings]);
+  const [drafts, setDrafts] = useState<Record<string, TabDraft>>({});
+  const [prompt, setPrompt] = useState<null | { mode: "close" } | { mode: "tab"; target: string }>(null);
+
+  function patchSettings(tabId: string, patch: Partial<SettingsPayload>) {
+    setDrafts((cur) => {
+      const prev = cur[tabId]?.kind === "settings" ? cur[tabId].patch : {};
+      return { ...cur, [tabId]: { kind: "settings", patch: { ...prev, ...patch } } };
+    });
+  }
+  function patchTheme(patch: Partial<ThemeDraft>) {
+    setDrafts((cur) => {
+      const prev = cur.themes?.kind === "theme" ? cur.themes.theme : themeDraftOf(settings);
+      return { ...cur, themes: { kind: "theme", theme: { ...prev, ...patch } } };
+    });
+  }
+  function tabDirty(tabId: string): boolean {
+    const d = drafts[tabId];
+    if (!d) return false;
+    if (d.kind === "theme") {
+      const init = themeDraftOf(settings);
+      return (
+        composeThemeCss("light", d.theme.light, d.theme.lightExtra) !==
+          composeThemeCss("light", init.light, init.lightExtra) ||
+        composeThemeCss("dark", d.theme.dark, d.theme.darkExtra) !==
+          composeThemeCss("dark", init.dark, init.darkExtra)
+      );
+    }
+    return Object.entries(d.patch).some(([k, v]) => base[k as keyof SettingsPayload] !== v);
+  }
+  const anyDirty = FORM_TABS.some((id) => tabDirty(id));
+  useEffect(() => {
+    registerGuard({ dirty: () => anyDirty, prompt: () => setPrompt({ mode: "close" }) });
+  });
+
+  function clearDraft(tabId: string) {
+    setDrafts((cur) => {
+      if (!(tabId in cur)) return cur;
+      const next = { ...cur };
+      delete next[tabId];
+      return next;
+    });
+  }
+  function mergedValue(tabId: string): SettingsPayload {
+    const d = drafts[tabId];
+    return { ...base, ...(d?.kind === "settings" ? d.patch : {}) };
+  }
+  function saveDirtySection(then: () => void) {
+    const tabId = current?.id;
+    if (!tabId || !tabDirty(tabId)) {
+      then();
+      return;
+    }
+    if (tabId === "themes") {
+      const d = drafts.themes;
+      if (d?.kind !== "theme") return;
+      void onSaveTheme(
+        {
+          cssLight: composeThemeCss("light", d.theme.light, d.theme.lightExtra),
+          cssDark: composeThemeCss("dark", d.theme.dark, d.theme.darkExtra),
+        },
+        {
+          close: false,
+          onDone: () => {
+            clearDraft("themes");
+            then();
+          },
+        },
+      );
+      return;
+    }
+    const d = drafts[tabId];
+    const patch = normalizeSettingsPatch(d?.kind === "settings" ? d.patch : {});
+    setDrafts((cur) => ({ ...cur, [tabId]: { kind: "settings", patch } }));
+    if (!Object.entries(patch).some(([k, v]) => base[k as keyof SettingsPayload] !== v)) {
+      clearDraft(tabId);
+      then();
+      return;
+    }
+    void onSaveSettings({ ...base, ...patch }, {
+      close: false,
+      onDone: () => {
+        toast.success(t("toast.saved"));
+        clearDraft(tabId);
+        then();
+      },
+    });
+  }
+  function saveCurrentTab() {
+    saveDirtySection(() => {});
+  }
+  function requestClose() {
+    if (anyDirty) setPrompt({ mode: "close" });
+    else onCancel();
+  }
+  function changeTab(id: string) {
+    if (id === tab) return;
+    if (anyDirty) setPrompt({ mode: "tab", target: id });
+    else onTab(id);
+  }
   return (
     <div className="settings-frame is-wide is-access">
       <nav className="settings-nav" aria-label={t("settings.sectionsAria")}>
@@ -136,7 +262,7 @@ export function AdminPanel({
             key={s.id}
             type="button"
             className={`settings-nav-item${tab === s.id ? " is-on" : ""}`}
-            onClick={() => onTab(s.id)}
+            onClick={() => changeTab(s.id)}
           >
             <s.icon className="size-4 shrink-0" />
             {s.label}
@@ -153,7 +279,7 @@ export function AdminPanel({
             type="button"
             variant="ghost"
             size="icon"
-            onClick={onCancel}
+            onClick={requestClose}
             aria-label={t("actions.close")}
             title={t("actions.close")}
           >
@@ -163,30 +289,43 @@ export function AdminPanel({
         {tab === "general" ? (
           <EdgeFade className="settings-pane">
             <SettingsForm
-              initial={settings}
-              busy={busy}
+              value={mergedValue("general")}
+              onChange={(patch) => patchSettings("general", patch)}
               embedded
               onCancel={onCancel}
-              onSave={(payload) => onSaveSettings(payload)}
+              onSave={saveCurrentTab}
             />
           </EdgeFade>
         ) : tab === "locales" ? (
           <EdgeFade className="settings-pane">
-            <LocalesForm initial={settings} onSave={(payload) => onSaveSettings(payload)} />
+            <LocalesForm
+              value={mergedValue("locales")}
+              onChange={(patch) => patchSettings("locales", patch)}
+              onSave={saveCurrentTab}
+            />
           </EdgeFade>
         ) : tab === "presentation" ? (
           <EdgeFade className="settings-pane">
-            <PresentationForm initial={settings} onSave={(payload) => onSaveSettings(payload)} />
+            <PresentationForm
+              value={mergedValue("presentation")}
+              onChange={(patch) => patchSettings("presentation", patch)}
+              onSave={saveCurrentTab}
+            />
           </EdgeFade>
         ) : tab === "reachability" ? (
           <EdgeFade className="settings-pane">
-            <ReachabilityForm initial={settings} onSave={(payload) => onSaveSettings(payload)} />
+            <ReachabilityForm
+              value={mergedValue("reachability")}
+              onChange={(patch) => patchSettings("reachability", patch)}
+              onSave={saveCurrentTab}
+            />
           </EdgeFade>
         ) : tab === "security" ? (
           <EdgeFade className="settings-pane">
             <SecurityForm
-              initial={settings}
-              onSave={(payload) => onSaveSettings(payload)}
+              value={mergedValue("security")}
+              onChange={(patch) => patchSettings("security", patch)}
+              onSave={saveCurrentTab}
             />
           </EdgeFade>
         ) : tab === "debug" ? (
@@ -196,19 +335,29 @@ export function AdminPanel({
               runtime={runtime}
               session={session}
               busy={busy}
-              onSave={(payload) => onSaveSettings(payload)}
+              onSave={(payload) =>
+                onSaveSettings(payload, {
+                  close: false,
+                  onDone: () => toast.success(t("toast.saved")),
+                })
+              }
             />
           </EdgeFade>
         ) : tab === "info" ? (
           <EdgeFade className="settings-pane">
             <InfoBarForm
-              initial={settings}
-              onSave={(payload) => onSaveSettings(payload)}
+              value={mergedValue("info")}
+              onChange={(patch) => patchSettings("info", patch)}
+              onSave={saveCurrentTab}
             />
           </EdgeFade>
         ) : tab === "themes" ? (
           <EdgeFade className="settings-pane">
-            <ThemeForm initial={settings} busy={busy} onCancel={onCancel} onSave={onSaveTheme} />
+            <ThemeForm
+              value={drafts.themes?.kind === "theme" ? drafts.themes.theme : themeDraftOf(settings)}
+              onChange={patchTheme}
+              onSave={saveCurrentTab}
+            />
           </EdgeFade>
         ) : tab === "backup" ? (
           <EdgeFade className="settings-pane">
@@ -307,32 +456,83 @@ export function AdminPanel({
               tags={tags}
               colors={settings.tagColors}
               busy={busy}
-              embedded
-              settings={settings}
-              pruneOrphanTags={Boolean(settings.pruneOrphanTags)}
-              tagsAlpha={settings.tagsAlpha !== false}
-              onCancel={onCancel}
-              onSave={(payload) =>
-                onSaveSettings(payload, {
-                  close: false,
-                })
-              }
+              value={mergedValue("tags")}
+              onChange={(patch) => patchSettings("tags", patch)}
+              onSave={saveCurrentTab}
               onApply={onApplyTags}
             />
           </div>
         )}
-        {tab === "general" ||
-        tab === "locales" ||
-        tab === "presentation" ||
-        tab === "reachability" ||
-        tab === "security" ||
-        tab === "info" ||
-        tab === "themes" ||
-        tab === "tags" ? (
-          <FormActions busy={busy} hideCancel form="settings-form" />
+        {FORM_TABS.includes(tab) ? (
+          <FormActions busy={busy} hideCancel form="settings-form" disabled={!tabDirty(tab)} />
         ) : null}
       </div>
+      {prompt ? (
+        <SettingsDirtyPrompt
+          busy={busy}
+          body={prompt.mode === "close" ? t("settings.closePromptBody") : t("settings.switchPromptBody")}
+          saveLabel={prompt.mode === "close" ? t("settings.closePromptSave") : t("actions.save")}
+          discardLabel={
+            prompt.mode === "close" ? t("settings.closePromptDiscard") : t("settings.switchPromptDiscard")
+          }
+          onKeep={() => setPrompt(null)}
+          onDiscard={() => {
+            const p = prompt;
+            setPrompt(null);
+            clearDraft(current?.id || "");
+            if (p.mode === "tab") onTab(p.target);
+            else onCancel();
+          }}
+          onSave={() => {
+            const p = prompt;
+            setPrompt(null);
+            saveDirtySection(() => {
+              if (p.mode === "tab") onTab(p.target);
+              else onCancel();
+            });
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+function SettingsDirtyPrompt({
+  busy,
+  body,
+  saveLabel,
+  discardLabel,
+  onKeep,
+  onDiscard,
+  onSave,
+}: {
+  busy: boolean;
+  body: string;
+  saveLabel: string;
+  discardLabel: string;
+  onKeep: () => void;
+  onDiscard: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <ModalShell onClose={onKeep} labelledBy="dockit-settings-dirty-title" role="alertdialog">
+      <div>
+        <h3 id="dockit-settings-dirty-title" className="dialog-title">
+          {t("settings.closePromptTitle")}
+        </h3>
+        <p className="mt-2 text-sm text-muted">{body}</p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onKeep} disabled={busy}>
+            {t("actions.cancel")}
+          </Button>
+          <Button type="button" variant="danger" onClick={onDiscard} disabled={busy}>
+            {discardLabel}
+          </Button>
+          <Button type="button" onClick={onSave} disabled={busy}>
+            {saveLabel}
+          </Button>
+        </div>
+      </div>
+    </ModalShell>
   );
 }
 export function AboutForm() {
@@ -456,32 +656,29 @@ export function AboutForm() {
   );
 }
 export function SettingsForm({
-  initial,
+  value,
+  onChange,
   embedded,
   onCancel,
   onSave,
 }: {
-  initial: PortalSettings;
-  busy: boolean;
+  value: SettingsPayload;
+  onChange: (patch: Partial<SettingsPayload>) => void;
   embedded?: boolean;
   onCancel: () => void;
-  onSave: (payload: SettingsPayload) => void;
+  onSave: () => void;
 }) {
-  const [title, setTitle] = useState(initial.title);
-  const [subtitle, setSubtitle] = useState(initial.subtitle);
-  const [logo, setLogo] = useState(initial.logo || "");
-  const [documentTitle, setDocumentTitle] = useState(initial.documentTitle || "Dockit");
-  const [favicon, setFavicon] = useState(initial.favicon || "");
+  const { title, subtitle, logo, documentTitle, favicon } = value;
   async function applyLogo(next: string) {
-    setLogo(next);
+    onChange({ logo: next });
     if (!next) {
-      setFavicon("");
+      onChange({ favicon: "" });
       return;
     }
     try {
-      setFavicon(await toFaviconDataUrl(next));
+      onChange({ favicon: await toFaviconDataUrl(next) });
     } catch {
-      setFavicon(next);
+      onChange({ favicon: next });
     }
   }
   return (
@@ -490,14 +687,7 @@ export function SettingsForm({
       className="settings-stack"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
-          ...settingsBase(initial),
-          title: title.trim() || "Dockit",
-          subtitle: subtitle.trim(),
-          logo,
-          documentTitle: documentTitle.trim() || "Dockit",
-          favicon,
-        });
+        onSave();
       }}
     >
       {!embedded && (
@@ -543,9 +733,9 @@ export function SettingsForm({
             src={favicon}
             variant="tab"
             onFile={async (file) => {
-              setFavicon(await toFaviconDataUrl(await fileToDataUrl(file)));
+              onChange({ favicon: await toFaviconDataUrl(await fileToDataUrl(file)) });
             }}
-            onReset={() => setFavicon("")}
+            onReset={() => onChange({ favicon: "" })}
           >
             {favicon ? (
               <img key="ico" src={favicon} alt="" className="brand-tab-ico" />
@@ -565,16 +755,16 @@ export function SettingsForm({
         <p className="settings-kicker">{t("settings.texts")}</p>
         <div className="field-row">
           <Field label={t("settings.portalName")}>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
+            <Input value={title} onChange={(e) => onChange({ title: e.target.value })} required />
           </Field>
           <Field label={t("settings.subtitle")}>
-            <Input value={subtitle} onChange={(e) => setSubtitle(e.target.value)} />
+            <Input value={subtitle} onChange={(e) => onChange({ subtitle: e.target.value })} />
           </Field>
         </div>
         <Field label={t("settings.documentTitle")}>
           <Input
             value={documentTitle}
-            onChange={(e) => setDocumentTitle(e.target.value)}
+            onChange={(e) => onChange({ documentTitle: e.target.value })}
             placeholder="Dockit"
           />
         </Field>
@@ -618,17 +808,15 @@ const REGIONS: {
   { id: "fr-LU", labelKey: "lang.regionFrLu", locale: "fr", dateFormat: "dmy", timeFormat: "24h", numberFormat: "space-comma" },
 ];
 export function LocalesForm({
-  initial,
+  value,
+  onChange,
   onSave,
 }: {
-  initial: PortalSettings;
-  onSave: (payload: SettingsPayload) => void;
+  value: SettingsPayload;
+  onChange: (patch: Partial<SettingsPayload>) => void;
+  onSave: () => void;
 }) {
-  const [locale, setLocaleDraft] = useState(asLocale(initial.locale));
-  const [dateFormat, setDateDraft] = useState(asDateFormat(initial.dateFormat));
-  const [timeFormat, setTimeDraft] = useState(asTimeFormat(initial.timeFormat));
-  const [timezone, setZoneDraft] = useState(asTimeZone(initial.timezone));
-  const [numberFormat, setNumberDraft] = useState(asNumberFormat(initial.numberFormat));
+  const { locale, dateFormat, timeFormat, timezone, numberFormat } = value;
   const regionId = useMemo(() => {
     const loc = asLocale(locale);
     const date = asDateFormat(dateFormat);
@@ -639,11 +827,7 @@ export function LocalesForm({
     if (num !== "auto") return REGIONS.find((r) => sameCore(r) && r.numberFormat === num)?.id ?? null;
     return REGIONS.find(sameCore)?.id ?? null;
   }, [locale, dateFormat, timeFormat, numberFormat]);
-  const sample = formatWhen(new Date(), true, {
-    dateFormat,
-    timeFormat,
-    timezone,
-  });
+  const sample = formatWhen(new Date(), true, { dateFormat, timeFormat, timezone });
   const currentRegion = regionId ?? "custom";
   return (
     <form
@@ -651,14 +835,7 @@ export function LocalesForm({
       className="settings-stack locales-stack"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
-          ...settingsBase(initial),
-          locale: asLocale(locale),
-          dateFormat: asDateFormat(dateFormat),
-          timeFormat: asTimeFormat(timeFormat),
-          timezone: asTimeZone(timezone),
-          numberFormat: asNumberFormat(numberFormat),
-        });
+        onSave();
       }}
     >
       <div className="settings-card">
@@ -669,10 +846,12 @@ export function LocalesForm({
             onChange={(e) => {
               const reg = REGIONS.find((r) => r.id === e.target.value);
               if (reg) {
-                setLocaleDraft(reg.locale);
-                setDateDraft(reg.dateFormat);
-                setTimeDraft(reg.timeFormat);
-                setNumberDraft(reg.numberFormat);
+                onChange({
+                  locale: reg.locale,
+                  dateFormat: reg.dateFormat,
+                  timeFormat: reg.timeFormat,
+                  numberFormat: reg.numberFormat,
+                });
               }
             }}
           >
@@ -686,7 +865,7 @@ export function LocalesForm({
           <p className="settings-hint">{t("lang.regionHint")}</p>
         </Field>
         <Field label={t("lang.label")}>
-          <Select value={locale} onChange={(e) => { setLocaleDraft(asLocale(e.target.value)); }}>
+          <Select value={locale} onChange={(e) => { onChange({ locale: asLocale(e.target.value) }); }}>
             <option value="en">{t("lang.en")}</option>
             <option value="fr">{t("lang.fr")}</option>
           </Select>
@@ -697,7 +876,7 @@ export function LocalesForm({
         <p className="settings-kicker">{t("lang.sectionFormat")}</p>
         <div className="field-row">
           <Field label={t("lang.dateFormat")}>
-            <Select value={dateFormat} onChange={(e) => { setDateDraft(asDateFormat(e.target.value)); }}>
+            <Select value={dateFormat} onChange={(e) => { onChange({ dateFormat: asDateFormat(e.target.value) }); }}>
               <option value="ymd">{t("lang.dateYmd")}</option>
               <option value="yyyy">{t("lang.dateYyyy")}</option>
               <option value="dmy">{t("lang.dateDmy")}</option>
@@ -707,21 +886,21 @@ export function LocalesForm({
             <p className="settings-hint">{t("lang.dateHint")}</p>
           </Field>
           <Field label={t("lang.timeFormat")}>
-            <Select value={timeFormat} onChange={(e) => { setTimeDraft(asTimeFormat(e.target.value)); }}>
+            <Select value={timeFormat} onChange={(e) => { onChange({ timeFormat: asTimeFormat(e.target.value) }); }}>
               <option value="24h">{t("lang.time24")}</option>
               <option value="12h">{t("lang.time12")}</option>
             </Select>
             <p className="settings-hint">{t("lang.timeHint")}</p>
           </Field>
         </div>
-        <TimeZoneField value={timezone} onChange={setZoneDraft} />
+        <TimeZoneField value={timezone} onChange={(v) => onChange({ timezone: v })} />
       </div>
       <div className="settings-card">
         <p className="settings-kicker">{t("lang.sectionNumbers")}</p>
         <Field label={t("lang.numberFormat")}>
           <Select
             value={numberFormat}
-            onChange={(e) => { setNumberDraft(asNumberFormat(e.target.value)); }}
+            onChange={(e) => { onChange({ numberFormat: asNumberFormat(e.target.value) }); }}
           >
             <option value="auto">{t("lang.numberAuto")}</option>
             <option value="space-comma">{t("lang.numberSpaceComma")}</option>
@@ -915,47 +1094,36 @@ export function BackupForm({
   );
 }
 export function PresentationForm({
-  initial,
+  value,
+  onChange,
   onSave,
 }: {
-  initial: PortalSettings;
-  onSave: (payload: SettingsPayload) => void;
+  value: SettingsPayload;
+  onChange: (patch: Partial<SettingsPayload>) => void;
+  onSave: () => void;
 }) {
-  const [usageStats, setUsageStats] = useState(initial.usageStats !== false);
-  const [favNotes, setFavNotes] = useState(Boolean(initial.favNotes));
-  const [favEmbeds, setFavEmbeds] = useState(Boolean(initial.favEmbeds));
-  const [onlineIcons, setOnlineIcons] = useState(Boolean(initial.onlineIcons));
-  const [navRichIcons, setNavRichIcons] = useState(Boolean(initial.navRichIcons));
-  const [annexFade, setAnnexFade] = useState(Boolean(initial.annexFade));
-  const [catCounts, setCatCounts] = useState(Boolean(initial.catCounts));
-  const [cardResize, setCardResize] = useState(initial.cardResize !== false);
-  const [cardContextMenu, setCardContextMenu] = useState(initial.cardContextMenu !== false);
-  const [cardDragCollapse, setCardDragCollapse] = useState(initial.cardDragCollapse !== false);
-  const [ctxHideUrl, setCtxHideUrl] = useState(Boolean(initial.ctxHideUrl));
-  const [cardIconBg, setCardIconBg] = useState(initial.cardIconBg !== false);
-  const [infoBar, setInfoBar] = useState(initial.infoBar !== false);
+  const {
+    usageStats,
+    favNotes,
+    favEmbeds,
+    onlineIcons,
+    navRichIcons,
+    annexFade,
+    catCounts,
+    cardResize,
+    cardContextMenu,
+    cardDragCollapse,
+    ctxHideUrl,
+    cardIconBg,
+    infoBar,
+  } = value;
   return (
     <form
       id="settings-form"
       className="settings-stack"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
-          ...settingsBase(initial),
-          usageStats,
-          favNotes,
-          favEmbeds,
-          onlineIcons,
-          navRichIcons,
-          annexFade,
-          catCounts,
-          cardResize,
-          cardContextMenu,
-          cardDragCollapse,
-          ctxHideUrl,
-          cardIconBg,
-          infoBar,
-        });
+        onSave();
       }}
     >
       <div className="settings-card">
@@ -965,7 +1133,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={usageStats}
-              onChange={(e) => setUsageStats(e.target.checked)}
+              onChange={(e) => onChange({ usageStats: e.target.checked })}
             />
             {t("pres.clickCount")}
           </label>
@@ -974,7 +1142,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={catCounts}
-              onChange={(e) => setCatCounts(e.target.checked)}
+              onChange={(e) => onChange({ catCounts: e.target.checked })}
             />
             {t("pres.catCounts")}
           </label>
@@ -983,7 +1151,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={favEmbeds}
-              onChange={(e) => setFavEmbeds(e.target.checked)}
+              onChange={(e) => onChange({ favEmbeds: e.target.checked })}
             />
             {t("pres.favEmbeds")}
           </label>
@@ -992,7 +1160,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={favNotes}
-              onChange={(e) => setFavNotes(e.target.checked)}
+              onChange={(e) => onChange({ favNotes: e.target.checked })}
             />
             {t("pres.favNotes")}
           </label>
@@ -1001,7 +1169,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={cardResize}
-              onChange={(e) => setCardResize(e.target.checked)}
+              onChange={(e) => onChange({ cardResize: e.target.checked })}
             />
             {t("pres.cardResize")}
           </label>
@@ -1010,7 +1178,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={cardIconBg}
-              onChange={(e) => setCardIconBg(e.target.checked)}
+              onChange={(e) => onChange({ cardIconBg: e.target.checked })}
             />
             {t("pres.cardIconBg")}
           </label>
@@ -1019,7 +1187,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={cardContextMenu}
-              onChange={(e) => setCardContextMenu(e.target.checked)}
+              onChange={(e) => onChange({ cardContextMenu: e.target.checked })}
             />
             {t("pres.cardContextMenu")}
           </label>
@@ -1028,7 +1196,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={cardDragCollapse}
-              onChange={(e) => setCardDragCollapse(e.target.checked)}
+              onChange={(e) => onChange({ cardDragCollapse: e.target.checked })}
             />
             {t("pres.cardDragCollapse")}
           </label>
@@ -1042,7 +1210,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={onlineIcons}
-              onChange={(e) => setOnlineIcons(e.target.checked)}
+              onChange={(e) => onChange({ onlineIcons: e.target.checked })}
             />
             {t("pres.onlineIcons")}
           </label>
@@ -1051,7 +1219,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={navRichIcons}
-              onChange={(e) => setNavRichIcons(e.target.checked)}
+              onChange={(e) => onChange({ navRichIcons: e.target.checked })}
             />
             {t("pres.navRichIcons")}
           </label>
@@ -1065,7 +1233,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={annexFade}
-              onChange={(e) => setAnnexFade(e.target.checked)}
+              onChange={(e) => onChange({ annexFade: e.target.checked })}
             />
             {t("pres.annexFade")}
           </label>
@@ -1074,7 +1242,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={ctxHideUrl}
-              onChange={(e) => setCtxHideUrl(e.target.checked)}
+              onChange={(e) => onChange({ ctxHideUrl: e.target.checked })}
             />
             {t("pres.ctxHideUrl")}
           </label>
@@ -1088,7 +1256,7 @@ export function PresentationForm({
             <input
               type="checkbox"
               checked={infoBar}
-              onChange={(e) => setInfoBar(e.target.checked)}
+              onChange={(e) => onChange({ infoBar: e.target.checked })}
             />
             {t("pres.showInfoBar")}
           </label>
@@ -1099,26 +1267,23 @@ export function PresentationForm({
   );
 }
 export function ReachabilityForm({
-  initial,
+  value,
+  onChange,
   onSave,
 }: {
-  initial: PortalSettings;
-  onSave: (payload: SettingsPayload) => void;
+  value: SettingsPayload;
+  onChange: (patch: Partial<SettingsPayload>) => void;
+  onSave: () => void;
 }) {
-  const [healthChecks, setHealthChecks] = useState(initial.healthChecks !== false);
-  const [probeBlink, setProbeBlink] = useState(Boolean(initial.probeBlink));
-  const infoBar = initial.infoBar !== false;
+  const { healthChecks, probeBlink } = value;
+  const infoBar = value.infoBar;
   return (
     <form
       id="settings-form"
       className="settings-stack"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
-          ...settingsBase(initial),
-          healthChecks,
-          probeBlink,
-        });
+        onSave();
       }}
     >
       <div className="settings-card">
@@ -1128,7 +1293,7 @@ export function ReachabilityForm({
             <input
               type="checkbox"
               checked={healthChecks}
-              onChange={(e) => setHealthChecks(e.target.checked)}
+              onChange={(e) => onChange({ healthChecks: e.target.checked })}
             />
             {t("reach.httpIcmp")}
           </label>
@@ -1138,7 +1303,7 @@ export function ReachabilityForm({
               type="checkbox"
               checked={probeBlink}
               disabled={!infoBar || !healthChecks}
-              onChange={(e) => setProbeBlink(e.target.checked)}
+              onChange={(e) => onChange({ probeBlink: e.target.checked })}
             />
             {t("reach.blink")}
           </label>
@@ -1150,31 +1315,22 @@ export function ReachabilityForm({
   );
 }
 export function SecurityForm({
-  initial,
+  value,
+  onChange,
   onSave,
 }: {
-  initial: PortalSettings;
-  onSave: (payload: SettingsPayload) => void;
+  value: SettingsPayload;
+  onChange: (patch: Partial<SettingsPayload>) => void;
+  onSave: () => void;
 }) {
-  const [probeTlsVerify, setProbeTlsVerify] = useState(Boolean(initial.probeTlsVerify));
-  const [probeAuthOnly, setProbeAuthOnly] = useState(Boolean(initial.probeAuthOnly));
-  const [sessionHttpOnly, setSessionHttpOnly] = useState(Boolean(initial.sessionHttpOnly));
-  const [proxyAuthEnabled, setProxyAuthEnabled] = useState(Boolean(initial.proxyAuthEnabled));
-  const [proxyAuthHeader, setProxyAuthHeader] = useState(initial.proxyAuthHeader || "X-Remote-User");
+  const { probeTlsVerify, probeAuthOnly, sessionHttpOnly, proxyAuthEnabled, proxyAuthHeader } = value;
   return (
     <form
       id="settings-form"
       className="settings-stack"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
-          ...settingsBase(initial),
-          probeTlsVerify,
-          probeAuthOnly,
-          sessionHttpOnly,
-          proxyAuthEnabled,
-          proxyAuthHeader: proxyAuthHeader.trim().slice(0, 64),
-        });
+        onSave();
       }}
     >
       <div className="settings-card">
@@ -1184,7 +1340,7 @@ export function SecurityForm({
             <input
               type="checkbox"
               checked={probeTlsVerify}
-              onChange={(e) => setProbeTlsVerify(e.target.checked)}
+              onChange={(e) => onChange({ probeTlsVerify: e.target.checked })}
             />
             {t("sec.tls")}
           </label>
@@ -1193,7 +1349,7 @@ export function SecurityForm({
             <input
               type="checkbox"
               checked={probeAuthOnly}
-              onChange={(e) => setProbeAuthOnly(e.target.checked)}
+              onChange={(e) => onChange({ probeAuthOnly: e.target.checked })}
             />
             {t("sec.authOnly")}
           </label>
@@ -1207,7 +1363,7 @@ export function SecurityForm({
             <input
               type="checkbox"
               checked={sessionHttpOnly}
-              onChange={(e) => setSessionHttpOnly(e.target.checked)}
+              onChange={(e) => onChange({ sessionHttpOnly: e.target.checked })}
             />
             {t("sec.httpOnly")}
           </label>
@@ -1222,7 +1378,7 @@ export function SecurityForm({
             <input
               type="checkbox"
               checked={proxyAuthEnabled}
-              onChange={(e) => setProxyAuthEnabled(e.target.checked)}
+              onChange={(e) => onChange({ proxyAuthEnabled: e.target.checked })}
             />
             {t("sec.proxyAuthOn")}
           </label>
@@ -1236,7 +1392,7 @@ export function SecurityForm({
             value={proxyAuthHeader}
             disabled={!proxyAuthEnabled}
             placeholder="X-Remote-User"
-            onChange={(e) => setProxyAuthHeader(e.target.value)}
+            onChange={(e) => onChange({ proxyAuthHeader: e.target.value })}
           />
         </Field>
       </div>
@@ -1403,26 +1559,23 @@ export function DebugPanel({
   );
 }
 export function InfoBarForm({
-  initial,
+  value,
+  onChange,
   onSave,
 }: {
-  initial: PortalSettings;
-  onSave: (payload: SettingsPayload) => void;
+  value: SettingsPayload;
+  onChange: (patch: Partial<SettingsPayload>) => void;
+  onSave: () => void;
 }) {
-  const [infoStats, setInfoStats] = useState(initial.infoStats !== false);
-  const [infoLegend, setInfoLegend] = useState(initial.infoLegend !== false);
-  const infoBar = initial.infoBar !== false;
+  const { infoStats, infoLegend } = value;
+  const infoBar = value.infoBar;
   return (
     <form
       id="settings-form"
       className="settings-stack"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
-          ...settingsBase(initial),
-          infoStats,
-          infoLegend,
-        });
+        onSave();
       }}
     >
       <div className="settings-card">
@@ -1433,7 +1586,7 @@ export function InfoBarForm({
               type="checkbox"
               checked={infoStats}
               disabled={!infoBar}
-              onChange={(e) => setInfoStats(e.target.checked)}
+              onChange={(e) => onChange({ infoStats: e.target.checked })}
             />
             {t("info.statsIcon")}
           </label>
@@ -1448,7 +1601,7 @@ export function InfoBarForm({
               type="checkbox"
               checked={infoLegend}
               disabled={!infoBar}
-              onChange={(e) => setInfoLegend(e.target.checked)}
+              onChange={(e) => onChange({ infoLegend: e.target.checked })}
             />
             {t("info.legendIcon")}
           </label>
@@ -1553,26 +1706,19 @@ export function ThemeColorField({
   );
 }
 export function ThemeForm({
-  initial,
+  value,
+  onChange,
   onSave,
 }: {
-  initial: PortalSettings;
-  busy: boolean;
-  onCancel: () => void;
-  onSave: (payload: { cssLight: string; cssDark: string }) => void;
+  value: ThemeDraft;
+  onChange: (patch: Partial<ThemeDraft>) => void;
+  onSave: () => void;
 }) {
   const { theme, apply } = useTheme();
   const [pane, setPane] = useState(theme);
-  const lightParsed = parseThemeCss(initial.cssLight || "", LIGHT_COLORS);
-  const darkParsed = parseThemeCss(initial.cssDark || "", DARK_COLORS);
-  const [lightColors, setLightColors] = useState(lightParsed.colors);
-  const [darkColors, setDarkColors] = useState(darkParsed.colors);
-  const [lightExtra, setLightExtra] = useState(lightParsed.extra);
-  const [darkExtra, setDarkExtra] = useState(darkParsed.extra);
-  const colors = pane === "light" ? lightColors : darkColors;
-  const setColors = pane === "light" ? setLightColors : setDarkColors;
-  const extra = pane === "light" ? lightExtra : darkExtra;
-  const setExtra = pane === "light" ? setLightExtra : setDarkExtra;
+  const light = pane === "light";
+  const colors = light ? value.light : value.dark;
+  const extra = light ? value.lightExtra : value.darkExtra;
   useEffect(() => {
     const el = document.createElement("style");
     el.id = "portal-user-theme-draft";
@@ -1587,22 +1733,19 @@ export function ThemeForm({
       if (!el) return;
       const css =
         theme === "dark"
-          ? composeThemeCss("dark", darkColors, darkExtra)
-          : composeThemeCss("light", lightColors, lightExtra);
+          ? composeThemeCss("dark", value.dark, value.darkExtra)
+          : composeThemeCss("light", value.light, value.lightExtra);
       el.textContent = sanitizeThemeCss(css);
     });
     return () => cancelAnimationFrame(frame);
-  }, [theme, lightColors, darkColors, lightExtra, darkExtra]);
+  }, [theme, value]);
   return (
     <form
       id="settings-form"
       className="settings-stack theme-stack"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
-          cssLight: composeThemeCss("light", lightColors, lightExtra),
-          cssDark: composeThemeCss("dark", darkColors, darkExtra),
-        });
+        onSave();
       }}
     >
       <div className="settings-card">
@@ -1640,10 +1783,11 @@ export function ThemeForm({
               label={t(`theme.${field.id}`)}
               value={colors[field.id]}
               onChange={(next) =>
-                setColors((prev) => ({
-                  ...prev,
-                  [field.id]: next,
-                }))
+                onChange(
+                  light
+                    ? { light: { ...value.light, [field.id]: next } }
+                    : { dark: { ...value.dark, [field.id]: next } },
+                )
               }
             />
           ))}
@@ -1653,7 +1797,7 @@ export function ThemeForm({
           <button
             type="button"
             className="settings-link"
-            onClick={() => setColors({ ...(pane === "light" ? LIGHT_COLORS : DARK_COLORS) })}
+            onClick={() => onChange(light ? { light: { ...LIGHT_COLORS } } : { dark: { ...DARK_COLORS } })}
           >
             {t("theme.resetColors")}
           </button>
@@ -1667,7 +1811,7 @@ export function ThemeForm({
           spellCheck={false}
           maxLength={CSS_MAX}
           placeholder={t("theme.cssHint")}
-          onChange={(e) => setExtra(e.target.value)}
+          onChange={(e) => onChange(light ? { lightExtra: e.target.value } : { darkExtra: e.target.value })}
         />
         <div className="theme-css-meta">
           <span>
@@ -1677,7 +1821,7 @@ export function ThemeForm({
             type="button"
             className="settings-link"
             onClick={() => {
-              setExtra("");
+              onChange(light ? { lightExtra: "" } : { darkExtra: "" });
             }}
           >
             {t("theme.reset")}
@@ -1813,25 +1957,21 @@ export function TagManager({
   tags,
   colors,
   busy,
-  settings,
-  pruneOrphanTags,
-  tagsAlpha,
+  value,
+  onChange,
   onSave,
   onApply,
 }: {
   tags: { name: string; count: number }[];
   colors: Record<string, string>;
   busy: boolean;
-  embedded?: boolean;
-  settings: PortalSettings;
-  pruneOrphanTags: boolean;
-  tagsAlpha: boolean;
-  onCancel: () => void;
-  onSave: (payload: SettingsPayload) => void;
+  value: SettingsPayload;
+  onChange: (patch: Partial<SettingsPayload>) => void;
+  onSave: () => void;
   onApply: (payload: TagsPayload) => void;
 }) {
-  const [prune, setPrune] = useState(Boolean(pruneOrphanTags));
-  const [alpha, setAlpha] = useState(tagsAlpha !== false);
+  const prune = value.pruneOrphanTags;
+  const alpha = value.tagsAlpha;
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [createDraft, setCreateDraft] = useState("");
   const col = useColSort();
@@ -1841,12 +1981,6 @@ export function TagManager({
     return "";
   });
   const [localColors, setLocalColors] = useState(colors ?? {});
-  useEffect(() => {
-    setPrune(Boolean(pruneOrphanTags));
-  }, [pruneOrphanTags]);
-  useEffect(() => {
-    setAlpha(tagsAlpha !== false);
-  }, [tagsAlpha]);
   useEffect(() => {
     setLocalColors(colors ?? {});
   }, [colors]);
@@ -1911,24 +2045,27 @@ export function TagManager({
       className="settings-stack"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave?.({
-          ...settingsBase(settings || {}),
-          pruneOrphanTags: prune,
-          tagsAlpha: alpha,
-        });
-        toast.success(t("toast.saved"));
+        onSave();
       }}
     >
       <div className="settings-card">
         <p className="settings-kicker">{t("tags.memory")}</p>
         <div className="settings-toggles">
           <label>
-            <input type="checkbox" checked={prune} onChange={(e) => setPrune(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={prune}
+              onChange={(e) => onChange({ pruneOrphanTags: e.target.checked })}
+            />
             {t("tags.prune")}
           </label>
           <p className="settings-hint">{t("tags.pruneHint")}</p>
           <label>
-            <input type="checkbox" checked={alpha} onChange={(e) => setAlpha(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={alpha}
+              onChange={(e) => onChange({ tagsAlpha: e.target.checked })}
+            />
             {t("tags.alpha")}
           </label>
           <p className="settings-hint">{t("tags.alphaHint")}</p>

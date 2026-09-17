@@ -301,7 +301,13 @@
     "resetBody": "Factory reset: English and default formats, statistics cleared, accounts, groups and custom roles removed, admin / admin access, a single Home space with an empty Applications category.",
     "resetConfirm": "Reset the whole portal? Spaces, cards, themes, tags, statistics, accounts, groups, custom roles, language and formats are replaced. Admin access becomes admin / admin again.",
     "resetAction": "Reset the portal",
-    "importBrand": "Import {label}"
+    "importBrand": "Import {label}",
+    "closePromptTitle": "Unsaved changes",
+    "closePromptBody": "Some sections have unsaved changes. Save them before closing?",
+    "closePromptSave": "Save and close",
+    "closePromptDiscard": "Close without saving",
+    "switchPromptBody": "This section has unsaved changes. Save them before switching?",
+    "switchPromptDiscard": "Discard changes"
   },
   "sections": {
     "general": {
