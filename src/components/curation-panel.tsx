@@ -96,7 +96,7 @@ export function CurationPanel({
   const [edit, setEdit] = useState<{ app: PortalCard; categoryId: string; categories: PortalCategory[] } | null>(
     null,
   );
-  const jobRunningRef = useRef(false);
+  const seenFinishRef = useRef(0);
   const logEndRef = useRef<HTMLDivElement>(null);
   const reloadRef = useRef<() => void>(() => {});
   useEffect(() => {
@@ -116,9 +116,13 @@ export function CurationPanel({
         const res = await curationStatus({ data: { token } });
         if (!alive) return;
         setJob(res);
-        const wasRunning = jobRunningRef.current;
-        jobRunningRef.current = res.running;
-        if (wasRunning && !res.running) void reload();
+        // Reload whenever a finishedAt we never saw shows up: the job may have
+        // started and ended between two polls (800 ms), so watching the
+        // running→stopped edge alone misses fast jobs.
+        if (!res.running && res.finishedAt > 0 && seenFinishRef.current !== res.finishedAt) {
+          seenFinishRef.current = res.finishedAt;
+          void reload();
+        }
       } catch (err) {
         if (!alive || sessionGone(err)) return;
       }
