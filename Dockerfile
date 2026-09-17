@@ -17,8 +17,8 @@ RUN chmod 755 /docker-entrypoint.sh && mkdir -p /app/data && chown -R node:node 
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV PORTAL_DATA_FILE=/app/data/portal.json
-USER node
 EXPOSE 3000
 VOLUME /app/data
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", ".output/server/index.mjs"]
+

@@ -1,0 +1,4 @@
+# Starts as root to chown Unraid appdata; entrypoint then su-execs to PUID:PGID.
+DS-0002
+AVD-DS-0002
+DS002
