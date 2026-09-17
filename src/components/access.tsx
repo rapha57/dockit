@@ -115,6 +115,19 @@ function typeLabel(src: unknown): string {
   return remoteSourceLabel(src) || t("lock.local");
 }
 
+function effectiveRoleIds(
+  u: { roleIds?: string[]; groupIds?: string[]; id?: string },
+  groups: { id: string; roleIds?: string[]; members?: string[] }[],
+): string[] {
+  const ids = new Set(u.roleIds || []);
+  for (const g of groups) {
+    if ((u.groupIds || []).includes(g.id) || (g.members || []).includes(u.id || "")) {
+      for (const r of g.roleIds || []) ids.add(r);
+    }
+  }
+  return [...ids];
+}
+
 function pickerProviders(directories: LdapDirectory[] | null | undefined): Provider[] {
   const list: Provider[] = [{ id: "local", label: t("access.idpTypeLocal"), kind: "local" }];
   for (const d of directories || []) {
@@ -986,12 +999,12 @@ export function AccessUsers({
       col.apply(filtered, (u, key) => {
         if (key === "user") return prettyLogin(u.username);
         if (key === "role")
-          return (u.roleIds || []).map((id) => roleTitle(id, dir.roles)).join(", ");
+          return effectiveRoleIds(u, dir.groups).map((id) => roleTitle(id, dir.roles)).join(", ");
         if (key === "type") return typeLabel(u.source);
         if (key === "status") return u.disabled ? 1 : 0;
         return "";
       }),
-    [filtered, col, dir.roles],
+    [filtered, col, dir.groups, dir.roles],
   );
 
   function userDraft(u: User): UserDraft {
@@ -1225,6 +1238,7 @@ export function AccessUsers({
             const open = expand.openId === u.id || (u.phantom && creating);
             const rowDraft = open ? draft : null;
             const view = current?.id === u.id && !u.phantom ? current : u;
+            const remoteManaged = view.source === "ad" || view.source === "oidc";
             return (
               <ExpandRow
                 key={u.id}
@@ -1237,7 +1251,7 @@ export function AccessUsers({
                   </span>,
                   <span key="c" className="am-dim">
                     {bits(
-                      (rowDraft?.roleIds || u.roleIds || []).map((id) => roleTitle(id, dir.roles)),
+                      effectiveRoleIds(rowDraft || u, dir.groups).map((id) => roleTitle(id, dir.roles)),
                     )}
                   </span>,
                   <span key="t" className="am-dim">
@@ -1342,12 +1356,16 @@ export function AccessUsers({
                                 <EntityPicker
                                   kind="role"
                                   items={dir.roles.filter((r) => r.id !== "owner")}
-                                  selectedIds={rowDraft.roleIds || []}
+                                  selectedIds={
+                                    remoteManaged
+                                      ? effectiveRoleIds(rowDraft || u, dir.groups)
+                                      : rowDraft.roleIds || []
+                                  }
                                   labelOf={(r) => roleTitle(r.id, dir.roles)}
                                   providers={[
                                     { id: "local", label: t("access.idpTypeLocal"), kind: "local" },
                                   ]}
-                                  readOnly={false}
+                                  readOnly={remoteManaged}
                                   onChange={(ids) =>
                                     patch({ ...rowDraft, roleIds: ids.length ? ids : ["lecteur"] })
                                   }
@@ -1361,11 +1379,12 @@ export function AccessUsers({
                                   selectedIds={rowDraft.groupIds || []}
                                   labelOf={(g) => g.name}
                                   providers={[{ id: "local", label: t("access.idpTypeLocal"), kind: "local" }]}
-                                  readOnly={false}
+                                  readOnly={remoteManaged}
                                   onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
                                 />
                               </div>
                             </Pair>
+                            {remoteManaged ? <p className="am-note">{t("access.remoteManagedHint")}</p> : null}
                           </Section>
                         ) : null}
                         <PermBlocks

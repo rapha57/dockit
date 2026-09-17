@@ -1177,7 +1177,8 @@
     "passwordMismatch": "Les mots de passe ne correspondent pas.",
     "adMembersHint": "L’appartenance est résolue depuis l’annuaire à la connexion.",
     "syncGroup": "Synchroniser depuis l’annuaire",
-    "groupSynced": "Groupe synchronisé depuis l’annuaire"
+    "groupSynced": "Groupe synchronisé depuis l’annuaire",
+    "remoteManagedHint": "Rôles et groupes pilotés par l’annuaire à la connexion."
   },
   "users": {
     "noSpaces": "Aucun espace à modifier",

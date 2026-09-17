@@ -1177,7 +1177,8 @@
     "passwordMismatch": "Passwords do not match.",
     "adMembersHint": "Membership is resolved from the directory at sign-in.",
     "syncGroup": "Sync from directory",
-    "groupSynced": "Group synced from the directory"
+    "groupSynced": "Group synced from the directory",
+    "remoteManagedHint": "Roles and groups are managed by the directory at sign-in."
   },
   "users": {
     "noSpaces": "No space to edit",
