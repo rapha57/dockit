@@ -1166,6 +1166,8 @@
     "pickerDirBusy": "Searching the directory…",
     "pickerAdd": "Add selected",
     "pickerNone": "None",
+    "chipAll": "All",
+    "chipShowAll": "Show all ({n})",
     "inheritedPerms": "Inherited permissions",
     "inheritedHint": "From roles and groups. Read-only.",
     "idpDrag": "Reorder identity source",

@@ -12,7 +12,6 @@ import { ConfirmDialog, type ConfirmDialogProps } from "@/components/confirm-dia
 import { ChipList, EntityPicker } from "@/components/entity-picker";
 import { ExpandRow, NEW_ROW, useExpandSession } from "@/components/expand-row";
 import { Field } from "@/components/field";
-import { FormActions } from "@/components/form-actions";
 import {
   can,
   effectiveAccess,
@@ -893,16 +892,21 @@ function RowActions({
   danger?: ReactNode;
 }) {
   if (editing) {
-    return <FormActions busy={Boolean(busy)} disabled={saveDisabled} onCancel={onCancel} />;
+    return (
+      <div className="am-actions">
+        <button type="button" className="am-text-btn" onClick={onCancel}>
+          {t("actions.cancel")}
+        </button>
+        <Button type="submit" disabled={saveDisabled || busy}>
+          {t("actions.save")}
+        </Button>
+      </div>
+    );
   }
   return (
     <div className="am-actions">
-      {extra || danger ? (
-        <div className="am-actions-start">
-          {extra}
-          {danger}
-        </div>
-      ) : null}
+      {extra}
+      {danger}
       {onEdit ? (
         <Button type="button" onClick={onEdit}>
           {t("actions.edit")}
@@ -1344,10 +1348,10 @@ export function AccessUsers({
                       ) : (
                         <div className="field-row">
                           <Field label={t("users.role")}>
-                            <ChipList names={effTitles} />
+                            <ChipList names={effTitles} title={t("access.roles")} />
                           </Field>
                           <Field label={t("access.groupsOf")}>
-                            <ChipList names={groupNames} />
+                            <ChipList names={groupNames} title={t("access.groups")} />
                           </Field>
                         </div>
                       )}
@@ -1853,6 +1857,7 @@ export function AccessGroups({
                           <Field label={t("users.role")}>
                             <ChipList
                               names={(rowDraft.roleIds || []).map((id) => roleTitle(id, dir.roles))}
+                              title={t("access.roles")}
                             />
                           </Field>
                           <Field label={t("access.members")}>
@@ -1860,6 +1865,7 @@ export function AccessGroups({
                               names={(rowDraft.members || []).map((id) =>
                                 prettyLogin(people.find((u) => u.id === id)?.username || id),
                               )}
+                              title={t("access.members")}
                             />
                           </Field>
                         </div>

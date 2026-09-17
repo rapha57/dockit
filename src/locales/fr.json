@@ -1166,6 +1166,8 @@
     "pickerDirBusy": "Recherche dans l’annuaire…",
     "pickerAdd": "Ajouter la sélection",
     "pickerNone": "Aucun",
+    "chipAll": "Tous",
+    "chipShowAll": "Tout afficher ({n})",
     "inheritedPerms": "Permissions héritées",
     "inheritedHint": "Issues des rôles et des groupes. Lecture seule.",
     "idpDrag": "Réordonner la source d’identité",

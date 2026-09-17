@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,27 +6,262 @@ import { Select } from "@/components/ui/select";
 import { t, te } from "@/lib/i18n";
 
 const LIMIT = 50;
+const CHIP_MAX = 2;
+const CHIP_SEARCH_FROM = 8;
+
+type PopPos = { top: number; left: number; width: number };
+
+function usePickerPop({
+  open,
+  onClose,
+  minWidth = 18 * 16,
+  layoutKey,
+}: {
+  open: boolean;
+  onClose: () => void;
+  minWidth?: number;
+  layoutKey?: unknown;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<PopPos | null>(null);
+
+  useEffect(() => {
+    if (!open) setPos(null);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    function place() {
+      const box = rootRef.current?.getBoundingClientRect();
+      if (!box) return;
+      const width = Math.min(22 * 16, Math.max(minWidth, box.width));
+      const popH = popRef.current?.offsetHeight || 260;
+      let top = box.bottom + 6;
+      let left = box.left;
+      if (top + popH > window.innerHeight - 10) top = Math.max(8, box.top - popH - 6);
+      if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+      setPos({ top, left, width });
+    }
+    place();
+    const wrap = rootRef.current?.closest(".am-list-wrap");
+    wrap?.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      wrap?.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, minWidth, layoutKey]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target) || popRef.current?.contains(target)) return;
+      onClose();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [open, onClose]);
+
+  return { rootRef, popRef, pos };
+}
+
+type ChipItem = {
+  id: string;
+  label: ReactNode;
+  search?: string;
+  onRemove?: () => void;
+};
 
 type ChipListProps = {
   names?: (string | null | undefined)[];
   max?: number;
   empty?: ReactNode;
+  title?: string;
 };
 
-export function ChipList({ names, max = 2, empty = "—" }: ChipListProps) {
-  const list = (names || []).filter(Boolean);
-  if (!list.length) return <span className="am-dim">{empty}</span>;
-  const shown = list.slice(0, max);
-  const extra = list.length - shown.length;
+export function ChipList({ names, max = CHIP_MAX, empty = "—", title }: ChipListProps) {
+  const list = (names || []).filter((name): name is string => Boolean(name));
   return (
-    <span className="am-chips">
-      {shown.map((name) => (
-        <span key={name} className="am-chip">
-          {name}
-        </span>
-      ))}
-      {extra > 0 ? <span className="am-chip is-more">+{extra}</span> : null}
-    </span>
+    <ChipOverflow
+      items={list.map((name, i) => ({ id: `${i}:${name}`, label: name, search: name }))}
+      max={max}
+      empty={empty}
+      title={title}
+    />
+  );
+}
+
+function ChipOverflow({
+  items,
+  max = CHIP_MAX,
+  empty = "—",
+  title,
+  extra,
+  selected,
+  suppressed,
+  onOpen,
+}: {
+  items: ChipItem[];
+  max?: number;
+  empty?: ReactNode;
+  title?: string;
+  extra?: ReactNode;
+  selected?: boolean;
+  suppressed?: boolean;
+  onOpen?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const close = useCallback(() => setOpen(false), []);
+  const { rootRef, popRef, pos } = usePickerPop({
+    open,
+    onClose: close,
+    minWidth: 16 * 16,
+    layoutKey: `${q}:${items.length}`,
+  });
+  const shown = items.slice(0, max);
+  const more = items.length - shown.length;
+  const needle = q.trim().toLowerCase();
+  const filtered = needle
+    ? items.filter((item) =>
+        String(item.search || item.label || "")
+          .toLowerCase()
+          .includes(needle),
+      )
+    : items;
+  const showSearch = items.length >= CHIP_SEARCH_FROM;
+  const heading = title || t("access.chipAll");
+
+  useEffect(() => {
+    if (suppressed || items.length <= max) setOpen(false);
+  }, [suppressed, items.length, max]);
+
+  useEffect(() => {
+    if (!open) setQ("");
+  }, [open]);
+
+  const pop =
+    open && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={popRef}
+            className="am-picker-pop"
+            role="dialog"
+            aria-label={heading}
+            style={
+              pos
+                ? { top: pos.top, left: pos.left, width: pos.width }
+                : { visibility: "hidden", top: 0, left: 0 }
+            }
+          >
+            <div className="am-picker-pop-head">
+              <p>{heading}</p>
+              <button
+                type="button"
+                className="am-icon-btn"
+                onClick={() => setOpen(false)}
+                aria-label={t("actions.close")}
+                title={t("actions.close")}
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+            {showSearch ? (
+              <label className="am-search">
+                <Search className="size-3.5" aria-hidden />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder={t("access.pickerSearch")}
+                  aria-label={t("access.pickerSearch")}
+                  autoFocus
+                />
+              </label>
+            ) : null}
+            {!filtered.length ? (
+              <p className="am-note">{needle ? t("empty.noResults") : t("access.pickerNone")}</p>
+            ) : (
+              <ul className="am-picker-results is-list">
+                {filtered.map((item) => (
+                  <li key={item.id}>
+                    <span>{item.label}</span>
+                    {item.onRemove ? (
+                      <button
+                        type="button"
+                        className="am-icon-btn"
+                        aria-label={t("actions.delete")}
+                        title={t("actions.delete")}
+                        onClick={() => item.onRemove?.()}
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>,
+          document.body,
+        )
+      : null;
+
+  const chipClass = selected ? "am-chip is-on" : "am-chip";
+  return (
+    <div className="am-chip-overflow" ref={rootRef}>
+      <div className="am-chips is-wrap">
+        {items.length ? (
+          shown.map((item) => (
+            <span key={item.id} className={chipClass}>
+              {item.label}
+              {item.onRemove ? (
+                <button
+                  type="button"
+                  className="am-chip-x"
+                  aria-label={t("actions.delete")}
+                  title={t("actions.delete")}
+                  onClick={() => item.onRemove?.()}
+                >
+                  <X className="size-3" />
+                </button>
+              ) : null}
+            </span>
+          ))
+        ) : (
+          <span className="am-dim">{empty}</span>
+        )}
+        {more > 0 ? (
+          <button
+            type="button"
+            className={`am-chip is-more${open ? " is-on" : ""}`}
+            aria-expanded={open}
+            aria-label={t("access.chipShowAll", { n: items.length })}
+            title={t("access.chipShowAll", { n: items.length })}
+            onClick={() => {
+              onOpen?.();
+              setOpen((v) => !v);
+            }}
+          >
+            +{more}
+          </button>
+        ) : null}
+        {extra}
+      </div>
+      {pop}
+    </div>
   );
 }
 
@@ -43,7 +278,6 @@ function kindLabel(kind: string, mode: string): string {
 
 export type PickerRow = { id: string; [key: string]: any };
 export type PickerProvider = { id: string; label: ReactNode; kind: string };
-type PopPos = { top: number; left: number; width: number };
 
 type EntityPickerProps<T extends PickerRow> = {
   kind: "role" | "group" | "user";
@@ -74,9 +308,8 @@ export function EntityPicker<T extends PickerRow = PickerRow>({
   trigger,
   addLabel,
 }: EntityPickerProps<T>) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
   const [provider, setProvider] = useState(() => {
     const list = providers || [];
     return list.find((p) => p.kind === "ad")?.id || list[0]?.id || "local";
@@ -84,7 +317,6 @@ export function EntityPicker<T extends PickerRow = PickerRow>({
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
-  const [pos, setPos] = useState<PopPos | null>(null);
   const [remoteRows, setRemoteRows] = useState<T[]>([]);
   const [remoteBusy, setRemoteBusy] = useState(false);
   const [remoteErr, setRemoteErr] = useState("");
@@ -100,12 +332,17 @@ export function EntityPicker<T extends PickerRow = PickerRow>({
     return () => clearTimeout(timer);
   }, [q]);
 
+  const { rootRef, popRef, pos } = usePickerPop({
+    open,
+    onClose: close,
+    layoutKey: `${q}:${picked.join(",")}:${provider}:${remoteRows.length}:${remoteBusy}`,
+  });
+
   useEffect(() => {
     if (!open) {
       setQ("");
       setDq("");
       setPicked([]);
-      setPos(null);
       setRemoteRows([]);
       setRemoteErr("");
     }
@@ -144,52 +381,6 @@ export function EntityPicker<T extends PickerRow = PickerRow>({
       alive = false;
     };
   }, [open, canSearch, dq, current?.id, searchRemote]);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    function place() {
-      const box = rootRef.current?.getBoundingClientRect();
-      if (!box) return;
-      const width = Math.min(22 * 16, Math.max(18 * 16, box.width));
-      const popH = popRef.current?.offsetHeight || 260;
-      let top = box.bottom + 6;
-      let left = box.left;
-      if (top + popH > window.innerHeight - 10) top = Math.max(8, box.top - popH - 6);
-      if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
-      setPos({ top, left, width });
-    }
-    place();
-    const wrap = rootRef.current?.closest(".am-list-wrap");
-    wrap?.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      wrap?.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-    };
-  }, [open, q, picked, provider, remoteRows, remoteBusy]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) {
-      const target = e.target as Node;
-      if (rootRef.current?.contains(target) || popRef.current?.contains(target)) return;
-      setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDoc);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [open]);
 
   const results = useMemo(() => {
     const blocked = new Set(skip ? skip.split("\0") : []);
@@ -338,34 +529,31 @@ export function EntityPicker<T extends PickerRow = PickerRow>({
     </button>
   );
 
+  function listTitle() {
+    if (kind === "group") return t("access.groups");
+    if (kind === "role") return t("access.roles");
+    return t("access.users");
+  }
+
   return (
     <div className={`am-picker${open ? " is-open" : ""}`} ref={rootRef}>
       {trigger === "button" ? (
         addBtn
       ) : (
-        <div className="am-chips is-wrap">
-          {selectedRows.length ? (
-            selectedRows.map((row) => (
-              <span key={row.id} className="am-chip is-on">
-                {labelOf(row)}
-                {readOnly ? null : (
-                  <button
-                    type="button"
-                    className="am-chip-x"
-                    aria-label={t("actions.delete")}
-                  title={t("actions.delete")}
-                    onClick={() => remove(row.id)}
-                  >
-                    <X className="size-3" />
-                  </button>
-                )}
-              </span>
-            ))
-          ) : (
-            <span className="am-dim">{t("access.pickerNone")}</span>
-          )}
-          {addBtn}
-        </div>
+        <ChipOverflow
+          items={selectedRows.map((row) => ({
+            id: row.id,
+            label: labelOf(row),
+            search: String(labelOf(row) || ""),
+            onRemove: readOnly ? undefined : () => remove(row.id),
+          }))}
+          empty={t("access.pickerNone")}
+          title={listTitle()}
+          extra={addBtn}
+          selected
+          suppressed={open}
+          onOpen={() => setOpen(false)}
+        />
       )}
       {pop}
     </div>

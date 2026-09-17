@@ -3594,12 +3594,6 @@ html.dark .dockit-mark {
   border: 0;
   background: transparent;
 }
-.settings-pane.is-access .empty-page-mark {
-  width: 2.5rem;
-  height: 2.5rem;
-  background: color-mix(in oklab, var(--color-fg) 4%, transparent);
-  color: var(--color-subtle);
-}
 .settings-frame.is-wide.is-access {
   width: min(72rem, calc(100vw - 2rem));
   height: min(90dvh, 780px);
@@ -3677,13 +3671,7 @@ button.am-create,
   gap: 0.45rem;
   margin-left: auto;
 }
-.am-actions-start {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: inherit;
-  margin-right: auto;
-}
+
 .am-search {
   display: flex;
   min-width: 11rem;
@@ -4078,6 +4066,9 @@ button.am-create,
 .am-row.is-link .am-row-cells {
   grid-template-columns: minmax(0, 1fr);
 }
+.am-chip-overflow {
+  min-width: 0;
+}
 .am-chips {
   display: flex;
   flex-wrap: wrap;
@@ -4127,8 +4118,26 @@ button.am-chip:hover {
   background: color-mix(in oklab, var(--color-fg) 5.5%, transparent);
 }
 .am-chip.is-more {
-  border-color: transparent;
-  padding-left: 0.15rem;
+  border-color: color-mix(in oklab, var(--color-border) 75%, transparent);
+}
+.am-picker-results.is-list {
+  max-height: 16rem;
+  border-top: 1px solid var(--color-border);
+}
+.am-picker-results.is-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  min-height: 1.7rem;
+  padding: 0 0.1rem;
+  font-size: 0.8125rem;
+}
+.am-picker-results.is-list li > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .am-chip-x {
   display: inline-flex;
@@ -4446,7 +4455,7 @@ button.am-chip:hover {
 .am-actions.is-center {
   justify-content: center;
 }
-.am-actions > button:not(.am-text-btn) {
+.am-actions:not(.is-center) > button:not(.am-text-btn) {
   height: 2rem;
   padding-inline: 0.75rem;
   border-radius: 8px;
