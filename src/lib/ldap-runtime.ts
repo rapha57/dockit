@@ -2,10 +2,12 @@ import type { Client } from "ldapts";
 import { newId } from "./id";
 
 const TIMEOUT_MS = 8000;
-export const LDAP_FILTER_DEFAULT = "(&(objectClass=user)(sAMAccountName={username}))";
+export const LDAP_FILTER_DEFAULT =
+	"(&(|(objectClass=user)(objectClass=posixAccount)(objectClass=inetOrgPerson))(|(sAMAccountName={username})(uid={username})))";
 export const LDAP_MAX = 8;
 export const LDAP_GROUP_MAX = 20;
-const GROUP_OBJECTCLASS = "(|(objectClass=group)(objectClass=groupOfUniqueNames)(objectClass=groupOfNames))";
+const GROUP_OBJECTCLASS =
+	"(|(objectClass=group)(objectClass=groupOfUniqueNames)(objectClass=groupOfNames)(objectClass=posixGroup))";
 
 export type Directory = {
 	id: string;
@@ -267,7 +269,7 @@ async function searchUserEntry(client: Client, dir: any, sam: string): Promise<a
 		filter,
 		sizeLimit: 2,
 		timeLimit: 8,
-		attributes: ["dn", "memberOf", "sAMAccountName", "cn"]
+		attributes: ["dn", "memberOf", "sAMAccountName", "uid", "cn"]
 	});
 	if (searchEntries?.length !== 1) return null;
 	return searchEntries[0];
@@ -335,8 +337,55 @@ export async function ldapUserGroups(dir: any, username: unknown): Promise<strin
 	});
 }
 
-export async function ldapSearchGroups(dir: any, query: unknown): Promise<LdapGroupHit[]> {
+function rdnValue(dn: string): string {
+	const first = String(dn || "").split(",")[0] || "";
+	return first.replace(/^[^=]+=/i, "").trim();
+}
+
+export async function ldapGroupMembers(dir: unknown, groupName: unknown): Promise<string[]> {
 	const d = asDirectory(dir);
+	if (!d || !directoryReady(d)) throw new Error("errors.ldapOff");
+	const cn = String(groupName || "").trim().slice(0, 60);
+	if (!cn) return [];
+	return await withClient(d, async (client) => {
+		await client.bind(d.bindDn, d.bindPassword);
+		let entry: any = null;
+		try {
+			const { searchEntries } = await client.search(d.baseDn, {
+				scope: "sub",
+				filter: `(&${GROUP_OBJECTCLASS}(cn=${escapeFilter(cn)}))`,
+				attributes: ["memberUid", "uniqueMember", "member"]
+			});
+			entry = searchEntries?.[0] || null;
+		} catch {
+			entry = null;
+		}
+		const dn = entry ? entryDn(entry) : "";
+		if (dn) {
+			try {
+				const { searchEntries } = await client.search(d.baseDn, {
+					scope: "sub",
+					filter: `(&(objectClass=*)(memberOf=${escapeFilter(dn)}))`,
+					attributes: ["uid", "sAMAccountName"]
+				});
+				const uids = (searchEntries || [])
+					.map((e) => attrOf(e, "uid")[0] || attrOf(e, "sAMAccountName")[0] || "")
+					.filter(Boolean);
+				if (uids.length) return uids;
+			} catch {
+				// memberOf search unsupported here — fall through to group attributes
+			}
+		}
+		if (entry) {
+			const direct = asStrings(entry.memberUid);
+			if (direct.length) return direct;
+			return [...asStrings(entry.uniqueMember), ...asStrings(entry.member)].map(rdnValue).filter(Boolean);
+		}
+		return [];
+	});
+}
+
+export async function ldapSearchGroups(dir: any, query: unknown): Promise<LdapGroupHit[]> {	const d = asDirectory(dir);
 	if (!d || !directoryReady(d)) throw new Error("errors.ldapOff");
 	const needle = escapeFilter(String(query || "").trim());
 	if (needle.length < 2) return [];

@@ -1049,13 +1049,18 @@ function applyAdMembership(doc: Doc, user: StoredUser | null | undefined, dirId:
 	ensureGroups(doc);
 	const prefix = `${dirId}:`;
 	const keys = new Set((Array.isArray(memberOf) ? memberOf : []).map((dn) => adGroupKey(dirId, dn)));
+	let groupIds = asIdList(user.groupIds);
 	for (const g of doc.groups) {
 		if (g.source !== "ad" || !String(g.externalId || "").startsWith(prefix)) continue;
+		// Mapping: membership is resolved from the directory at sign-in. The stored
+		// members list mirrors it for display, but rights flow through groupIds.
+		const isMember = keys.has(g.externalId);
 		const members = asIdList(g.members).filter((id) => id !== user.id);
-		if (keys.has(g.externalId)) members.push(user.id);
+		if (isMember) members.push(user.id);
 		g.members = members;
+		groupIds = isMember ? Array.from(new Set([...groupIds, g.id])) : groupIds.filter((id) => id !== g.id);
 	}
-	user.groupIds = doc.groups.filter((g) => asIdList(g.members).includes(user.id)).map((g) => g.id);
+	user.groupIds = groupIds;
 }
 function upsertOidcGroups(doc: Doc, issuer: string, names: string[]) {
 	ensureGroups(doc);
@@ -2314,6 +2319,26 @@ export const searchLdapGroups = createServerFn({ method: "POST" }).validator(z.o
 	const groups = await ldapSearchGroups(dir, data.query);
 	return { groups };
 });
+function applyAdGroupMirror(doc: Doc, pairs: { groupId: string; uids: string[] }[]) {
+	ensureGroups(doc);
+	for (const { groupId, uids } of pairs) {
+		const g = doc.groups.find((row) => row.id === groupId);
+		if (!g || g.source !== "ad") continue;
+		const wanted = new Set(uids);
+		g.members = doc.users
+			.filter((u) => u.id !== "admin" && u.source === "ad" && wanted.has(String(u.username || "").toLowerCase()))
+			.map((u) => u.id);
+		const ids = new Set(g.members);
+		for (const u of doc.users) {
+			u.groupIds = asIdList(u.groupIds);
+			if (ids.has(u.id)) {
+				if (!u.groupIds.includes(g.id)) u.groupIds.push(g.id);
+			} else {
+				u.groupIds = u.groupIds.filter((id) => id !== g.id);
+			}
+		}
+	}
+}
 export const linkLdapGroups = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	directoryId: z.string().min(1).max(80),
@@ -2321,23 +2346,74 @@ export const linkLdapGroups = createServerFn({ method: "POST" }).validator(z.obj
 		dn: z.string().min(1).max(400),
 		name: z.string().min(1).max(60)
 	})).min(1).max(20)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
-	const actor = requireAccountManager(doc, tok(data, request));
-	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
-	const dir = asDirectories(doc.settings).find((d) => d.id === data.directoryId);
+})).handler(async ({ data, request }: any) => {
+	const snap = await readDoc();
+	const pre = requireAccountManager(snap, tok(data, request));
+	if (!isOwnerUser(pre) && !pre.canManageGroups) throw new Error("errors.insufficient");
+	const dir = asDirectories(snap.settings).find((d) => d.id === data.directoryId);
 	if (!dir || !directoryReady(dir)) throw new Error("errors.ldapOff");
 	const listed = data.groups.map((g: any) => ({
 		dn: g.dn,
 		name: g.name,
 		key: adGroupKey(dir.id, g.dn)
 	}));
-	upsertAdGroups(doc, dir, listed);
-	appendHistory(doc, actor, {
-		type: "group.create",
-		label: listed.map((g: any) => g.name).join(", ")
+	const { ldapGroupMembers } = await import("./ldap-runtime");
+	const membersByName = new Map<string, string[]>();
+	for (const row of listed) {
+		try {
+			membersByName.set(row.name, (await ldapGroupMembers(dir, row.name)).map((u) => u.toLowerCase()));
+		} catch {
+			// annuaire injoignable : le miroir se remplira à la connexion
+		}
+	}
+	return mutate((doc) => {
+		const actor = requireAccountManager(doc, tok(data, request));
+		if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
+		upsertAdGroups(doc, dir, listed);
+		const pairs = listed
+			.map((row: any) => ({
+				groupId: doc.groups.find((g) => g.source === "ad" && g.externalId === row.key)?.id || "",
+				uids: membersByName.get(row.name) || [],
+			}))
+			.filter((p: any) => p.groupId);
+		applyAdGroupMirror(doc, pairs);
+		appendHistory(doc, actor, {
+			type: "group.create",
+			label: listed.map((g: any) => g.name).join(", ")
+		});
+		return directoryPayload(doc, actor);
 	});
-	return directoryPayload(doc, actor);
-}));
+});
+export const syncLdapGroup = createServerFn({ method: "POST" }).validator(z.object({
+	token: tokenField,
+	groupId: z.string().min(1)
+})).handler(async ({ data, request }: any) => {
+	const snap = await readDoc();
+	const pre = requireAccountManager(snap, tok(data, request));
+	if (!isOwnerUser(pre) && !pre.canManageGroups) throw new Error("errors.insufficient");
+	const target = snap.groups.find((g) => g.id === data.groupId);
+	if (!target || target.source !== "ad") throw new Error("errors.userNotFound");
+	const dirId = String(target.externalId || "").split(":")[0] || "";
+	const dir = asDirectories(snap.settings).find((d) => d.id === dirId);
+	if (!dir || !directoryReady(dir)) throw new Error("errors.ldapOff");
+	const { ldapGroupMembers } = await import("./ldap-runtime");
+	let uids: string[] = [];
+	try {
+		uids = (await ldapGroupMembers(dir, target.name)).map((u) => u.toLowerCase());
+	} catch {
+		throw new Error("errors.ldapUnreachable");
+	}
+	return mutate((doc) => {
+		const actor = requireAccountManager(doc, tok(data, request));
+		if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
+		applyAdGroupMirror(doc, [{ groupId: target.id, uids }]);
+		appendHistory(doc, actor, {
+			type: "group.update",
+			label: target.name
+		});
+		return directoryPayload(doc, actor);
+	});
+});
 export const updateLoginOrder = createServerFn({ method: "POST" }).validator(z.object({
 	token: tokenField,
 	loginOrder: z.array(z.string().min(1).max(80)).min(1).max(16),
