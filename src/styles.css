@@ -3893,6 +3893,10 @@ button.am-create,
   min-width: 0;
   overflow: hidden;
 }
+.am-list.is-typed .am-row-cells,
+.am-list-head.is-typed .am-row-cells {
+  grid-template-columns: minmax(0, 1.3fr) minmax(8rem, 0.9fr) minmax(4.5rem, 0.45fr) minmax(6rem, 0.7fr);
+}
 .am-row-cells > :nth-child(2) {
   color: var(--color-subtle);
   font-weight: 450;
@@ -3906,6 +3910,11 @@ button.am-create,
   font-weight: 400;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+.am-list-head .am-row-end {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
 }
 .am-row-head {
   font-size: 0.8125rem;

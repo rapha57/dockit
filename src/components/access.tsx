@@ -45,6 +45,7 @@ import {
   saveUser,
   searchLdapGroups,
   linkLdapGroups,
+  syncLdapGroup,
 } from "@/lib/portal";
 import type { LdapGroupHit } from "@/lib/ldap-runtime";
 import { sessionGone } from "@/lib/session-gone";
@@ -108,6 +109,10 @@ function remoteSourceLabel(src: unknown): string | null {
   if (src === "ad") return t("access.sourceAd");
   if (src === "oidc") return t("access.sourceOidc");
   return null;
+}
+
+function typeLabel(src: unknown): string {
+  return remoteSourceLabel(src) || t("lock.local");
 }
 
 function pickerProviders(directories: LdapDirectory[] | null | undefined): Provider[] {
@@ -240,9 +245,9 @@ function ListShell({ toolbar, head, children }: { toolbar?: ReactNode; head?: Re
   );
 }
 
-function ListHead({ cells, grip }: { cells?: ReactNode; grip?: boolean }) {
+function ListHead({ cells, grip, className }: { cells?: ReactNode; grip?: boolean; className?: string }) {
   return (
-    <div className="am-list-head">
+    <div className={`am-list-head${className ? ` ${className}` : ""}`}>
       {grip ? <span className="am-chevron-spacer" /> : null}
       <span className="am-chevron-spacer" />
       <div className="am-row-cells">{cells}</div>
@@ -982,6 +987,7 @@ export function AccessUsers({
         if (key === "user") return prettyLogin(u.username);
         if (key === "role")
           return (u.roleIds || []).map((id) => roleTitle(id, dir.roles)).join(", ");
+        if (key === "type") return typeLabel(u.source);
         if (key === "status") return u.disabled ? 1 : 0;
         return "";
       }),
@@ -1181,12 +1187,16 @@ export function AccessUsers({
       head={
         empty ? null : (
           <ListHead
+            className="is-typed"
             cells={[
               <SortLabel key="u" id="user" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("access.colUser")}
               </SortLabel>,
               <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("users.role")}
+              </SortLabel>,
+              <SortLabel key="t" id="type" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
+                {t("access.colType")}
               </SortLabel>,
               <SortLabel key="s" id="status" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("access.colStatus")}
@@ -1210,12 +1220,11 @@ export function AccessUsers({
           }
         />
       ) : (
-        <div className="am-list" role="list">
+        <div className="am-list is-typed" role="list">
           {rows.map((u) => {
             const open = expand.openId === u.id || (u.phantom && creating);
             const rowDraft = open ? draft : null;
             const view = current?.id === u.id && !u.phantom ? current : u;
-            const remoteSrc = remoteSourceLabel(u.source);
             return (
               <ExpandRow
                 key={u.id}
@@ -1225,12 +1234,14 @@ export function AccessUsers({
                 cells={[
                   <span key="n" className="am-row-title">
                     {prettyLogin(rowDraft?.username || u.username) || t("access.newUser")}
-                    {remoteSrc ? <span className="am-dim"> · {remoteSrc}</span> : null}
                   </span>,
                   <span key="c" className="am-dim">
                     {bits(
                       (rowDraft?.roleIds || u.roleIds || []).map((id) => roleTitle(id, dir.roles)),
                     )}
+                  </span>,
+                  <span key="t" className="am-dim">
+                    {typeLabel(u.source)}
                   </span>,
                   <span key="s" className="am-dim">
                     <StatusText off={rowDraft ? rowDraft.disabled : u.disabled} />
@@ -1476,6 +1487,7 @@ export function AccessGroups({
         if (key === "name") return g.name || "";
         if (key === "role")
           return (g.roleIds || []).map((id) => roleTitle(id, dir.roles)).join(", ");
+        if (key === "type") return typeLabel(g.source);
         if (key === "members") return (g.members || []).length;
         return "";
       }),
@@ -1611,6 +1623,17 @@ export function AccessGroups({
       dir.setBusy(false);
     }
   }
+  async function sync(g: Group) {
+    dir.setBusy(true);
+    try {
+      dir.apply(await syncLdapGroup({ data: { token, groupId: g.id } }));
+      toast.success(t("access.groupSynced"));
+    } catch (err) {
+      if (!sessionGone(err)) toast.error(te(err));
+    } finally {
+      dir.setBusy(false);
+    }
+  }
 
   type GroupRow =
     | Group
@@ -1659,6 +1682,7 @@ export function AccessGroups({
       head={
         empty ? null : (
           <ListHead
+            className="is-typed"
             cells={[
               <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("access.groupName")}
@@ -1666,7 +1690,10 @@ export function AccessGroups({
               <SortLabel key="r" id="role" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("users.role")}
               </SortLabel>,
-              <SortLabel key="m" id="members" sort={col.sort} onToggle={col.toggle} className="am-row-end" count={filtered.length}>
+              <SortLabel key="t" id="type" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
+                {t("access.colType")}
+              </SortLabel>,
+              <SortLabel key="m" id="members" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("access.members")}
               </SortLabel>,
             ]}
@@ -1688,7 +1715,7 @@ export function AccessGroups({
           }
         />
       ) : (
-        <div className="am-list" role="list">
+        <div className="am-list is-typed" role="list">
           {rows.map((g) => {
             const open = expand.openId === g.id || (("phantom" in g && g.phantom) && creating);
             const rowDraft = open ? draft : null;
@@ -1702,14 +1729,16 @@ export function AccessGroups({
                 cells={[
                   <span key="n" className="am-row-title">
                     {rowDraft?.name || g.name || t("access.newGroup")}
-                    {g.source === "ad" || g.source === "oidc" ? <span className="am-dim"> · {g.source === "oidc" ? t("access.sourceOidc") : t("access.sourceAd")}</span> : null}
                   </span>,
                   <span key="c" className="am-dim">
                     {bits(
                       (rowDraft?.roleIds || g.roleIds || []).map((id) => roleTitle(id, dir.roles)),
                     )}
                   </span>,
-                  <span key="m" className="am-row-end am-dim">
+                  <span key="t" className="am-dim">
+                    {typeLabel(g.source)}
+                  </span>,
+                  <span key="m" className="am-dim">
                     {tp("access.memberCount", (rowDraft?.members || g.members || []).length)}
                   </span>,
                 ]}
@@ -1763,6 +1792,7 @@ export function AccessGroups({
                               readOnly={view.source === "ad"}
                               onChange={(ids) => patch({ ...rowDraft, members: ids })}
                             />
+                            {view.source === "ad" ? <p className="am-note">{t("access.adMembersHint")}</p> : null}
                           </div>
                         </Pair>
                       </Section>
@@ -1792,6 +1822,18 @@ export function AccessGroups({
                       onCancel={cancelEdit}
                       onSave={() => void save()}
                       saveDisabled={dir.busy || !rowDraft.name.trim()}
+                      extra={
+                        view.source === "ad" ? (
+                          <button
+                            type="button"
+                            className="am-text-btn"
+                            disabled={dir.busy}
+                            onClick={() => void sync(view)}
+                          >
+                            {t("access.syncGroup")}
+                          </button>
+                        ) : null
+                      }
                       danger={
                         !expand.editing && !creating ? (
                           <button
