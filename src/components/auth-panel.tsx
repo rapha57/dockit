@@ -801,18 +801,6 @@ export function LdapDirFields({ d, patch }: { d: LdapDirRow; patch: (next: Parti
         <label>
           <input
             type="checkbox"
-            checked={Boolean(d.autoCreate)}
-            onChange={(e) =>
-              patch({
-                autoCreate: e.target.checked,
-              })
-            }
-          />
-          {t("ldap.autoCreate")}
-        </label>
-        <label>
-          <input
-            type="checkbox"
             checked={tlsOn}
             onChange={(e) => {
               const on = e.target.checked;

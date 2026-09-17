@@ -337,7 +337,7 @@ export async function ldapUserGroups(dir: any, username: unknown): Promise<strin
 	});
 }
 
-function rdnValue(dn: string): string {
+export function rdnValue(dn: string): string {
 	const first = String(dn || "").split(",")[0] || "";
 	return first.replace(/^[^=]+=/i, "").trim();
 }

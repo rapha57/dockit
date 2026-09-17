@@ -36,7 +36,7 @@ import {
 } from "./curation-runtime";
 export type { CurationCheck } from "./curation-runtime";
 export type { CurationJobView } from "./curation-runtime";
-import { adGroupKey, asDirectories, asLoginOrder, directoryReady, pickDirectory, syncLegacyLdap } from "./ldap-runtime";
+import { adGroupKey, asDirectories, asLoginOrder, directoryReady, pickDirectory, rdnValue, syncLegacyLdap } from "./ldap-runtime";
 import { defaultTagHex, remapTagHex } from "./tag-colors";
 import {
 	absorbResourceAcl,
@@ -828,7 +828,11 @@ function hydrateUser(user: StoredUser | null | undefined, doc: Doc): HydratedUse
 	const canManageRoles = owner || can(user, "roles.manage", portal, doc);
 	const anyEdit = owner || canCreateSpaces || (doc.spaces || []).some((t) => can(user, "edit", { res: "space", id: t.id }, doc));
 	const anyMove = owner || (doc.spaces || []).some((t) => can(user, "move", { res: "space", id: t.id }, doc));
-	const roleIds = roleIdsOf(user);
+	// Effective roles: the account's own roles plus those inherited from groups,
+	// ordered by privilege so the top entry is the highest effective role.
+	const ROLE_RANK: Record<string, number> = { owner: 4, admin: 3, editeur: 2, lecteur: 0 };
+	const roleIds = Array.from(new Set([...roleIdsOf(user), ...groups.flatMap((g) => roleIdsOf(g))]))
+		.sort((a, b) => (ROLE_RANK[b] ?? 1) - (ROLE_RANK[a] ?? 1));
 	return {
 		...user,
 		role: owner ? "owner" : roleIds[0] || "lecteur",
@@ -882,6 +886,14 @@ function ensureUsers(doc: Doc) {
 	admin.roleIds = ["owner"];
 	admin.disabled = false;
 	if (!admin.passHash) admin.passHash = hashPasswordSync(envPassword());
+	// Directory accounts carry no personal role: rights come from the group
+	// mapping. Strip leftover base roles from the old provisioning.
+	for (const u of doc.users) {
+		if (u.id !== "admin" && u.source === "ad" && ((u.roleIds || []).length || u.role)) {
+			u.roleIds = [];
+			u.role = "";
+		}
+	}
 	return doc.users;
 }
 function spaceAccess(space: DocSpace, user: User | null | undefined, doc: AclDoc): SpacePerm | null {
@@ -1045,16 +1057,24 @@ function upsertAdGroups(doc: Doc, _dir: unknown, listed: { key?: string; name?: 
 	}
 }
 function applyAdMembership(doc: Doc, user: StoredUser | null | undefined, dirId: string, memberOf: string[] | null) {
-	if (!user || user.id === "admin" || memberOf == null) return;
+	if (!user || user.id === "admin") return;
+	// Directory accounts carry no personal role: rights come from the mapping.
+	if (user.source === "ad") {
+		user.roleIds = [];
+		user.role = "";
+	}
+	if (memberOf == null) return;
 	ensureGroups(doc);
 	const prefix = `${dirId}:`;
-	const keys = new Set((Array.isArray(memberOf) ? memberOf : []).map((dn) => adGroupKey(dirId, dn)));
+	// Compare group CNs, not full DNs: some directories (Glauth) report memberOf
+	// DNs that differ from the group entry DN (ou=groups vs ou=users).
+	const names = new Set((Array.isArray(memberOf) ? memberOf : []).map((dn) => rdnValue(String(dn)).toLowerCase()));
 	let groupIds = asIdList(user.groupIds);
 	for (const g of doc.groups) {
 		if (g.source !== "ad" || !String(g.externalId || "").startsWith(prefix)) continue;
 		// Mapping: membership is resolved from the directory at sign-in. The stored
 		// members list mirrors it for display, but rights flow through groupIds.
-		const isMember = keys.has(g.externalId);
+		const isMember = names.has(rdnValue(String(g.externalId).slice(prefix.length)).toLowerCase());
 		const members = asIdList(g.members).filter((id) => id !== user.id);
 		if (isMember) members.push(user.id);
 		g.members = members;
@@ -2117,16 +2137,14 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 			const extId = authExternalId("ad", dir.id, username);
 			let user = findUserForAuth(doc.users, username, "ad", extId);
 			if (!user) {
-				if (!dir.autoCreate) {
-					loginFail(key);
-					throw new Error("errors.ldapUnknownUser");
-				}
+				// Directory identity is enough: provision on first sign-in. No personal
+				// role: rights come from the group mapping resolved below.
 				user = {
 					id: newId(),
 					username,
 					passHash: await hashPassword(randomBytes(24).toString("hex")),
-					role: "lecteur",
-					roleIds: ["lecteur"],
+					role: "",
+					roleIds: [],
 					grants: [],
 					source: "ad",
 					externalId: extId
@@ -2664,7 +2682,10 @@ export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
 	}
 	const existing = data.id ? doc.users.find((u) => u.id === data.id) : void 0;
 	if (existing && isOwnerUser(existing)) throw new Error("errors.adminPasswordOnly");
-	const roleIds = cleanRoleIds(doc, data.roleIds?.length ? data.roleIds : data.role ? [data.role] : existing ? roleIdsOf(existing) : ["lecteur"]);
+	const remote = Boolean(existing && (existing.source === "ad" || existing.source === "oidc"));
+	// Directory-provisioned accounts keep their login role: rights come from the
+	// group mapping resolved at sign-in.
+	const roleIds = remote ? roleIdsOf(existing) : cleanRoleIds(doc, data.roleIds?.length ? data.roleIds : data.role ? [data.role] : existing ? roleIdsOf(existing) : ["lecteur"]);
 	let target = existing;
 	if (existing) {
 		existing.username = username;
@@ -2691,7 +2712,7 @@ export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
 		};
 		doc.users.push(target);
 	}
-	if (data.groupIds) syncUserGroups(doc, target!.id, data.groupIds);
+	if (data.groupIds && !remote) syncUserGroups(doc, target!.id, data.groupIds);
 	appendHistory(doc, actor, {
 		type: existing ? "user.update" : "user.create",
 		label: username

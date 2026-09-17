@@ -554,9 +554,16 @@ export function roleSummary(role: Role | null | undefined, doc: AclDoc): RoleSum
 	let n = 0;
 	for (const g of grants) n += (g.allow?.length || 0) + (g.deny?.length || 0);
 	if (grants.some((g) => actionHits(g.allow || [], "*"))) n = 99;
-	const users = (doc.users || []).filter((u) => roleIdsOf(u).includes(role?.id || "")).length;
-	const groups = (doc.groups || []).filter((g) => roleIdsOf(g).includes(role?.id || "")).length;
-	return { grantCount: n, userCount: users, groupCount: groups };
+	const roleId = role?.id || "";
+	const groups = (doc.groups || []).filter((g) => roleIdsOf(g).includes(roleId));
+	// Effective holders: direct role holders plus everyone who gets the role
+	// through a mapped group (groupIds or the members mirror).
+	const users = (doc.users || []).filter((u) => {
+		if (u.id === "admin") return false;
+		if (roleIdsOf(u).includes(roleId)) return true;
+		return groups.some((g) => (u.groupIds || []).includes(g.id) || (g.members || []).includes(u.id));
+	}).length;
+	return { grantCount: n, userCount: users, groupCount: groups.length };
 }
 
 export function setRoleHolders(doc: AclDoc, roleId: string, userIds: unknown, groupIds: unknown) {
@@ -624,11 +631,18 @@ export function moveCategoryInDoc(
 }
 
 function roleHolderCounts(doc: AclDoc, roleId: string): { users: number; groups: number; people: number } {
-	const users = (doc.users || []).filter((u) => roleIdsOf(u).includes(roleId) && u.id !== "admin").length;
 	const groups = (doc.groups || []).filter((g) => roleIdsOf(g).includes(roleId));
-	let viaGroups = 0;
-	for (const g of groups) viaGroups += (g.members || []).length;
-	return { users, groups: groups.length, people: users + viaGroups };
+	const users = (doc.users || []).filter((u) => u.id !== "admin" && roleIdsOf(u).includes(roleId)).length;
+	// Effective people: direct holders plus everyone inherited from a mapped
+	// group, counted once.
+	let people = users;
+	for (const g of groups) {
+		for (const u of doc.users || []) {
+			if (u.id === "admin" || roleIdsOf(u).includes(roleId)) continue;
+			if ((g.members || []).includes(u.id) || (u.groupIds || []).includes(g.id)) people += 1;
+		}
+	}
+	return { users, groups: groups.length, people };
 }
 
 type ImpactRow = { id: string; name?: string; users: number; groups: number; people: number; lost: string[]; gained: string[] };
