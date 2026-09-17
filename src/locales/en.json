@@ -1178,7 +1178,13 @@
     "adMembersHint": "Membership is resolved from the directory at sign-in.",
     "syncGroup": "Sync from directory",
     "groupSynced": "Group synced from the directory",
-    "remoteManagedHint": "Roles and groups are managed by the directory at sign-in."
+    "remoteManagedHint": "Roles and groups are managed by the directory at sign-in.",
+    "secIdentity": "Identity",
+    "secAccess": "Access",
+    "secPermissions": "Permissions",
+    "secDefinition": "Definition",
+    "secHolders": "Assigned",
+    "typeRemote": "Directory"
   },
   "users": {
     "noSpaces": "No space to edit",

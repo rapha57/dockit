@@ -1178,7 +1178,13 @@
     "adMembersHint": "L’appartenance est résolue depuis l’annuaire à la connexion.",
     "syncGroup": "Synchroniser depuis l’annuaire",
     "groupSynced": "Groupe synchronisé depuis l’annuaire",
-    "remoteManagedHint": "Rôles et groupes pilotés par l’annuaire à la connexion."
+    "remoteManagedHint": "Rôles et groupes pilotés par l’annuaire à la connexion.",
+    "secIdentity": "Identité",
+    "secAccess": "Accès",
+    "secPermissions": "Permissions",
+    "secDefinition": "Définition",
+    "secHolders": "Attribution",
+    "typeRemote": "Annuaire"
   },
   "users": {
     "noSpaces": "Aucun espace à modifier",

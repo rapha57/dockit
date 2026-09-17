@@ -3227,7 +3227,9 @@ html.dark .dockit-mark {
 }
 .am-list.is-history .am-row-action,
 .am-list.is-tags .am-row-action,
-.am-list-head.is-tags .am-row-action {
+.am-list-head.is-tags .am-row-action,
+.am-list.is-typed .am-row-action,
+.am-list-head.is-typed .am-row-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3669,6 +3671,19 @@ button.am-create,
 .am-toolbar > .am-create ~ .am-create {
   margin-left: 0;
 }
+.am-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+}
+.am-actions-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: inherit;
+  margin-right: auto;
+}
 .am-search {
   display: flex;
   min-width: 11rem;
@@ -3897,6 +3912,21 @@ button.am-create,
 .am-list-head.is-typed .am-row-cells {
   grid-template-columns: minmax(0, 1.3fr) minmax(8rem, 0.9fr) minmax(4.5rem, 0.45fr) minmax(6rem, 0.7fr);
 }
+.am-list.is-typed.is-actions .am-row-cells,
+.am-list-head.is-typed.is-actions .am-row-cells {
+  grid-template-columns: minmax(0, 1.3fr) minmax(8rem, 0.9fr) minmax(4.5rem, 0.45fr) minmax(6rem, 0.7fr) 1.85rem;
+}
+@media (max-width: 40rem) {
+  .am-list.is-typed .am-row-cells,
+  .am-list-head.is-typed .am-row-cells {
+    grid-template-columns: minmax(0, 1.1fr) minmax(5rem, 0.75fr) 3.6rem 4.25rem;
+    column-gap: 0.55rem;
+  }
+  .am-list.is-typed.is-actions .am-row-cells,
+  .am-list-head.is-typed.is-actions .am-row-cells {
+    grid-template-columns: minmax(0, 1.4fr) minmax(4rem, 0.6fr) 3rem 3.35rem 1.85rem;
+  }
+}
 .am-row-cells > :nth-child(2) {
   color: var(--color-subtle);
   font-weight: 450;
@@ -3988,10 +4018,10 @@ button.am-create,
 }
 .am-expand .settings-card {
   padding: 0;
-  gap: 0.4rem;
+  gap: 0.55rem;
 }
 .am-expand .settings-stack {
-  gap: 0.45rem;
+  gap: 0;
 }
 .am-row.has-grip .am-expand {
   padding-left: 3.8rem;
@@ -4088,6 +4118,13 @@ button.am-create,
 }
 .am-chip.is-on {
   color: var(--color-fg);
+}
+button.am-chip {
+  cursor: pointer;
+}
+button.am-chip:hover {
+  color: var(--color-fg);
+  background: color-mix(in oklab, var(--color-fg) 5.5%, transparent);
 }
 .am-chip.is-more {
   border-color: transparent;
@@ -4301,6 +4338,7 @@ button.am-create,
   text-transform: uppercase;
   color: var(--color-subtle);
 }
+
 .am-note {
   margin: 0 0 0.4rem;
   font-size: 0.75rem;
@@ -4392,6 +4430,18 @@ button.am-create,
   margin: 1rem 0 0;
   padding: 0.85rem 0 0.15rem;
   border-top: 1px solid color-mix(in oklab, var(--color-border) 55%, transparent);
+}
+.am-expand .am-actions {
+  justify-content: flex-end;
+}
+.am-expand .settings-actions,
+.am-expand .am-actions {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in oklab, var(--color-border) 55%, transparent);
+}
+.am-expand .am-perm-block {
+  margin-top: 0;
 }
 .am-actions.is-center {
   justify-content: center;
@@ -4486,24 +4536,17 @@ button.am-create,
   margin: 0;
 }
 .am-tree-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 10.5rem) minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 0.2rem 0.75rem;
   min-height: 1.7rem;
-  padding: 0.2rem 0;
-  border-bottom: 1px solid color-mix(in oklab, var(--color-border) 42%, transparent);
+  padding: 0.28rem 0;
 }
-.am-tree-row.is-cat {
+.am-tree-row.is-cat .am-tree-name {
   padding-left: 1rem;
 }
-.am-tree > .am-tree-block:last-child > .am-tree-row:last-child,
-.am-tree > .am-tree-block:last-child > *:last-child > .am-tree-row:last-child,
-.am-tree > .am-tree-row:last-child {
-  border-bottom: 0;
-}
-.am-tree-row.is-card {
+.am-tree-row.is-card .am-tree-name {
   padding-left: 2rem;
 }
 .am-tree-name {
@@ -4513,6 +4556,7 @@ button.am-create,
   gap: 0.3rem;
   margin: 0;
   padding: 0;
+  overflow: hidden;
   border: 0;
   background: none;
   color: inherit;
@@ -4520,6 +4564,8 @@ button.am-create,
   font-weight: 500;
   line-height: 1.35;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 span.am-tree-name {
@@ -4528,7 +4574,8 @@ span.am-tree-name {
 .am-perms {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.15rem 0.55rem;
+  justify-content: flex-start;
+  gap: 0.15rem 0.7rem;
 }
 .am-perm {
   border: 0;

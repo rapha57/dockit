@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { Copy, Folder, Lock, Plus, Search, Shield, Users, X } from "lucide-react";
+import { Copy, Folder, Lock, Plus, RefreshCw, Search, Shield, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,14 +9,15 @@ import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/empty-state";
 import { EdgeFade } from "@/components/edge-fade";
 import { ConfirmDialog, type ConfirmDialogProps } from "@/components/confirm-dialog";
-import { EntityPicker } from "@/components/entity-picker";
+import { ChipList, EntityPicker } from "@/components/entity-picker";
 import { ExpandRow, NEW_ROW, useExpandSession } from "@/components/expand-row";
+import { Field } from "@/components/field";
+import { FormActions } from "@/components/form-actions";
 import {
   can,
   effectiveAccess,
   explain,
   isSystemRole,
-  mergeGrant,
   PORTAL_ACTIONS,
   syntheticUserFromGroup,
   TREE_ACTIONS,
@@ -193,27 +194,6 @@ function MiniDoc(dir: Dir): AclDoc {
   return { users: dir.users, groups: dir.groups, roles: dir.roles, spaces: dir.spaces };
 }
 
-function inheritedGrantsOf(user: User | null | undefined, dir: Dir): Grant[] {
-  const grants: Grant[] = [];
-  const roles = dir.roles || [];
-  const roleOf = (id: string) => roles.find((r) => r.id === id);
-  for (const rid of user?.roleIds || []) {
-    const role = roleOf(rid);
-    if (role) for (const g of role.grants || []) mergeGrant(grants, g);
-  }
-  const groups = (dir.groups || []).filter(
-    (g) => (user?.groupIds || []).includes(g.id) || (g.members || []).includes(user?.id || ""),
-  );
-  for (const group of groups) {
-    for (const g of group.grants || []) mergeGrant(grants, g);
-    for (const rid of group.roleIds || []) {
-      const role = roleOf(rid);
-      if (role) for (const g of role.grants || []) mergeGrant(grants, g);
-    }
-  }
-  return grants;
-}
-
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
 }
@@ -371,13 +351,15 @@ function FilterBar({
   value,
   onChange,
   items,
+  label,
 }: {
   value: string;
   onChange: (id: string) => void;
   items: FilterItem[];
+  label?: string;
 }) {
   return (
-    <div className="am-filters" role="tablist" aria-label={t("access.filterAll")}>
+    <div className="am-filters" role="tablist" aria-label={label || t("access.filterAll")}>
       {items.map((f) => (
         <button
           key={f.id}
@@ -478,6 +460,31 @@ function PermWord({
   );
 }
 
+function PermChips({
+  actions,
+  onPick,
+}: {
+  actions: string[];
+  onPick?: (action: string) => void;
+}) {
+  if (!actions.length) return null;
+  return (
+    <span className="am-chips">
+      {actions.map((action) => (
+        <button
+          key={action}
+          type="button"
+          className="am-chip"
+          title={actionLabel(action)}
+          onClick={() => onPick?.(action)}
+        >
+          {actionLabel(action)}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 function PermLine({
   res,
   id,
@@ -497,6 +504,15 @@ function PermLine({
 }) {
   const probe = roleProbe(grants, spaces);
   const user: User = { id: "_u", roleIds: ["_probe"], grants: [] };
+  if (readOnly) {
+    const granted = actions.filter((action) => {
+      const state = localEffect(grants, res, id, action);
+      if (state === "allow") return true;
+      if (state === "deny") return false;
+      return can(user, action, { res, id }, probe);
+    });
+    return <PermChips actions={granted} />;
+  }
   return (
     <span className="am-perms">
       {actions.map((action) => {
@@ -508,7 +524,6 @@ function PermLine({
             action={action}
             state={state}
             inheritedOn={inheritedOn}
-            readOnly={readOnly}
             onCycle={() => setGrants(setEffect(grants, res, id, action, cycleEffect(state)))}
           />
         );
@@ -611,7 +626,9 @@ function ResourceTree({
                       onClick={() => setOpen((o) => ({ ...o, [cat.id]: !o[cat.id] }))}
                     >
                       {cat.name}
-                      {cat.restricted ? <Lock className="size-3" /> : null}
+                      {cat.restricted ? (
+                        <Lock className="size-3" aria-label={t("access.restricted")} />
+                      ) : null}
                     </button>
                     <PermLine
                       res="cat"
@@ -659,31 +676,19 @@ function EffectiveTree({
 }) {
   const tree = useMemo(() => effectiveAccess(user, doc), [user, doc]);
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  function words(allowed: string[] | undefined, res: ResKind, id: string, all?: string[]) {
-    const on = new Set(allowed || []);
+  function words(allowed: string[] | undefined, res: ResKind, id: string) {
     return (
-      <span className="am-perms">
-        {(all || allowed || []).map((a) => {
-          const ok = on.has(a);
-          return (
-            <button
-              key={a}
-              type="button"
-              className={`am-perm${ok ? " is-on" : ""}`}
-              onClick={() => onWhy?.(explain(user, a, { res, id }, doc))}
-            >
-              {actionLabel(a)} {ok ? "✓" : "—"}
-            </button>
-          );
-        })}
-      </span>
+      <PermChips
+        actions={allowed || []}
+        onPick={(action) => onWhy?.(explain(user, action, { res, id }, doc))}
+      />
     );
   }
   return (
     <div className="am-tree">
       <div className="am-tree-row">
         <span className="am-tree-name">{t("access.permPortal")}</span>
-        {words(tree.portal, "portal", "*", PORTAL_ACTIONS)}
+        {words(tree.portal, "portal", "*")}
       </div>
       {tree.spaces.map((space) => (
         <div key={space.id}>
@@ -695,7 +700,7 @@ function EffectiveTree({
             >
               {space.name}
             </button>
-            {words(space.actions, "space", space.id, TREE_ACTIONS.space)}
+            {words(space.actions, "space", space.id)}
           </div>
           {open[space.id]
             ? space.cats.map((cat) => (
@@ -708,13 +713,13 @@ function EffectiveTree({
                     >
                       {cat.name}
                     </button>
-                    {words(cat.actions, "cat", cat.id, TREE_ACTIONS.cat)}
+                    {words(cat.actions, "cat", cat.id)}
                   </div>
                   {open[cat.id]
                     ? cat.cards.map((card) => (
                         <div key={card.id} className="am-tree-row is-card">
                           <span className="am-tree-name">{card.name || t("empty.untitled")}</span>
-                          {words(card.actions, "card", card.id, TREE_ACTIONS.card)}
+                          {words(card.actions, "card", card.id)}
                         </div>
                       ))
                     : null}
@@ -768,18 +773,22 @@ export function ConfirmPopup(props: ConfirmDialogProps) {
   return <ConfirmDialog {...props} />;
 }
 
-function Section({ title, hint, children }: { title?: ReactNode; hint?: ReactNode; children?: ReactNode }) {
+function ExpandCard({
+  kicker,
+  hint,
+  children,
+}: {
+  kicker?: ReactNode;
+  hint?: ReactNode;
+  children?: ReactNode;
+}) {
   return (
-    <section className="am-sec">
-      {title ? <h5>{title}</h5> : null}
-      {hint ? <p className="am-note">{hint}</p> : null}
+    <div className="settings-card">
+      {kicker ? <p className="settings-kicker">{kicker}</p> : null}
       {children}
-    </section>
+      {hint ? <p className="settings-hint">{hint}</p> : null}
+    </div>
   );
-}
-
-function Pair({ children }: { children?: ReactNode }) {
-  return <div className="am-pair">{children}</div>;
 }
 
 function DiscardAsk({
@@ -812,7 +821,6 @@ function PermBlocks({
   editing,
   why,
   setWhy,
-  hideDirectEdit,
 }: {
   user: User | null | undefined;
   dir: Dir;
@@ -822,68 +830,27 @@ function PermBlocks({
   editing?: boolean;
   why: Decision | null | undefined;
   setWhy: (d: Decision | null) => void;
-  hideDirectEdit?: boolean;
 }) {
-  const inherited = useMemo(() => inheritedGrantsOf(user, dir), [user, dir]);
-  const [pane, setPane] = useState(editing ? "direct" : "effective");
   const [pq, setPq] = useState("");
   const liveUser = user ? { ...user, grants: grants || user.grants || [] } : null;
-  useEffect(() => {
-    setPane(editing ? "direct" : "effective");
-  }, [editing]);
+  if (editing) {
+    return (
+      <div className="am-perm-block">
+        <SearchField value={pq} onChange={setPq} placeholder={t("access.searchPerms")} />
+        <ResourceTree
+          spaces={spaces}
+          grants={grants || []}
+          setGrants={setGrants || (() => {})}
+          query={pq}
+        />
+      </div>
+    );
+  }
+  if (!liveUser) return <p className="am-empty-line">{t("access.none")}</p>;
   return (
     <div className="am-perm-block">
-      <FilterBar
-        value={pane}
-        onChange={setPane}
-        items={[
-          { id: "direct", label: t("access.paneDirect") },
-          { id: "inherited", label: t("access.paneInherited") },
-          { id: "effective", label: t("access.paneEffective") },
-        ]}
-      />
-      <p className="am-note">
-        {pane === "direct"
-          ? t("access.paneDirectHint")
-          : pane === "inherited"
-            ? t("access.paneInheritedHint")
-            : t("access.paneEffectiveHint")}
-      </p>
-      {pane === "direct" ? (
-        <>
-          {editing && !hideDirectEdit ? (
-            <SearchField value={pq} onChange={setPq} placeholder={t("access.searchPerms")} />
-          ) : null}
-          {(grants || []).length || (editing && !hideDirectEdit) ? (
-            <ResourceTree
-              spaces={spaces}
-              grants={grants || []}
-              setGrants={setGrants || (() => {})}
-              query={editing ? pq : ""}
-              readOnly={!editing || hideDirectEdit}
-            />
-          ) : (
-            <p className="am-empty-line">{t("access.none")}</p>
-          )}
-        </>
-      ) : null}
-      {pane === "inherited" ? (
-        inherited.length ? (
-          <ResourceTree spaces={spaces} grants={inherited} setGrants={() => {}} query="" readOnly />
-        ) : (
-          <p className="am-empty-line">{t("access.none")}</p>
-        )
-      ) : null}
-      {pane === "effective" ? (
-        liveUser ? (
-          <>
-            <EffectiveTree user={liveUser} doc={MiniDoc(dir)} onWhy={setWhy} />
-            <WhyPanel info={why} onClose={() => setWhy(null)} />
-          </>
-        ) : (
-          <p className="am-empty-line">{t("access.none")}</p>
-        )
-      ) : null}
+      <EffectiveTree user={liveUser} doc={MiniDoc(dir)} onWhy={setWhy} />
+      <WhyPanel info={why} onClose={() => setWhy(null)} />
     </div>
   );
 }
@@ -912,40 +879,35 @@ function RowActions({
   editing,
   onEdit,
   onCancel,
-  onSave,
   saveDisabled,
+  busy,
   extra,
   danger,
 }: {
   editing?: boolean;
   onEdit?: (() => void) | null;
   onCancel: () => void;
-  onSave: () => void;
   saveDisabled?: boolean;
+  busy?: boolean;
   extra?: ReactNode;
   danger?: ReactNode;
 }) {
   if (editing) {
-    return (
-      <div className="am-actions">
-        <Button type="button" disabled={saveDisabled} onClick={onSave}>
-          {t("actions.save")}
-        </Button>
-        <button type="button" className="am-text-btn" onClick={onCancel}>
-          {t("actions.cancel")}
-        </button>
-      </div>
-    );
+    return <FormActions busy={Boolean(busy)} disabled={saveDisabled} onCancel={onCancel} />;
   }
   return (
     <div className="am-actions">
+      {extra || danger ? (
+        <div className="am-actions-start">
+          {extra}
+          {danger}
+        </div>
+      ) : null}
       {onEdit ? (
         <Button type="button" onClick={onEdit}>
           {t("actions.edit")}
         </Button>
       ) : null}
-      {extra}
-      {danger}
     </div>
   );
 }
@@ -988,8 +950,8 @@ export function AccessUsers({
 
   const filtered = people.filter((u) => {
     if (filter === "disabled" && !u.disabled) return false;
-    if (filter !== "all" && filter !== "disabled" && !(u.roleIds || []).includes(filter))
-      return false;
+    if (filter === "local" && (u.source === "ad" || u.source === "oidc")) return false;
+    if (filter === "remote" && u.source !== "ad" && u.source !== "oidc") return false;
     if (q && !prettyLogin(u.username).toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
@@ -1182,11 +1144,11 @@ export function AccessUsers({
           <FilterBar
             value={filter}
             onChange={setFilter}
+            label={t("access.colType")}
             items={[
               { id: "all", label: t("access.filterAll") },
-              ...dir.roles
-                .filter((r) => r.id !== "owner")
-                .map((r) => ({ id: r.id, label: roleTitle(r.id, dir.roles) })),
+              { id: "local", label: t("lock.local") },
+              { id: "remote", label: t("access.typeRemote") },
               { id: "disabled", label: t("access.disabled") },
             ]}
           />
@@ -1239,6 +1201,210 @@ export function AccessUsers({
             const rowDraft = open ? draft : null;
             const view = current?.id === u.id && !u.phantom ? current : u;
             const remoteManaged = view.source === "ad" || view.source === "oidc";
+            const effTitles = effectiveRoleIds(rowDraft || u, dir.groups).map((id) =>
+              roleTitle(id, dir.roles),
+            );
+            const groupNames = dir.groups
+              .filter(
+                (g) =>
+                  ((rowDraft ? rowDraft.groupIds : u.groupIds) || []).includes(g.id) ||
+                  (g.members || []).includes(u.id || ""),
+              )
+              .map((g) => g.name);
+            const liveUser = {
+              id: u.phantom ? "_new" : view.id,
+              username: rowDraft?.username || u.username,
+              roleIds: rowDraft?.roleIds || u.roleIds,
+              groupIds: rowDraft?.groupIds || u.groupIds,
+              grants: rowDraft?.grants || view.grants,
+              source: rowDraft?.source || u.source,
+              disabled: rowDraft ? rowDraft.disabled : u.disabled,
+            };
+            const body = rowDraft ? (
+              <>
+                {expand.editing ? (
+                  <ExpandCard
+                    kicker={t("access.secIdentity")}
+                    hint={lockedOwner ? t("access.roleLocked") : undefined}
+                  >
+                    {lockedOwner ? (
+                      <>
+                        <div className="field-row">
+                          <Field label={t("users.newPassword")}>
+                            <Input
+                              className={INPUT_SM}
+                              type="password"
+                              value={rowDraft.password}
+                              autoComplete="new-password"
+                              maxLength={PASSWORD_MAX}
+                              onChange={(e) => patch({ ...rowDraft, password: e.target.value })}
+                            />
+                            <PasswordHint value={rowDraft.password} />
+                          </Field>
+                          <Field label={t("access.confirmPassword")}>
+                            <Input
+                              className={INPUT_SM}
+                              type="password"
+                              value={rowDraft.password2 || ""}
+                              autoComplete="new-password"
+                              maxLength={PASSWORD_MAX}
+                              onChange={(e) =>
+                                patch({ ...rowDraft, password2: e.target.value })
+                              }
+                            />
+                            <PasswordHint value={rowDraft.password2 || ""} />
+                          </Field>
+                        </div>
+                        <p className="settings-hint">{t("users.passwordKeep")}</p>
+                        {rowDraft.password &&
+                        rowDraft.password !== (rowDraft.password2 || "") ? (
+                          <p className="settings-hint is-warn">{t("access.passwordMismatch")}</p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <div className="field-row">
+                          <Field label={t("lock.username")}>
+                            <Input
+                              className={INPUT_SM}
+                              value={rowDraft.username}
+                              autoComplete="off"
+                              onChange={(e) => patch({ ...rowDraft, username: e.target.value })}
+                            />
+                          </Field>
+                          <Field label={creating ? t("lock.password") : t("users.newPassword")}>
+                            <Input
+                              className={INPUT_SM}
+                              type="password"
+                              value={rowDraft.password}
+                              autoComplete="new-password"
+                              maxLength={PASSWORD_MAX}
+                              onChange={(e) => patch({ ...rowDraft, password: e.target.value })}
+                            />
+                            <PasswordHint value={rowDraft.password} required={creating} />
+                          </Field>
+                        </div>
+                        <div className="settings-toggles">
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(rowDraft.disabled)}
+                              onChange={() =>
+                                patch({ ...rowDraft, disabled: !rowDraft.disabled })
+                              }
+                            />
+                            {t("access.disabled")}
+                          </label>
+                        </div>
+                      </>
+                    )}
+                  </ExpandCard>
+                ) : lockedOwner ? (
+                  <p className="am-meta">{t("access.adminAccountHint")}</p>
+                ) : null}
+                {!lockedOwner ? (
+                  <>
+                    <ExpandCard
+                      kicker={t("access.secAccess")}
+                      hint={remoteManaged ? t("access.remoteManagedHint") : undefined}
+                    >
+                      {expand.editing ? (
+                        <div className="field-row">
+                          <Field label={t("users.role")}>
+                            <EntityPicker
+                              kind="role"
+                              items={dir.roles.filter((r) => r.id !== "owner")}
+                              selectedIds={
+                                remoteManaged
+                                  ? effectiveRoleIds(rowDraft || u, dir.groups)
+                                  : rowDraft.roleIds || []
+                              }
+                              labelOf={(r) => roleTitle(r.id, dir.roles)}
+                              providers={[
+                                { id: "local", label: t("access.idpTypeLocal"), kind: "local" },
+                              ]}
+                              readOnly={remoteManaged}
+                              onChange={(ids) =>
+                                patch({ ...rowDraft, roleIds: ids.length ? ids : ["lecteur"] })
+                              }
+                            />
+                          </Field>
+                          <Field label={t("access.groupsOf")}>
+                            <EntityPicker
+                              kind="group"
+                              items={dir.groups}
+                              selectedIds={rowDraft.groupIds || []}
+                              labelOf={(g) => g.name}
+                              providers={[{ id: "local", label: t("access.idpTypeLocal"), kind: "local" }]}
+                              readOnly={remoteManaged}
+                              onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
+                            />
+                          </Field>
+                        </div>
+                      ) : (
+                        <div className="field-row">
+                          <Field label={t("users.role")}>
+                            <ChipList names={effTitles} />
+                          </Field>
+                          <Field label={t("access.groupsOf")}>
+                            <ChipList names={groupNames} />
+                          </Field>
+                        </div>
+                      )}
+                    </ExpandCard>
+                    <ExpandCard kicker={t("access.secPermissions")}>
+                      <PermBlocks
+                        user={liveUser}
+                        dir={dir}
+                        spaces={spaces}
+                        grants={rowDraft.grants || []}
+                        setGrants={(g) => patch({ ...rowDraft, grants: g })}
+                        editing={expand.editing}
+                        why={why}
+                        setWhy={setWhy}
+                      />
+                    </ExpandCard>
+                  </>
+                ) : null}
+                <RowActions
+                  editing={expand.editing}
+                  onEdit={canCreate || lockedOwner ? beginEdit : null}
+                  onCancel={cancelEdit}
+                  busy={dir.busy}
+                  saveDisabled={
+                    !rowDraft.username.trim() ||
+                    Boolean(
+                      (creating || rowDraft.password) && passwordPolicyError(rowDraft.password || ""),
+                    ) ||
+                    (lockedOwner &&
+                      Boolean(rowDraft.password) &&
+                      rowDraft.password !== (rowDraft.password2 || ""))
+                  }
+                  extra={
+                    !expand.editing && !creating && !lockedOwner ? (
+                      <button
+                        type="button"
+                        className="am-text-btn"
+                        onClick={() => void setDisabled(view, !view.disabled)}
+                      >
+                        {view.disabled ? t("access.enable") : t("access.disable")}
+                      </button>
+                    ) : null
+                  }
+                  danger={
+                    !expand.editing && !creating && !lockedOwner ? (
+                      <button
+                        type="button"
+                        className="am-text-btn is-danger"
+                        onClick={() => setConfirm(view)}
+                      >
+                        {t("access.deleteConfirm")}
+                      </button>
+                    ) : null
+                  }
+                />
+              </>
+            ) : null;
             return (
               <ExpandRow
                 key={u.id}
@@ -1249,10 +1415,9 @@ export function AccessUsers({
                   <span key="n" className="am-row-title">
                     {prettyLogin(rowDraft?.username || u.username) || t("access.newUser")}
                   </span>,
-                  <span key="c" className="am-dim">
-                    {bits(
-                      effectiveRoleIds(rowDraft || u, dir.groups).map((id) => roleTitle(id, dir.roles)),
-                    )}
+                  <span key="c" className="am-dim" title={effTitles.join(", ")}>
+                    {effTitles[0] || "—"}
+                    {effTitles.length > 1 ? ` +${effTitles.length - 1}` : ""}
                   </span>,
                   <span key="t" className="am-dim">
                     {typeLabel(u.source)}
@@ -1262,193 +1427,18 @@ export function AccessUsers({
                   </span>,
                 ]}
               >
-                {rowDraft ? (
-                  <>
-                    {expand.editing ? (
-                      <Section>
-                        {lockedOwner ? (
-                          <>
-                            <p className="am-meta">{t("access.roleLocked")}</p>
-                            <Pair>
-                              <label className="am-field">
-                                <span>{t("users.newPassword")}</span>
-                                <Input
-                                  className={INPUT_SM}
-                                  type="password"
-                                  value={rowDraft.password}
-                                  autoComplete="new-password"
-                                  maxLength={PASSWORD_MAX}
-                                  onChange={(e) => patch({ ...rowDraft, password: e.target.value })}
-                                />
-                                <PasswordHint value={rowDraft.password} />
-                              </label>
-                              <label className="am-field">
-                                <span>{t("access.confirmPassword")}</span>
-                                <Input
-                                  className={INPUT_SM}
-                                  type="password"
-                                  value={rowDraft.password2 || ""}
-                                  autoComplete="new-password"
-                                  maxLength={PASSWORD_MAX}
-                                  onChange={(e) =>
-                                    patch({ ...rowDraft, password2: e.target.value })
-                                  }
-                                />
-                                <PasswordHint value={rowDraft.password2 || ""} />
-                              </label>
-                            </Pair>
-                            <p className="am-note">{t("users.passwordKeep")}</p>
-                            {rowDraft.password &&
-                            rowDraft.password !== (rowDraft.password2 || "") ? (
-                              <p className="am-note is-warn">{t("access.passwordMismatch")}</p>
-                            ) : null}
-                          </>
-                        ) : (
-                          <>
-                            <Pair>
-                              <label className="am-field">
-                                <span>{t("lock.username")}</span>
-                                <Input
-                                  className={INPUT_SM}
-                                  value={rowDraft.username}
-                                  autoComplete="off"
-                                  onChange={(e) => patch({ ...rowDraft, username: e.target.value })}
-                                />
-                              </label>
-                              <label className="am-field">
-                                <span>
-                                  {creating ? t("lock.password") : t("users.newPassword")}
-                                </span>
-                                <Input
-                                  className={INPUT_SM}
-                                  type="password"
-                                  value={rowDraft.password}
-                                  autoComplete="new-password"
-                                  maxLength={PASSWORD_MAX}
-                                  onChange={(e) => patch({ ...rowDraft, password: e.target.value })}
-                                />
-                                <PasswordHint value={rowDraft.password} required={creating} />
-                              </label>
-                            </Pair>
-                            <label className="am-inline">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(rowDraft.disabled)}
-                                onChange={() =>
-                                  patch({ ...rowDraft, disabled: !rowDraft.disabled })
-                                }
-                              />
-                              {t("access.disabled")}
-                            </label>
-                          </>
-                        )}
-                      </Section>
-                    ) : lockedOwner ? (
-                      <p className="am-meta">{t("access.adminAccountHint")}</p>
-                    ) : null}
-                    {!lockedOwner ? (
-                      <>
-                        {expand.editing ? (
-                          <Section>
-                            <Pair>
-                              <div>
-                                <h5>{t("users.role")}</h5>
-                                <EntityPicker
-                                  kind="role"
-                                  items={dir.roles.filter((r) => r.id !== "owner")}
-                                  selectedIds={
-                                    remoteManaged
-                                      ? effectiveRoleIds(rowDraft || u, dir.groups)
-                                      : rowDraft.roleIds || []
-                                  }
-                                  labelOf={(r) => roleTitle(r.id, dir.roles)}
-                                  providers={[
-                                    { id: "local", label: t("access.idpTypeLocal"), kind: "local" },
-                                  ]}
-                                  readOnly={remoteManaged}
-                                  onChange={(ids) =>
-                                    patch({ ...rowDraft, roleIds: ids.length ? ids : ["lecteur"] })
-                                  }
-                                />
-                              </div>
-                              <div>
-                                <h5>{t("access.groupsOf")}</h5>
-                                <EntityPicker
-                                  kind="group"
-                                  items={dir.groups}
-                                  selectedIds={rowDraft.groupIds || []}
-                                  labelOf={(g) => g.name}
-                                  providers={[{ id: "local", label: t("access.idpTypeLocal"), kind: "local" }]}
-                                  readOnly={remoteManaged}
-                                  onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
-                                />
-                              </div>
-                            </Pair>
-                            {remoteManaged ? <p className="am-note">{t("access.remoteManagedHint")}</p> : null}
-                          </Section>
-                        ) : null}
-                        <PermBlocks
-                          user={
-                            view.phantom
-                              ? null
-                              : {
-                                  ...view,
-                                  roleIds: rowDraft.roleIds,
-                                  groupIds: rowDraft.groupIds,
-                                  grants: rowDraft.grants,
-                                }
-                          }
-                          dir={dir}
-                          spaces={spaces}
-                          grants={rowDraft.grants || []}
-                          setGrants={(g) => patch({ ...rowDraft, grants: g })}
-                          editing={expand.editing}
-                          why={why}
-                          setWhy={setWhy}
-                        />
-                      </>
-                    ) : null}
-                    <RowActions
-                      editing={expand.editing}
-                      onEdit={
-                        canCreate && !lockedOwner ? beginEdit : lockedOwner ? beginEdit : null
-                      }
-                      onCancel={cancelEdit}
-                      onSave={() => void save()}
-                      saveDisabled={
-                        dir.busy ||
-                        !rowDraft.username.trim() ||
-                        Boolean(
-                          (creating || rowDraft.password) && passwordPolicyError(rowDraft.password || ""),
-                        ) ||
-                        (lockedOwner &&
-                          Boolean(rowDraft.password) &&
-                          rowDraft.password !== (rowDraft.password2 || ""))
-                      }
-                      extra={
-                        !expand.editing && !creating && !lockedOwner ? (
-                          <button
-                            type="button"
-                            className="am-text-btn"
-                            onClick={() => void setDisabled(view, !view.disabled)}
-                          >
-                            {view.disabled ? t("access.enable") : t("access.disable")}
-                          </button>
-                        ) : null
-                      }
-                      danger={
-                        !expand.editing && !creating && !lockedOwner ? (
-                          <button
-                            type="button"
-                            className="am-text-btn is-danger"
-                            onClick={() => setConfirm(view)}
-                          >
-                            {t("access.deleteConfirm")}
-                          </button>
-                        ) : null
-                      }
-                    />
-                  </>
+                {rowDraft && expand.editing ? (
+                  <form
+                    className="settings-stack"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void save();
+                    }}
+                  >
+                    {body}
+                  </form>
+                ) : rowDraft ? (
+                  <div className="settings-stack">{body}</div>
                 ) : null}
               </ExpandRow>
             );
@@ -1498,7 +1488,15 @@ export function AccessGroups({
   const [why, setWhy] = useState<Decision | null>(null);
   const [confirm, setConfirm] = useState<Group | null>(null);
   const creating = expand.openId === NEW_ROW;
-  const filtered = dir.groups.filter((g) => !q || (g.name || "").toLowerCase().includes(q.toLowerCase()));
+  const [typeFilter, setTypeFilter] = useState("all");
+  const filtered = dir.groups.filter((g) => {
+    if (!q || (g.name || "").toLowerCase().includes(q.toLowerCase())) {
+      if (typeFilter === "local" && (g.source === "ad" || g.source === "oidc")) return false;
+      if (typeFilter === "remote" && g.source !== "ad" && g.source !== "oidc") return false;
+      return true;
+    }
+    return false;
+  });
   const col = useColSort();
   const sorted = useMemo(
     () =>
@@ -1676,32 +1674,44 @@ export function AccessGroups({
       toolbar={
         <>
           <SearchField value={q} onChange={setQ} placeholder={t("nav.search")} />
-          {canCreate && adProviders.length ? (
-            <EntityPicker
-              kind="group"
-              items={[]}
-              selectedIds={[]}
-              trigger="button"
-              addLabel={t("access.addFromDir")}
-              providers={adProviders}
-              excludeIds={dir.groups.filter((g) => g.source === "ad").map((g) => g.externalId)}
-              labelOf={(g) => g.name || ""}
-              onChange={() => {}}
-              searchRemote={searchDirGroups}
-              onRemoteAdd={linkDirGroups}
-            />
-          ) : null}
-          {canCreate ? (
-            <button type="button" className="am-create shrink-0" onClick={openCreate}>
-              <Plus className="size-3.5" /> {t("access.createGroup")}
-            </button>
-          ) : null}
+          <FilterBar
+            value={typeFilter}
+            onChange={setTypeFilter}
+            label={t("access.colType")}
+            items={[
+              { id: "all", label: t("access.filterAll") },
+              { id: "local", label: t("lock.local") },
+              { id: "remote", label: t("access.typeRemote") },
+            ]}
+          />
+          <div className="am-toolbar-actions">
+            {canCreate && adProviders.length ? (
+              <EntityPicker
+                kind="group"
+                items={[]}
+                selectedIds={[]}
+                trigger="button"
+                addLabel={t("access.addFromDir")}
+                providers={adProviders}
+                excludeIds={dir.groups.filter((g) => g.source === "ad").map((g) => g.externalId)}
+                labelOf={(g) => g.name || ""}
+                onChange={() => {}}
+                searchRemote={searchDirGroups}
+                onRemoteAdd={linkDirGroups}
+              />
+            ) : null}
+            {canCreate ? (
+              <button type="button" className="am-create shrink-0" onClick={openCreate}>
+                <Plus className="size-3.5" /> {t("access.createGroup")}
+              </button>
+            ) : null}
+          </div>
         </>
       }
       head={
         empty ? null : (
           <ListHead
-            className="is-typed"
+            className="is-typed is-actions"
             cells={[
               <SortLabel key="n" id="name" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("access.groupName")}
@@ -1715,6 +1725,7 @@ export function AccessGroups({
               <SortLabel key="m" id="members" sort={col.sort} onToggle={col.toggle} count={filtered.length}>
                 {t("access.members")}
               </SortLabel>,
+              <span key="a" className="am-row-action" />,
             ]}
           />
         )
@@ -1734,11 +1745,12 @@ export function AccessGroups({
           }
         />
       ) : (
-        <div className="am-list is-typed" role="list">
+        <div className="am-list is-typed is-actions" role="list">
           {rows.map((g) => {
             const open = expand.openId === g.id || (("phantom" in g && g.phantom) && creating);
             const rowDraft = open ? draft : null;
             const view: GroupRow = current?.id === g.id && !("phantom" in g) ? current : g;
+            const isAd = view.source === "ad";
             return (
               <ExpandRow
                 key={g.id}
@@ -1760,28 +1772,49 @@ export function AccessGroups({
                   <span key="m" className="am-dim">
                     {tp("access.memberCount", (rowDraft?.members || g.members || []).length)}
                   </span>,
+                  <span key="a" className="am-row-action">
+                    {isAd && !("phantom" in view) ? (
+                      <button
+                        type="button"
+                        className="card-tool"
+                        disabled={dir.busy}
+                        title={t("access.syncGroup")}
+                        aria-label={t("access.syncGroup")}
+                        onClick={() => void sync(view)}
+                      >
+                        <RefreshCw className="size-3.5" />
+                      </button>
+                    ) : null}
+                  </span>,
                 ]}
               >
                 {rowDraft ? (
-                  <>
+                  <form
+                    className="settings-stack"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (expand.editing) void save();
+                    }}
+                  >
                     {expand.editing ? (
-                      <Section>
-                        <label className="am-field">
-                          <span>{t("access.groupName")}</span>
+                      <ExpandCard kicker={t("access.secIdentity")}>
+                        <Field label={t("access.groupName")}>
                           <Input
                             className={INPUT_SM}
                             value={rowDraft.name}
                             disabled={view.source === "ad"}
                             onChange={(e) => patch({ ...rowDraft, name: e.target.value })}
                           />
-                        </label>
-                      </Section>
+                        </Field>
+                      </ExpandCard>
                     ) : null}
-                    {expand.editing ? (
-                      <Section>
-                        <Pair>
-                          <div>
-                            <h5>{t("users.role")}</h5>
+                    <ExpandCard
+                      kicker={t("access.secAccess")}
+                      hint={view.source === "ad" ? t("access.adMembersHint") : undefined}
+                    >
+                      {expand.editing ? (
+                        <div className="field-row">
+                          <Field label={t("users.role")}>
                             <EntityPicker
                               kind="role"
                               items={dir.roles.filter((r) => r.id !== "owner")}
@@ -1790,18 +1823,20 @@ export function AccessGroups({
                               providers={[
                                 { id: "local", label: t("access.idpTypeLocal"), kind: "local" },
                               ]}
-                              readOnly={false}
                               onChange={(ids) =>
                                 patch({
                                   ...rowDraft,
                                   roleIds:
-                                    view.source === "ad" || view.source === "oidc" ? ids : ids.length ? ids : ["lecteur"],
+                                    view.source === "ad" || view.source === "oidc"
+                                      ? ids
+                                      : ids.length
+                                        ? ids
+                                        : ["lecteur"],
                                 })
                               }
                             />
-                          </div>
-                          <div>
-                            <h5>{t("access.members")}</h5>
+                          </Field>
+                          <Field label={t("access.members")}>
                             <EntityPicker
                               kind="user"
                               items={people}
@@ -1811,48 +1846,49 @@ export function AccessGroups({
                               readOnly={view.source === "ad"}
                               onChange={(ids) => patch({ ...rowDraft, members: ids })}
                             />
-                            {view.source === "ad" ? <p className="am-note">{t("access.adMembersHint")}</p> : null}
-                          </div>
-                        </Pair>
-                      </Section>
-                    ) : null}
-                    <PermBlocks
-                      user={
-                        view.phantom
-                          ? null
-                          : syntheticUserFromGroup({
-                              ...view,
-                              roleIds: rowDraft.roleIds,
-                              grants: rowDraft.grants,
-                              members: rowDraft.members,
-                            })
-                      }
-                      dir={{ ...dir, spaces }}
-                      spaces={spaces}
-                      grants={rowDraft.grants || []}
-                      setGrants={(g) => patch({ ...rowDraft, grants: g })}
-                      editing={expand.editing}
-                      why={why}
-                      setWhy={setWhy}
-                    />
+                          </Field>
+                        </div>
+                      ) : (
+                        <div className="field-row">
+                          <Field label={t("users.role")}>
+                            <ChipList
+                              names={(rowDraft.roleIds || []).map((id) => roleTitle(id, dir.roles))}
+                            />
+                          </Field>
+                          <Field label={t("access.members")}>
+                            <ChipList
+                              names={(rowDraft.members || []).map((id) =>
+                                prettyLogin(people.find((u) => u.id === id)?.username || id),
+                              )}
+                            />
+                          </Field>
+                        </div>
+                      )}
+                    </ExpandCard>
+                    <ExpandCard kicker={t("access.secPermissions")}>
+                      <PermBlocks
+                        user={syntheticUserFromGroup({
+                          id: "phantom" in view ? "_new" : view.id,
+                          name: rowDraft.name,
+                          roleIds: rowDraft.roleIds,
+                          grants: rowDraft.grants,
+                          members: rowDraft.members,
+                        })}
+                        dir={{ ...dir, spaces }}
+                        spaces={spaces}
+                        grants={rowDraft.grants || []}
+                        setGrants={(next) => patch({ ...rowDraft, grants: next })}
+                        editing={expand.editing}
+                        why={why}
+                        setWhy={setWhy}
+                      />
+                    </ExpandCard>
                     <RowActions
                       editing={expand.editing}
                       onEdit={canCreate ? beginEdit : null}
                       onCancel={cancelEdit}
-                      onSave={() => void save()}
-                      saveDisabled={dir.busy || !rowDraft.name.trim()}
-                      extra={
-                        view.source === "ad" ? (
-                          <button
-                            type="button"
-                            className="am-text-btn"
-                            disabled={dir.busy}
-                            onClick={() => void sync(view)}
-                          >
-                            {t("access.syncGroup")}
-                          </button>
-                        ) : null
-                      }
+                      busy={dir.busy}
+                      saveDisabled={!rowDraft.name.trim()}
                       danger={
                         !expand.editing && !creating ? (
                           <button
@@ -1865,7 +1901,7 @@ export function AccessGroups({
                         ) : null
                       }
                     />
-                  </>
+                  </form>
                 ) : null}
               </ExpandRow>
             );
@@ -2079,7 +2115,7 @@ export function AccessRoles({
         ...sortedRoles,
       ]
     : sortedRoles;
-  const empty = !filteredRoles.length && !creating;
+  const empty = !dir.busy && !filteredRoles.length && !creating;
   const defLocked = Boolean(draft?.system || isSystemRole(draft?.id));
   const holdersLocked = draft?.id === "owner";
 
@@ -2091,6 +2127,7 @@ export function AccessRoles({
           <FilterBar
             value={filter}
             onChange={setFilter}
+            label={t("access.colType")}
             items={[
               { id: "all", label: t("access.filterAll") },
               { id: "system", label: t("access.system") },
@@ -2160,21 +2197,25 @@ export function AccessRoles({
                 ]}
               >
                 {rowDraft ? (
-                  <>
+                  <form
+                    className="settings-stack"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (expand.editing) void save();
+                    }}
+                  >
                     {expand.editing && !defLocked ? (
-                      <Section>
-                        <Pair>
-                          <label className="am-field">
-                            <span>{t("access.roleName")}</span>
+                      <ExpandCard kicker={t("access.secDefinition")}>
+                        <div className="field-row">
+                          <Field label={t("access.roleName")}>
                             <Input
                               className={INPUT_SM}
                               value={rowDraft.name}
                               onChange={(e) => patch({ ...rowDraft, name: e.target.value })}
                             />
-                          </label>
+                          </Field>
                           {creating ? (
-                            <label className="am-field">
-                              <span>{t("access.basedOn")}</span>
+                            <Field label={t("access.basedOn")}>
                               <Select
                                 className={INPUT_SM}
                                 value={basedOn}
@@ -2192,39 +2233,36 @@ export function AccessRoles({
                                   </option>
                                 ))}
                               </Select>
-                            </label>
+                            </Field>
                           ) : (
-                            <label className="am-field">
-                              <span>{t("access.roleDesc")}</span>
+                            <Field label={t("access.roleDesc")}>
                               <Input
                                 className={INPUT_SM}
                                 value={rowDraft.description}
-                                onChange={(e) =>
-                                  patch({ ...rowDraft, description: e.target.value })
-                                }
+                                onChange={(e) => patch({ ...rowDraft, description: e.target.value })}
                               />
-                            </label>
+                            </Field>
                           )}
-                        </Pair>
+                        </div>
                         {creating ? (
-                          <label className="am-field">
-                            <span>{t("access.roleDesc")}</span>
+                          <Field label={t("access.roleDesc")}>
                             <Input
                               className={INPUT_SM}
                               value={rowDraft.description}
                               onChange={(e) => patch({ ...rowDraft, description: e.target.value })}
                             />
-                          </label>
+                          </Field>
                         ) : null}
-                      </Section>
+                      </ExpandCard>
                     ) : roleLead ? (
-                      <p className="am-meta">{roleLead}</p>
+                      <div className="settings-card">
+                        <p className="am-meta">{roleLead}</p>
+                      </div>
                     ) : null}
                     {expand.editing ? (
-                      <Section>
-                        <Pair>
-                          <div>
-                            <h5>{t("access.typeUser")}</h5>
+                      <ExpandCard kicker={t("access.secHolders")}>
+                        <div className="field-row">
+                          <Field label={t("access.typeUser")}>
                             <EntityPicker
                               kind="user"
                               items={dir.users.filter((u) => u.id !== "admin")}
@@ -2234,9 +2272,8 @@ export function AccessRoles({
                               readOnly={holdersLocked}
                               onChange={(ids) => patch({ ...rowDraft, userIds: ids })}
                             />
-                          </div>
-                          <div>
-                            <h5>{t("access.typeGroup")}</h5>
+                          </Field>
+                          <Field label={t("access.typeGroup")}>
                             <EntityPicker
                               kind="group"
                               items={dir.groups}
@@ -2248,36 +2285,38 @@ export function AccessRoles({
                               readOnly={holdersLocked}
                               onChange={(ids) => patch({ ...rowDraft, groupIds: ids })}
                             />
-                          </div>
-                        </Pair>
-                      </Section>
+                          </Field>
+                        </div>
+                      </ExpandCard>
                     ) : null}
-                    <div className="am-perm-block">
-                      {expand.editing && !defLocked ? (
-                        <SearchField
-                          value={q}
-                          onChange={setQ}
-                          placeholder={t("access.searchPerms")}
+                    <ExpandCard kicker={t("access.secPermissions")}>
+                      <div className="am-perm-block">
+                        {expand.editing && !defLocked ? (
+                          <SearchField
+                            value={q}
+                            onChange={setQ}
+                            placeholder={t("access.searchPerms")}
+                          />
+                        ) : null}
+                        <ResourceTree
+                          spaces={spaces}
+                          grants={rowDraft.grants}
+                          setGrants={
+                            defLocked || !expand.editing
+                              ? () => {}
+                              : (g) => patch({ ...rowDraft, grants: g })
+                          }
+                          query={expand.editing ? q : ""}
+                          readOnly={defLocked || !expand.editing}
                         />
-                      ) : null}
-                      <ResourceTree
-                        spaces={spaces}
-                        grants={rowDraft.grants}
-                        setGrants={
-                          defLocked || !expand.editing
-                            ? () => {}
-                            : (g) => patch({ ...rowDraft, grants: g })
-                        }
-                        query={expand.editing ? q : ""}
-                        readOnly={defLocked || !expand.editing}
-                      />
-                    </div>
+                      </div>
+                    </ExpandCard>
                     <RowActions
                       editing={expand.editing}
                       onEdit={view.id !== "owner" && !view.phantom ? beginEdit : null}
                       onCancel={cancelEdit}
-                      onSave={() => void save()}
-                      saveDisabled={dir.busy || !rowDraft.name.trim()}
+                      busy={dir.busy}
+                      saveDisabled={!rowDraft.name.trim()}
                       extra={
                         !expand.editing && !creating ? (
                           <button
@@ -2302,7 +2341,7 @@ export function AccessRoles({
                         ) : null
                       }
                     />
-                  </>
+                  </form>
                 ) : null}
               </ExpandRow>
             );
