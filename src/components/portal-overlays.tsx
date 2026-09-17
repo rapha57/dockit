@@ -183,7 +183,7 @@ export function PortalOverlays({
                   data: {
                     username,
                     password,
-                    domain: domain === "ad" ? "ad" : "local",
+                    domain: domain || "local",
                   },
                 }),
                 new Promise<never>((_, reject) => {
