@@ -4,7 +4,7 @@
 
 <h1 align="center">Dockit</h1>
 
-<p align="center"><strong>Your team's internal launchpad.</strong></p>
+<p align="center"><strong>Pin your URLs</strong></p>
 
 <p align="center">
   Keep the tools, consoles, dashboards and internal apps your team uses every day in one place.
