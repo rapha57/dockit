@@ -47,6 +47,7 @@ import {
   getPortal,
   rememberSpace,
   proxyLogin,
+  startOidc,
   recordClick,
   arrangeCategory,
   cardsAlphaDir,
@@ -76,7 +77,33 @@ export const Route = createFileRoute("/")({
 const TOKEN_KEY = "portal-edit-token";
 const SESSION_KEY = "portal-session";
 const EDIT_MODE_KEY = "portal-edit-mode";
+const OIDC_AUTO_KEY = "oidc-auto";
+const OIDC_AUTO_MS = 30_000;
 const OIDC_NEXT_KEY = "portal-oidc-next";
+function HeaderBrand({ src }: { src?: string }) {
+  const [ready, setReady] = useState(false);
+  useLayoutEffect(() => {
+    setReady(true);
+  }, []);
+  return (
+    <div
+      className="flex size-10 shrink-0 items-center justify-center overflow-hidden"
+      style={{ width: 40, height: 40 }}
+    >
+      {!ready ? null : src ? (
+        <img
+          src={src}
+          alt=""
+          width={40}
+          height={40}
+          className="size-10 max-h-10 max-w-10 object-contain"
+        />
+      ) : (
+        <DockitMark className="dockit-mark size-9" />
+      )}
+    </div>
+  );
+}
 function copyLabel(raw: unknown, fallback?: string) {
   const text = String(raw || "").trim();
   const fb = fallback || t("copy.fallback");
@@ -97,6 +124,38 @@ function readToken() {
   } catch {
     return "";
   }
+}
+function oidcAutoFresh() {
+  if (typeof window === "undefined") return false;
+  try {
+    const last = Number(sessionStorage.getItem(OIDC_AUTO_KEY) || 0);
+    return Date.now() - last < OIDC_AUTO_MS;
+  } catch {
+    return false;
+  }
+}
+function markOidcAuto() {
+  try {
+    sessionStorage.setItem(OIDC_AUTO_KEY, String(Date.now()));
+  } catch {
+    // ignore
+  }
+}
+function canKickOidc(settings: { oidcEnabled?: boolean; oidcAutoRedirect?: boolean }) {
+  return Boolean(settings.oidcEnabled && settings.oidcAutoRedirect) && !oidcAutoFresh();
+}
+async function kickOidcRedirect(next: string) {
+  markOidcAuto();
+  try {
+    sessionStorage.setItem(OIDC_NEXT_KEY, next);
+  } catch {
+    // ignore
+  }
+  const res = await startOidc({
+    data: {},
+  });
+  if (!res?.url) throw new Error("errors.oidcFail");
+  window.location.assign(res.url);
 }
 function readSessionInfo() {
   if (typeof window === "undefined") return null;
@@ -175,12 +234,16 @@ function Home() {
       return false;
     }
   });
-  const [token, setToken] = useState("");
-  const [session, setSession] = useState<SessionInfo | null>(null);
+  const [token, setToken] = useState(() => readToken());
+  const [session, setSession] = useState<SessionInfo | null>(() => readSessionInfo());
   const [hideDevBanner, setHideDevBanner] = useState(false);
   const [hideNoPassBanner, setHideNoPassBanner] = useState(false);
-  const [modal, setModal] = useState<PortalModal>({
-    kind: "none",
+  const [modal, setModal] = useState<PortalModal>(() => {
+    if (initial.settings.requireLogin && !readToken() && !readSessionInfo()) {
+      if (canKickOidc(initial.settings)) return { kind: "none" };
+      return { kind: "lock", next: "session" };
+    }
+    return { kind: "none" };
   });
   const adminTabRef = useRef("general");
   const [busy, setBusy] = useState(false);
@@ -277,6 +340,13 @@ function Home() {
     setToken(t);
     const saved = readSessionInfo();
     if (saved) setSession(saved);
+    if (!t && !saved && initial.settings.requireLogin && canKickOidc(initial.settings)) {
+      void kickOidcRedirect("session").catch((err) => {
+        toast.error(te(err));
+        requestLogin();
+      });
+      return;
+    }
     getPortal({
       data: t
         ? {
@@ -321,6 +391,14 @@ function Home() {
             sessionStorage.removeItem(TOKEN_KEY);
           } catch {
             // ignore
+          }
+          if (next.settings.requireLogin) {
+            if (canKickOidc(next.settings)) {
+              void kickOidcRedirect("session").catch((err) => {
+                toast.error(te(err));
+                requestLogin();
+              });
+            } else requestLogin();
           }
         }
       })
@@ -509,11 +587,15 @@ function Home() {
   }
   function logoutEdit() {
     clearAuth();
+    markOidcAuto();
     toast.success(t("toast.loggedOut"));
     getPortal({
       data: {},
     })
-      .then(setData)
+      .then((next) => {
+        setData(next);
+        if (next.settings.requireLogin) requestLogin();
+      })
       .catch(() => void 0);
   }
   function expireSession() {
@@ -523,7 +605,10 @@ function Home() {
     getPortal({
       data: {},
     })
-      .then(setData)
+      .then((next) => {
+        setData(next);
+        if (next.settings.requireLogin) requestLogin();
+      })
       .catch(() => void 0);
   }
   useEffect(() => {
@@ -1578,16 +1663,12 @@ function Home() {
           </button>
         </div>
       ) : null}
-      <header className="sticky top-0 z-20 border-b border-border bg-header">
+      <header
+        className={`portal-header sticky top-0 z-20 border-b border-border${data.settings.headerGlass ? " is-glass" : " bg-header"}`}
+      >
         <div className="mx-auto flex min-w-0 max-w-6xl items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center">
-              {data.settings.logo ? (
-                <img src={data.settings.logo} alt="" className="size-10 object-contain" />
-              ) : (
-                <DockitMark className="dockit-mark size-9" />
-              )}
-            </div>
+            <HeaderBrand src={data.settings.logo} />
             <div className="hidden min-w-0 sm:block sm:max-w-72">
               <h1 className="truncate text-base font-semibold tracking-tight">
                 {data.settings.title}

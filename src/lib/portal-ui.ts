@@ -52,6 +52,7 @@ export type SettingsPayload = {
   favEmbeds: boolean;
   onlineIcons: boolean;
   navRichIcons: boolean;
+  headerGlass: boolean;
   locale: "en" | "fr";
   dateFormat: "ymd" | "yyyy" | "dmy" | "mdy" | "iso";
   timeFormat: "24h" | "12h";
@@ -59,6 +60,12 @@ export type SettingsPayload = {
   numberFormat: "auto" | "space-comma" | "comma-dot" | "dot-comma" | "apostrophe-comma";
   proxyAuthEnabled?: boolean;
   proxyAuthHeader?: string;
+  outboundProxyEnabled?: boolean;
+  outboundProxyHost?: string;
+  outboundProxyPort?: number;
+  outboundProxyUsername?: string;
+  outboundProxyPassword?: string;
+  outboundProxyHasPassword?: boolean;
   probeBlink: boolean;
   annexFade: boolean;
   catCounts: boolean;
@@ -73,6 +80,7 @@ export type SettingsPayload = {
   infoLegend: boolean;
   probeTlsVerify: boolean;
   probeAuthOnly: boolean;
+  requireLogin: boolean;
   sessionHttpOnly: boolean;
   devAdminNoPassword: boolean;
   documentTitle: string;
@@ -119,6 +127,8 @@ export function settingsBase(initial: PortalSettings): SettingsPayload {
     favEmbeds: Boolean(initial.favEmbeds),
     onlineIcons: Boolean(initial.onlineIcons),
     navRichIcons: Boolean(initial.navRichIcons),
+    headerGlass: initial.headerGlass !== false,
+    cardIconBg: initial.cardIconBg !== false,
     locale: asLocale(initial.locale),
     dateFormat: asDateFormat(initial.dateFormat),
     timeFormat: asTimeFormat(initial.timeFormat),
@@ -137,6 +147,13 @@ export function settingsBase(initial: PortalSettings): SettingsPayload {
     infoLegend: initial.infoLegend !== false,
     probeTlsVerify: Boolean(initial.probeTlsVerify),
     probeAuthOnly: Boolean(initial.probeAuthOnly),
+    requireLogin: Boolean(initial.requireLogin),
+    outboundProxyEnabled: Boolean(initial.outboundProxyEnabled),
+    outboundProxyHost: String(initial.outboundProxyHost || ""),
+    outboundProxyPort: Number(initial.outboundProxyPort) > 0 ? Number(initial.outboundProxyPort) : 3128,
+    outboundProxyUsername: String(initial.outboundProxyUsername || ""),
+    outboundProxyPassword: "",
+    outboundProxyHasPassword: Boolean((initial as { outboundProxyHasPassword?: boolean }).outboundProxyHasPassword),
     sessionHttpOnly: Boolean(initial.sessionHttpOnly),
     devAdminNoPassword: Boolean(initial.devAdminNoPassword),
     documentTitle: initial.documentTitle || "Dockit",

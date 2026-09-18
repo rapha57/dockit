@@ -1108,6 +1108,7 @@ export function PresentationForm({
     favEmbeds,
     onlineIcons,
     navRichIcons,
+    headerGlass,
     annexFade,
     catCounts,
     cardResize,
@@ -1227,6 +1228,20 @@ export function PresentationForm({
         </div>
       </div>
       <div className="settings-card">
+        <p className="settings-kicker">{t("pres.header")}</p>
+        <div className="settings-toggles">
+          <label>
+            <input
+              type="checkbox"
+              checked={headerGlass}
+              onChange={(e) => onChange({ headerGlass: e.target.checked })}
+            />
+            {t("pres.headerGlass")}
+          </label>
+          <p className="settings-hint">{t("pres.headerGlassHint")}</p>
+        </div>
+      </div>
+      <div className="settings-card">
         <p className="settings-kicker">{t("pres.menus")}</p>
         <div className="settings-toggles">
           <label>
@@ -1323,7 +1338,20 @@ export function SecurityForm({
   onChange: (patch: Partial<SettingsPayload>) => void;
   onSave: () => void;
 }) {
-  const { probeTlsVerify, probeAuthOnly, sessionHttpOnly, proxyAuthEnabled, proxyAuthHeader } = value;
+  const {
+    probeTlsVerify,
+    probeAuthOnly,
+    requireLogin,
+    sessionHttpOnly,
+    proxyAuthEnabled,
+    proxyAuthHeader,
+    outboundProxyEnabled,
+    outboundProxyHost,
+    outboundProxyPort,
+    outboundProxyUsername,
+    outboundProxyPassword,
+    outboundProxyHasPassword,
+  } = value;
   return (
     <form
       id="settings-form"
@@ -1345,20 +1373,30 @@ export function SecurityForm({
             {t("sec.tls")}
           </label>
           <p className="settings-hint">{t("sec.tlsHint")}</p>
-          <label>
+          <label className={requireLogin ? "is-disabled" : ""}>
             <input
               type="checkbox"
-              checked={probeAuthOnly}
+              checked={requireLogin || probeAuthOnly}
+              disabled={requireLogin}
               onChange={(e) => onChange({ probeAuthOnly: e.target.checked })}
             />
             {t("sec.authOnly")}
           </label>
-          <p className="settings-hint">{t("sec.authOnlyHint")}</p>
+          <p className="settings-hint">{requireLogin ? t("sec.authOnlyHintForced") : t("sec.authOnlyHint")}</p>
         </div>
       </div>
       <div className="settings-card">
         <p className="settings-kicker">{t("sec.session")}</p>
         <div className="settings-toggles">
+          <label>
+            <input
+              type="checkbox"
+              checked={requireLogin}
+              onChange={(e) => onChange({ requireLogin: e.target.checked })}
+            />
+            {t("sec.requireLogin")}
+          </label>
+          <p className="settings-hint">{t("sec.requireLoginHint")}</p>
           <label>
             <input
               type="checkbox"
@@ -1371,6 +1409,60 @@ export function SecurityForm({
         </div>
       </div>
 
+      <div className="settings-card">
+        <p className="settings-kicker">{t("sec.outboundProxy")}</p>
+        <div className="settings-toggles">
+          <label>
+            <input
+              type="checkbox"
+              checked={Boolean(outboundProxyEnabled)}
+              onChange={(e) => onChange({ outboundProxyEnabled: e.target.checked })}
+            />
+            {t("sec.outboundProxyOn")}
+          </label>
+          <p className="settings-hint">{t("sec.outboundProxyHint")}</p>
+        </div>
+        <div className="field-row">
+          <Field className={outboundProxyEnabled ? "" : "is-disabled"} label={t("sec.outboundProxyHost")}>
+            <Input
+              value={outboundProxyHost || ""}
+              disabled={!outboundProxyEnabled}
+              placeholder="proxy.example.com"
+              onChange={(e) => onChange({ outboundProxyHost: e.target.value })}
+            />
+          </Field>
+          <Field className={outboundProxyEnabled ? "" : "is-disabled"} label={t("sec.outboundProxyPort")}>
+            <Input
+              type="number"
+              min={1}
+              max={65535}
+              value={outboundProxyPort || 3128}
+              disabled={!outboundProxyEnabled}
+              onChange={(e) => onChange({ outboundProxyPort: Number(e.target.value) || 3128 })}
+            />
+          </Field>
+        </div>
+        <div className="field-row">
+          <Field className={outboundProxyEnabled ? "" : "is-disabled"} label={t("sec.outboundProxyUser")}>
+            <Input
+              value={outboundProxyUsername || ""}
+              disabled={!outboundProxyEnabled}
+              autoComplete="off"
+              onChange={(e) => onChange({ outboundProxyUsername: e.target.value })}
+            />
+          </Field>
+          <Field className={outboundProxyEnabled ? "" : "is-disabled"} label={t("sec.outboundProxyPassword")}>
+            <Input
+              type="password"
+              value={outboundProxyPassword || ""}
+              disabled={!outboundProxyEnabled}
+              autoComplete="new-password"
+              placeholder={outboundProxyHasPassword ? "********" : ""}
+              onChange={(e) => onChange({ outboundProxyPassword: e.target.value })}
+            />
+          </Field>
+        </div>
+      </div>
       <div className="settings-card">
         <p className="settings-kicker">{t("sec.proxyAuth")}</p>
         <div className="settings-toggles">
@@ -1504,7 +1596,7 @@ export function DebugPanel({
           detail: t("debug.tlsDetail"),
         }
       : null,
-    s.healthChecks !== false && !s.probeAuthOnly
+    s.healthChecks !== false && !s.probeAuthOnly && !s.requireLogin
       ? {
           level: "info",
           title: t("debug.publicTitle"),

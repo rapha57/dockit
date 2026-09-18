@@ -119,6 +119,7 @@ export function PortalOverlays({
 }) {
   const adminGuardRef = useRef<{ dirty: () => boolean; prompt: () => void } | null>(null);
   if (modal.kind === "none") return null;
+  const lockForced = modal.kind === "lock" && Boolean(data.settings.requireLogin) && !session;
   const close = () =>
     setModal({
       kind: "none",
@@ -137,6 +138,7 @@ export function PortalOverlays({
         modal.kind === "category"
       }
       onClose={() => {
+        if (lockForced) return;
         setBusy(false);
         if (modal.kind === "admin" && adminGuardRef.current?.dirty()) {
           adminGuardRef.current.prompt();
@@ -156,6 +158,7 @@ export function PortalOverlays({
           ldapRealms={data.settings.ldapRealms || []}
           loginOrder={data.settings.loginOrder}
           noPassword={Boolean(data.runtime?.isDev && data.settings.devAdminNoPassword)}
+          forced={lockForced}
           onCancel={close}
           onOidc={async () => {
             setBusy(true);
@@ -520,6 +523,7 @@ export function PortalOverlays({
           people={data.directory || []}
           token={token}
           canImportSpace={Boolean(session?.isOwner || session?.canCreateSpaces)}
+          requireLogin={Boolean(data.settings.requireLogin)}
           onImportSpace={(payload) =>
             apply(async () => {
               const next = await importSpace({
@@ -584,6 +588,7 @@ export function PortalOverlays({
           picker={picker}
           canAcl={sessionCanManageAcl(session)}
           people={data.directory || []}
+          requireLogin={Boolean(data.settings.requireLogin)}
           onCancel={close}
           onSave={(name, icon, access) =>
             apply(() =>

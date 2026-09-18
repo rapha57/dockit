@@ -407,6 +407,7 @@ export function ItemForm({
   canAcl,
   token,
   canImportSpace,
+  requireLogin,
   onImportSpace,
   onCancel,
   onSave,
@@ -425,6 +426,7 @@ export function ItemForm({
   canAcl: boolean;
   token?: string;
   canImportSpace?: boolean;
+  requireLogin?: boolean;
   onImportSpace?: (payload: unknown) => void | Promise<void>;
   onCancel: () => void;
   onSave: (name: string, icon: string, access: AccessPayload) => void;
@@ -589,7 +591,11 @@ export function ItemForm({
                 editors={editors}
                 setEditors={setEditors}
                 people={people}
-                seeHint={isSpace ? t("space.seeHint") : t("category.seeHint")}
+                seeHint={
+                  isSpace
+                    ? t(requireLogin ? "space.seeHintAuth" : "space.seeHint")
+                    : t("category.seeHint")
+                }
                 editHint={isSpace ? t("space.editHint") : t("category.editHint")}
               />
             ) : null}

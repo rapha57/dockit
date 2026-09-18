@@ -80,6 +80,7 @@ export function OidcForm({
             {t("oidc.autoRedirect")}
           </label>
         </div>
+        <p className="settings-hint">{t("oidc.autoCreateHint")}</p>
         <Field label={t("oidc.buttonLabel")}>
           <Input
             value={oidcLabel}
@@ -196,6 +197,7 @@ export function LockForm({
   ldapRealms,
   loginOrder,
   noPassword,
+  forced,
   onCancel,
   onUnlock,
   onOidc,
@@ -209,6 +211,7 @@ export function LockForm({
   ldapRealms?: { id: string; label: string }[];
   loginOrder?: string[];
   noPassword: boolean;
+  forced?: boolean;
   onCancel: () => void;
   onUnlock: (username: string, password: string, domain: string) => void;
   onOidc?: () => void;
@@ -283,16 +286,18 @@ export function LockForm({
           <h3 className="dialog-title">{t("account.login")}</h3>
           <p className="settings-lead">{t("lock.lead")}</p>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={onCancel}
-          aria-label={t("actions.close")}
-          title={t("actions.close")}
-        >
-          <X className="size-4" />
-        </Button>
+        {forced ? null : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onCancel}
+            aria-label={t("actions.close")}
+            title={t("actions.close")}
+          >
+            <X className="size-4" />
+          </Button>
+        )}
       </div>
       <Field label={t("lock.username")}>
         <div className="field-ico-wrap">
@@ -333,9 +338,11 @@ export function LockForm({
         </Field>
       ) : null}
       <div className="settings-actions">
-        <Button type="button" variant="secondary" onClick={onCancel}>
-          {t("actions.cancel")}
-        </Button>
+        {forced ? null : (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            {t("actions.cancel")}
+          </Button>
+        )}
         <Button type="submit" variant={noPassword ? "debug" : "default"} disabled={busy}>
           {t("lock.submit")}
         </Button>
@@ -811,6 +818,18 @@ export function LdapDirFields({ d, patch }: { d: LdapDirRow; patch: (next: Parti
         <label>
           <input
             type="checkbox"
+            checked={Boolean(d.autoCreate)}
+            onChange={(e) =>
+              patch({
+                autoCreate: e.target.checked,
+              })
+            }
+          />
+          {t("ldap.autoCreate")}
+        </label>
+        <label>
+          <input
+            type="checkbox"
             checked={tlsOn}
             onChange={(e) => {
               const on = e.target.checked;
@@ -836,6 +855,7 @@ export function LdapDirFields({ d, patch }: { d: LdapDirRow; patch: (next: Parti
           {t("ldap.tlsVerify")}
         </label>
       </div>
+      <p className="settings-hint">{t("ldap.autoCreateHint")}</p>
       <div className="field-row">
         <Field label={t("ldap.domain")} hint={t("ldap.domainHint")}>
           <Input

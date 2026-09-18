@@ -1,3 +1,5 @@
+import { outboundFetch } from "./outbound-proxy";
+
 const HOST_RE = /^[A-Za-z0-9._:\]-]+$/;
 const MAX_BYTES = 220_000;
 const TIMEOUT_MS = 4000;
@@ -46,7 +48,7 @@ async function fetchBytes(src: string): Promise<Buffer> {
 	const ctrl = new AbortController();
 	const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
 	try {
-		const res = await fetch(src, {
+		const res = await outboundFetch(src, {
 			signal: ctrl.signal,
 			redirect: "follow",
 			headers: { Accept: "image/*,*/*;q=0.8" },

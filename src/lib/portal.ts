@@ -8,6 +8,7 @@ import { SPACE_XFER_KIND, SPACE_XFER_VERSION, collectIconValues, parseSpaceXfer 
 import { CSS_MAX, sanitizeThemeCss } from "./theme-css";
 import { isWeakPassword, passwordPolicyError, PASSWORD_MAX } from "./security";
 import { DEFAULT_OIDC_SCOPE, normalizeScope, OIDC_SCOPE_MAX } from "./oidc-scope";
+import { cleanProxyHost, cleanProxyPort, setOutboundProxy } from "./outbound-proxy";
 import { assertProductionSecrets, clientIp, envLdapBindPassword, envOidcClientSecret, isDevRuntime, trustProxy } from "./security-runtime";
 import { parseSessCookie } from "./session-cookie";
 import {
@@ -188,6 +189,7 @@ export type PortalSettings = {
   favEmbeds: boolean;
   onlineIcons: boolean;
   navRichIcons: boolean;
+  headerGlass: boolean;
   probeBlink: boolean;
   annexFade: boolean;
   catCounts: boolean;
@@ -202,10 +204,16 @@ export type PortalSettings = {
   infoLegend: boolean;
   probeTlsVerify: boolean;
   probeAuthOnly: boolean;
+  requireLogin: boolean;
   sessionHttpOnly: boolean;
   devAdminNoPassword: boolean;
   proxyAuthEnabled: boolean;
   proxyAuthHeader: string;
+  outboundProxyEnabled: boolean;
+  outboundProxyHost: string;
+  outboundProxyPort: number;
+  outboundProxyUsername: string;
+  outboundProxyPassword: string;
   oidcEnabled: boolean;
   oidcIssuer: string;
   oidcClientId: string;
@@ -504,6 +512,7 @@ function defaultSettings(): PortalSettings {
 		favEmbeds: false,
 		onlineIcons: false,
 		navRichIcons: false,
+		headerGlass: true,
 		probeBlink: false,
 		annexFade: false,
 		catCounts: false,
@@ -518,10 +527,16 @@ function defaultSettings(): PortalSettings {
 		infoLegend: true,
 		probeTlsVerify: false,
 		probeAuthOnly: false,
+		requireLogin: false,
 		sessionHttpOnly: false,
 		devAdminNoPassword: false,
 		proxyAuthEnabled: false,
 		proxyAuthHeader: "X-Remote-User",
+		outboundProxyEnabled: false,
+		outboundProxyHost: "",
+		outboundProxyPort: 3128,
+		outboundProxyUsername: "",
+		outboundProxyPassword: "",
 		oidcEnabled: false,
 		oidcIssuer: "",
 		oidcClientId: "",
@@ -1059,6 +1074,22 @@ function upsertAdGroups(doc: Doc, _dir: unknown, listed: { key?: string; name?: 
 		});
 	}
 }
+export function inLinkedAdGroups(doc: Doc, dirId: string, memberOf: string[] | null | undefined) {
+	if (!memberOf?.length) return false;
+	ensureGroups(doc);
+	const prefix = `${dirId}:`;
+	const names = new Set(memberOf.map((dn) => rdnValue(String(dn)).toLowerCase()));
+	return doc.groups.some((g) => {
+		if (g.source !== "ad" || !String(g.externalId || "").startsWith(prefix)) return false;
+		return names.has(rdnValue(String(g.externalId).slice(prefix.length)).toLowerCase());
+	});
+}
+export function inLinkedOidcGroups(doc: Doc, issuer: string, names: string[] | null | undefined) {
+	if (!names?.length) return false;
+	ensureGroups(doc);
+	const keys = new Set(names.map((name) => `oidc:${issuer.slice(0, 60)}:${name.slice(0, 200)}`));
+	return doc.groups.some((g) => g.source === "oidc" && g.externalId && keys.has(g.externalId));
+}
 function applyAdMembership(doc: Doc, user: StoredUser | null | undefined, dirId: string, memberOf: string[] | null) {
 	if (!user || user.id === "admin") return;
 	// Directory accounts carry no personal role: rights come from the mapping.
@@ -1293,6 +1324,7 @@ function asStore(raw: any): Doc | null {
 			favEmbeds: Boolean(doc.settings.favEmbeds),
 			onlineIcons: Boolean(doc.settings.onlineIcons),
 			navRichIcons: Boolean(doc.settings.navRichIcons),
+			headerGlass: doc.settings.headerGlass !== false,
 			probeBlink: Boolean(doc.settings.probeBlink),
 			annexFade: Boolean(doc.settings.annexFade),
 			catCounts: Boolean(doc.settings.catCounts),
@@ -1307,6 +1339,7 @@ function asStore(raw: any): Doc | null {
 			infoLegend: doc.settings.infoLegend !== false,
 			probeTlsVerify: Boolean(doc.settings.probeTlsVerify),
 			probeAuthOnly: Boolean(doc.settings.probeAuthOnly),
+			requireLogin: Boolean(doc.settings.requireLogin),
 			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly),
 			devAdminNoPassword: Boolean(doc.settings.devAdminNoPassword),
 			oidcEnabled: Boolean(doc.settings.oidcEnabled),
@@ -1321,6 +1354,11 @@ function asStore(raw: any): Doc | null {
 			proxyAuthHeader: /^[A-Za-z0-9-]+$/.test(String(doc.settings.proxyAuthHeader || "").trim())
 				? String(doc.settings.proxyAuthHeader).trim()
 				: "X-Remote-User",
+			outboundProxyEnabled: Boolean(doc.settings.outboundProxyEnabled),
+			outboundProxyHost: cleanProxyHost(doc.settings.outboundProxyHost),
+			outboundProxyPort: cleanProxyPort(doc.settings.outboundProxyPort),
+			outboundProxyUsername: String(doc.settings.outboundProxyUsername || "").trim().slice(0, 120),
+			outboundProxyPassword: String(doc.settings.outboundProxyPassword || "").slice(0, 200),
 			...syncLegacyLdap(asDirectories(doc.settings)),
 			ldapDirectories: asDirectories(doc.settings),
 			loginOrder: asLoginOrder(doc.settings.loginOrder, asDirectories(doc.settings)),
@@ -1352,6 +1390,13 @@ function asStore(raw: any): Doc | null {
 		}))
 	};
 	absorbResourceAcl(parsed);
+	setOutboundProxy({
+		enabled: Boolean(parsed.settings.outboundProxyEnabled),
+		host: parsed.settings.outboundProxyHost,
+		port: parsed.settings.outboundProxyPort,
+		username: parsed.settings.outboundProxyUsername,
+		password: parsed.settings.outboundProxyPassword,
+	});
 	return parsed;
 }
 function historyToDisk(row: any): any {
@@ -1560,7 +1605,13 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 		oidcEnabled: Boolean(s.oidcEnabled) && Boolean(s.oidcIssuer) && Boolean(s.oidcClientId),
 		oidcLabel: String(s.oidcLabel || "SSO").slice(0, 40) || "SSO",
 		oidcAutoRedirect: Boolean(s.oidcAutoRedirect),
+		requireLogin: Boolean(s.requireLogin),
 		proxyAuthEnabled: Boolean(s.proxyAuthEnabled),
+		outboundProxyEnabled: Boolean(s.outboundProxyEnabled),
+		outboundProxyHost: String(s.outboundProxyHost || ""),
+		outboundProxyPort: cleanProxyPort(s.outboundProxyPort),
+		outboundProxyUsername: String(s.outboundProxyUsername || ""),
+		outboundProxyHasPassword: Boolean(s.outboundProxyPassword),
 		oidcHasSecret: Boolean(envOidcClientSecret() || s.oidcClientSecret),
 		oidcSecretFromEnv: Boolean(envOidcClientSecret()),
 		ldapEnabled: realms.length > 0,
@@ -1579,13 +1630,18 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 	};
 	delete out.oidcClientSecret;
 	delete out.ldapBindPassword;
+	delete out.outboundProxyPassword;
 	if (!isOwnerUser(user) && !user?.canManageSettings) {
 		delete out.oidcIssuer;
 		delete out.oidcClientId;
 		delete out.oidcScope;
 		delete out.oidcAutoCreate;
-		delete out.oidcAutoRedirect;
 		delete out.proxyAuthHeader;
+		delete out.outboundProxyHost;
+		delete out.outboundProxyPort;
+		delete out.outboundProxyUsername;
+		delete out.outboundProxyHasPassword;
+		delete out.outboundProxyEnabled;
 		delete out.oidcHasSecret;
 		delete out.ldapHost;
 		delete out.ldapPort;
@@ -1621,6 +1677,32 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 }
 function view(doc: Doc, spaceId: string | undefined, user: HydratedUser | null) {
 	const session = user ? sessionInfo(user, doc) : null;
+	if (doc.settings.requireLogin && !user) {
+		return {
+			settings: clientSettings(doc, user),
+			customIcons: [],
+			spaces: [],
+			activeSpaceId: "",
+			categories: [],
+			catalog: [],
+			clickStats: {
+				all: 0,
+				today: 0,
+				week: 0,
+				month: 0,
+				year: 0,
+				spanDays: 0,
+				fullCatalog: true,
+			},
+			session: null,
+			directory: [],
+			runtime: {
+				isDev: isDevRuntime(),
+				publicOrigin: String(process.env.PORTAL_PUBLIC_ORIGIN || "").trim(),
+				trustProxy: trustProxy(),
+			},
+		};
+	}
 	const spaces = publicSpaces(doc, user);
 	const activeSpaceId = spaceId && spaces.some((s) => s.id === spaceId) && spaceId || doc.lastSpaceId && spaces.some((s) => s.id === doc.lastSpaceId) && doc.lastSpaceId || spaces[0]?.id || "";
 	const stored = doc.spaces.find((t) => t.id === activeSpaceId);
@@ -2018,6 +2100,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	favEmbeds: z.boolean().optional(),
 	onlineIcons: z.boolean().optional(),
 	navRichIcons: z.boolean().optional(),
+	headerGlass: z.boolean().optional(),
 	probeBlink: z.boolean().optional(),
 	annexFade: z.boolean().optional(),
 	catCounts: z.boolean().optional(),
@@ -2032,10 +2115,16 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	infoLegend: z.boolean().optional(),
 	probeTlsVerify: z.boolean().optional(),
 	probeAuthOnly: z.boolean().optional(),
+	requireLogin: z.boolean().optional(),
 	sessionHttpOnly: z.boolean().optional(),
 	devAdminNoPassword: z.boolean().optional(),
 	proxyAuthEnabled: z.boolean().optional(),
 	proxyAuthHeader: z.string().max(64).optional(),
+	outboundProxyEnabled: z.boolean().optional(),
+	outboundProxyHost: z.string().max(253).optional(),
+	outboundProxyPort: z.number().int().min(1).max(65535).optional(),
+	outboundProxyUsername: z.string().max(120).optional(),
+	outboundProxyPassword: z.string().max(200).optional(),
 	locale: z.enum(["en", "fr"]).optional(),
 	dateFormat: z.enum(["ymd", "yyyy", "dmy", "mdy", "iso"]).optional(),
 	timeFormat: z.enum(["24h", "12h"]).optional(),
@@ -2058,6 +2147,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		favEmbeds: typeof data.favEmbeds === "boolean" ? data.favEmbeds : typeof data.favWidgets === "boolean" ? data.favWidgets : Boolean(doc.settings.favEmbeds),
 		onlineIcons: typeof data.onlineIcons === "boolean" ? data.onlineIcons : Boolean(doc.settings.onlineIcons),
 		navRichIcons: typeof data.navRichIcons === "boolean" ? data.navRichIcons : Boolean(doc.settings.navRichIcons),
+		headerGlass: typeof data.headerGlass === "boolean" ? data.headerGlass : doc.settings.headerGlass !== false,
 		probeBlink: typeof data.probeBlink === "boolean" ? data.probeBlink : Boolean(doc.settings.probeBlink),
 		annexFade: typeof data.annexFade === "boolean" ? data.annexFade : Boolean(doc.settings.annexFade),
 		catCounts: typeof data.catCounts === "boolean" ? data.catCounts : Boolean(doc.settings.catCounts),
@@ -2072,18 +2162,35 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 		infoLegend: typeof data.infoLegend === "boolean" ? data.infoLegend : doc.settings.infoLegend !== false,
 		probeTlsVerify: typeof data.probeTlsVerify === "boolean" ? data.probeTlsVerify : Boolean(doc.settings.probeTlsVerify),
 		probeAuthOnly: typeof data.probeAuthOnly === "boolean" ? data.probeAuthOnly : Boolean(doc.settings.probeAuthOnly),
+		requireLogin: typeof data.requireLogin === "boolean" ? data.requireLogin : Boolean(doc.settings.requireLogin),
 		sessionHttpOnly: typeof data.sessionHttpOnly === "boolean" ? data.sessionHttpOnly : Boolean(doc.settings.sessionHttpOnly),
 		devAdminNoPassword: typeof data.devAdminNoPassword === "boolean" ? data.devAdminNoPassword : Boolean(doc.settings.devAdminNoPassword),
 		proxyAuthEnabled: typeof data.proxyAuthEnabled === "boolean" ? data.proxyAuthEnabled : Boolean(doc.settings.proxyAuthEnabled),
 		proxyAuthHeader: /^[A-Za-z0-9-]+$/.test(String(data.proxyAuthHeader || "").trim())
 			? String(data.proxyAuthHeader).trim()
 			: doc.settings.proxyAuthHeader || "X-Remote-User",
+		outboundProxyEnabled: typeof data.outboundProxyEnabled === "boolean" ? data.outboundProxyEnabled : Boolean(doc.settings.outboundProxyEnabled),
+		outboundProxyHost: typeof data.outboundProxyHost === "string" ? cleanProxyHost(data.outboundProxyHost) : cleanProxyHost(doc.settings.outboundProxyHost),
+		outboundProxyPort: typeof data.outboundProxyPort === "number" ? cleanProxyPort(data.outboundProxyPort) : cleanProxyPort(doc.settings.outboundProxyPort),
+		outboundProxyUsername: typeof data.outboundProxyUsername === "string" ? data.outboundProxyUsername.trim().slice(0, 120) : String(doc.settings.outboundProxyUsername || ""),
+		outboundProxyPassword: (() => {
+			const next = typeof data.outboundProxyPassword === "string" ? data.outboundProxyPassword : "";
+			if (!next || next === "********") return String(doc.settings.outboundProxyPassword || "");
+			return next.slice(0, 200);
+		})(),
 		dateFormat: DATE_FORMATS.includes(data.dateFormat) ? data.dateFormat : DATE_FORMATS.includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd",
 		timeFormat: data.timeFormat === "12h" || data.timeFormat === "24h" ? data.timeFormat : asTimeFormat(doc.settings.timeFormat),
 		timezone: typeof data.timezone === "string" ? asTimeZone(data.timezone) : asTimeZone(doc.settings.timezone),
 		locale: data.locale === "fr" || data.locale === "en" ? data.locale : doc.settings.locale === "fr" ? "fr" : "en",
 		numberFormat: NUMBER_FORMATS.includes(data.numberFormat) ? data.numberFormat : NUMBER_FORMATS.includes(doc.settings.numberFormat as import("./i18n").NumberFormat) ? doc.settings.numberFormat : "auto"
 	};
+	setOutboundProxy({
+		enabled: Boolean(doc.settings.outboundProxyEnabled),
+		host: doc.settings.outboundProxyHost,
+		port: doc.settings.outboundProxyPort,
+		username: doc.settings.outboundProxyUsername,
+		password: doc.settings.outboundProxyPassword,
+	});
 	pruneUnusedTags(doc);
 	appendHistory(doc, user, {
 		type: "settings.update",
@@ -2143,14 +2250,17 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 			const extId = authExternalId("ad", dir.id, username);
 			let user = findUserForAuth(doc.users, username, "ad", extId);
 			if (!user) {
-				// Directory identity is enough: provision on first sign-in. No personal
-				// role: rights come from the group mapping resolved below.
+				const mapped = inLinkedAdGroups(doc, dir.id, auth?.memberOf);
+				if (!dir.autoCreate && !mapped) {
+					loginFail(key);
+					throw new Error("errors.ldapUnknownUser");
+				}
 				user = {
 					id: newId(),
 					username,
 					passHash: await hashPassword(randomBytes(24).toString("hex")),
-					role: "",
-					roleIds: [],
+					role: mapped ? "" : "lecteur",
+					roleIds: mapped ? [] : ["lecteur"],
 					grants: [],
 					source: "ad",
 					externalId: extId
@@ -2532,7 +2642,8 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 		const extId = authExternalId("oidc", issuer, username);
 		let user = findUserForAuth(doc.users, username, "oidc", extId);
 		if (!user) {
-			if (!live.oidcAutoCreate) {
+			const mapped = inLinkedOidcGroups(doc, issuer, groups);
+			if (!live.oidcAutoCreate && !mapped) {
 				loginFail(key);
 				throw new Error("errors.oidcUnknownUser");
 			}
@@ -2540,8 +2651,8 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 				id: newId(),
 				username,
 				passHash: await hashPassword(randomBytes(24).toString("hex")),
-				role: "lecteur",
-				roleIds: ["lecteur"],
+				role: mapped && !live.oidcAutoCreate ? "" : "lecteur",
+				roleIds: mapped && !live.oidcAutoCreate ? [] : ["lecteur"],
 				grants: [],
 				source: "oidc",
 				externalId: extId
@@ -2599,7 +2710,10 @@ export const proxyLogin = createServerFn({ method: "POST" }).validator(z.object(
 		const extId = authExternalId("proxy", username);
 		let user = findUserForAuth(doc.users, username, "proxy", extId);
 		if (!user) {
-			if (!doc.settings.ldapAutoCreate) {
+			const dir = directoryId ? asDirectories(doc.settings).find((d) => d.id === directoryId) : null;
+			const mapped = directoryId ? inLinkedAdGroups(doc, directoryId, memberOf) : false;
+			const allowCreate = Boolean(dir?.autoCreate || doc.settings.ldapAutoCreate);
+			if (!allowCreate && !mapped) {
 				loginFail(key);
 				throw new Error("errors.proxyUnknownUser");
 			}
@@ -3958,7 +4072,7 @@ export const probeTargets = createServerFn({ method: "POST" }).validator(z.objec
 	if (!probeAllowed((ctx as any).request)) return [];
 	const doc = await readDoc();
 	const token = tok(ctx.data, (ctx as any).request);
-	if (doc.settings.probeAuthOnly) {
+	if (doc.settings.probeAuthOnly || doc.settings.requireLogin) {
 		try {
 			requireUser(doc, token);
 		} catch {

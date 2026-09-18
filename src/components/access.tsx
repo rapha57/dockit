@@ -2129,7 +2129,7 @@ export function AccessRoles({
     <ListShell
       toolbar={
         <>
-          <SearchField value={search} onChange={setSearch} placeholder={t("access.searchRoles")} />
+          <SearchField value={search} onChange={setSearch} placeholder={t("nav.search")} />
           <FilterBar
             value={filter}
             onChange={setFilter}

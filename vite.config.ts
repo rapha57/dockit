@@ -98,6 +98,8 @@ export default defineConfig(({ command, isPreview }) => ({
     port: 3000,
   },
   resolve: { tsconfigPaths: true },
+  ssr: { external: ["undici"] },
+  optimizeDeps: { exclude: ["undici"] },
   plugins: [
     securityHeaders(),
     dockitAssets(),

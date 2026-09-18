@@ -341,6 +341,8 @@ export function DockitMark({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 48 48"
+      width={36}
+      height={36}
       className={`${className ?? ""}${live && built ? " is-ready" : ""}`}
       aria-hidden
       onPointerMove={

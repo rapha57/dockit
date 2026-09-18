@@ -665,6 +665,7 @@ select.field-input {
 .field-input:focus,
 .field-input:focus-visible {
   border-color: color-mix(in oklab, var(--color-ring) 55%, var(--color-border));
+  box-shadow: none;
 }
 .field-ico-wrap {
   position: relative;
@@ -737,6 +738,17 @@ select.field-input {
 @media (min-width: 64rem) {
   .item-span-3 {
     grid-column: span 3;
+  }
+}
+
+.portal-header.is-glass {
+  background: color-mix(in oklab, var(--color-header) 78%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .portal-header.is-glass {
+    background: var(--color-header);
   }
 }
 
@@ -2801,6 +2813,9 @@ html.dark .about-mark .dockit-stroke {
   line-height: 1;
   text-decoration: none;
 }
+.about-dl a.about-build-badge {
+  text-decoration: none;
+}
 .about-build-badge.is-update {
   border-color: color-mix(in oklab, var(--color-danger) 40%, var(--color-border));
   background: color-mix(in oklab, var(--color-danger) 12%, var(--color-elevated));
@@ -2808,6 +2823,7 @@ html.dark .about-mark .dockit-stroke {
 }
 .about-build-badge.is-update:hover {
   background: color-mix(in oklab, var(--color-danger) 20%, var(--color-elevated));
+  color: var(--color-danger);
 }
 .about-build-badge.is-offline {
   border-color: var(--color-border);
@@ -3685,11 +3701,11 @@ button.am-create,
   border-radius: 8px;
   background: transparent;
   color: var(--color-muted);
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  transition: border-color 140ms ease;
 }
 .am-search:focus-within {
   border-color: color-mix(in oklab, var(--color-fg) 28%, var(--color-border));
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-fg) 6%, transparent);
+  box-shadow: none;
   color: var(--color-fg);
 }
 .am-search input {

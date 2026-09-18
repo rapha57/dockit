@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { outboundFetch } from "./outbound-proxy";
 
 const REPO = "rapha57/dockit";
 const API = `https://api.github.com/repos/${REPO}`;
@@ -19,7 +20,7 @@ function cleanTag(raw: unknown): string {
 
 async function githubJson(path: string, signal: AbortSignal): Promise<unknown> {
 	try {
-		const res = await fetch(`${API}${path}`, {
+		const res = await outboundFetch(`${API}${path}`, {
 			headers: {
 				Accept: "application/vnd.github+json",
 				"User-Agent": "Dockit",
