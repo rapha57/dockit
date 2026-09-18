@@ -10,6 +10,7 @@ import { ExpandRow, useExpandSession } from "@/components/expand-row";
 import { ConfirmPopup } from "@/components/access";
 import { t } from "@/lib/i18n";
 import { newId } from "@/lib/id";
+import { DEFAULT_OIDC_SCOPE } from "@/lib/oidc-scope";
 import type { Directory } from "@/lib/ldap-runtime";
 import type { PortalSettings } from "@/lib/portal";
 import type { OidcPayload, LdapPayload } from "@/lib/portal-ui";
@@ -26,6 +27,7 @@ export function OidcForm({
   const [oidcIssuer, setOidcIssuer] = useState(initial.oidcIssuer || "");
   const [oidcClientId, setOidcClientId] = useState(initial.oidcClientId || "");
   const [oidcClientSecret, setOidcClientSecret] = useState("");
+  const [oidcScope, setOidcScope] = useState(initial.oidcScope || DEFAULT_OIDC_SCOPE);
   const [oidcLabel, setOidcLabel] = useState(initial.oidcLabel || t("oidc.defaultLabel"));
   const [oidcAutoCreate, setOidcAutoCreate] = useState(Boolean(initial.oidcAutoCreate));
   const [oidcAutoRedirect, setOidcAutoRedirect] = useState(Boolean(initial.oidcAutoRedirect));
@@ -42,6 +44,7 @@ export function OidcForm({
           oidcIssuer: oidcIssuer.trim(),
           oidcClientId: oidcClientId.trim(),
           oidcClientSecret,
+          oidcScope: oidcScope.trim(),
           oidcLabel: oidcLabel.trim() || t("oidc.defaultLabel"),
           oidcAutoCreate,
           oidcAutoRedirect,
@@ -118,6 +121,13 @@ export function OidcForm({
                   ? t("oidc.secretUnchanged")
                   : t("oidc.secretOptional")
             }
+          />
+        </Field>
+        <Field label={t("oidc.scope")} hint={t("oidc.scopeHint")}>
+          <Input
+            value={oidcScope}
+            onChange={(e) => setOidcScope(e.target.value)}
+            placeholder={DEFAULT_OIDC_SCOPE}
           />
         </Field>
       </div>
