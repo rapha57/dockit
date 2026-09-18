@@ -10,7 +10,7 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -50,6 +50,17 @@ jobs:
           exit-code: "1"
           format: table
           skip-dirs: usr/local/lib/node_modules
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: dockit:scan
+          scanners: vuln
+          format: cyclonedx
+          output: dockit-${{ steps.tag.outputs.name }}.cdx.json
+          skip-dirs: usr/local/lib/node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ steps.tag.outputs.name }}
+          path: dockit-${{ steps.tag.outputs.name }}.cdx.json
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -62,4 +73,9 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.tag.outputs.name }}
           cache-from: type=gha
+      - if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${{ steps.tag.outputs.name }}" "dockit-${{ steps.tag.outputs.name }}.cdx.json" --clobber
 

@@ -143,6 +143,8 @@ ghcr.io/rapha57/dockit:<tag>
 ghcr.io/rapha57/dockit:latest
 ```
 
+and a CycloneDX SBOM (`dockit-<tag>.cdx.json`) on the release.
+
 To make the GitHub Container Registry package public for the first time:
 
 **GitHub → Packages → dockit → Change visibility → Public**
