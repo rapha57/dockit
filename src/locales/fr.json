@@ -808,6 +808,8 @@
     "secretHint": "Laisser vide pour un client public (PKCE). Confidential : coller le secret, ou définir PORTAL_OIDC_CLIENT_SECRET sur le serveur.",
     "secretFromEnv": "Fourni par PORTAL_OIDC_CLIENT_SECRET. Pas enregistré dans portal.json.",
     "secretFromEnvPlaceholder": "Défini sur le serveur",
+    "scope": "Scopes",
+    "scopeHint": "Séparés par des espaces. Ajouter groups pour synchroniser les groupes de l’IdP dans Accès (requis par Pocket ID, Authentik, Keycloak). openid est toujours envoyé.",
     "buttonLabel": "Libellé du bouton",
     "defaultLabel": "SSO",
     "autoCreate": "Créer un compte lecteur s’il n’existe pas",

@@ -7,6 +7,7 @@ import { ASSET_PREFIX, ASSET_URL, MAX_CUSTOM_ICONS, isAssetRef, toClientAsset } 
 import { SPACE_XFER_KIND, SPACE_XFER_VERSION, collectIconValues, parseSpaceXfer } from "./space-xfer";
 import { CSS_MAX, sanitizeThemeCss } from "./theme-css";
 import { isWeakPassword, passwordPolicyError, PASSWORD_MAX } from "./security";
+import { DEFAULT_OIDC_SCOPE, normalizeScope, OIDC_SCOPE_MAX } from "./oidc-scope";
 import { assertProductionSecrets, clientIp, envLdapBindPassword, envOidcClientSecret, isDevRuntime, trustProxy } from "./security-runtime";
 import { parseSessCookie } from "./session-cookie";
 import {
@@ -209,6 +210,7 @@ export type PortalSettings = {
   oidcIssuer: string;
   oidcClientId: string;
   oidcClientSecret: string;
+  oidcScope: string;
   oidcLabel: string;
   oidcAutoCreate: boolean;
   oidcAutoRedirect: boolean;
@@ -524,6 +526,7 @@ function defaultSettings(): PortalSettings {
 		oidcIssuer: "",
 		oidcClientId: "",
 		oidcClientSecret: "",
+		oidcScope: DEFAULT_OIDC_SCOPE,
 		oidcLabel: "SSO",
 		oidcAutoCreate: false,
 		oidcAutoRedirect: false,
@@ -1310,6 +1313,7 @@ function asStore(raw: any): Doc | null {
 			oidcIssuer: String(doc.settings.oidcIssuer || "").trim().slice(0, 300),
 			oidcClientId: String(doc.settings.oidcClientId || "").trim().slice(0, 120),
 			oidcClientSecret: String(doc.settings.oidcClientSecret || "").slice(0, 200),
+			oidcScope: normalizeScope(doc.settings.oidcScope),
 			oidcLabel: String(doc.settings.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
 			oidcAutoCreate: Boolean(doc.settings.oidcAutoCreate),
 			oidcAutoRedirect: Boolean(doc.settings.oidcAutoRedirect),
@@ -1578,6 +1582,7 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 	if (!isOwnerUser(user) && !user?.canManageSettings) {
 		delete out.oidcIssuer;
 		delete out.oidcClientId;
+		delete out.oidcScope;
 		delete out.oidcAutoCreate;
 		delete out.oidcAutoRedirect;
 		delete out.proxyAuthHeader;
@@ -1595,6 +1600,7 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 	} else {
 		out.oidcIssuer = String(s.oidcIssuer || "");
 		out.oidcClientId = String(s.oidcClientId || "");
+		out.oidcScope = normalizeScope(s.oidcScope);
 		out.oidcAutoCreate = Boolean(s.oidcAutoCreate);
 		out.ldapHost = String(s.ldapHost || "");
 		out.ldapPort = Number(s.ldapPort) || (s.ldapTls === false ? 389 : 636);
@@ -2218,6 +2224,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 	oidcIssuer: z.string().max(300),
 	oidcClientId: z.string().max(120),
 	oidcClientSecret: z.string().max(200).optional(),
+	oidcScope: z.string().max(OIDC_SCOPE_MAX).optional(),
 	oidcLabel: z.string().max(40).optional(),
 	oidcAutoCreate: z.boolean().optional(),
 	oidcAutoRedirect: z.boolean().optional(),
@@ -2242,6 +2249,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 		oidcIssuer: issuer.slice(0, 300),
 		oidcClientId: clientId.slice(0, 120),
 		oidcClientSecret: fromEnv ? "" : secret,
+		oidcScope: normalizeScope(typeof data.oidcScope === "string" ? data.oidcScope : doc.settings.oidcScope),
 		oidcLabel: String(data.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
 		oidcAutoCreate: Boolean(data.oidcAutoCreate),
 		oidcAutoRedirect: Boolean(data.oidcAutoRedirect)
@@ -2475,7 +2483,8 @@ export const startOidc = createServerFn({ method: "POST" }).validator(z.object({
 			redirectUri,
 			state,
 			nonce,
-			challenge: s256(verifier)
+			challenge: s256(verifier),
+			scope: s.oidcScope
 		})
 	};
 });

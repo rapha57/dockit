@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { normalizeScope } from "./oidc-scope";
 import { trustProxy } from "./security-runtime";
 
 const TIMEOUT_MS = 8000;
@@ -87,7 +88,7 @@ export function buildAuthorizeUrl(disc: Discovery, opts: {
 	url.searchParams.set("response_type", "code");
 	url.searchParams.set("client_id", opts.clientId);
 	url.searchParams.set("redirect_uri", opts.redirectUri);
-	url.searchParams.set("scope", opts.scope || "openid profile email");
+	url.searchParams.set("scope", normalizeScope(opts.scope));
 	url.searchParams.set("state", opts.state);
 	url.searchParams.set("nonce", opts.nonce);
 	url.searchParams.set("code_challenge", opts.challenge);

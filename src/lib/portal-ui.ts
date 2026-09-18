@@ -84,6 +84,7 @@ export type OidcPayload = {
   oidcIssuer: string;
   oidcClientId: string;
   oidcClientSecret?: string;
+  oidcScope?: string;
   oidcLabel?: string;
   oidcAutoCreate?: boolean;
   oidcAutoRedirect?: boolean;
