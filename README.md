@@ -170,6 +170,18 @@ Several directories with **different** bind accounts: do **not** set the generic
 
 The specific variable wins over the generic one. User passwords (local Dockit accounts) are unchanged: they stay hashed in the JSON either way.
 
+### OIDC scopes and groups
+
+Settings → Sign-in → **Scopes**. Default `openid profile email`.
+
+Roles for OIDC users are mapped through groups, and that needs a `groups` claim. Most providers (Pocket ID, Authentik, Keycloak) only send one when the scope is asked for, so add it:
+
+```
+openid profile email groups
+```
+
+Each claimed group then shows up under Access → Groups on the user's next sign-in. Give that group a Role and its members inherit it. `openid` is always sent, whatever the field says.
+
 ## Data
 
 No database. The whole portal is one file: `data/portal.json`. Backup, move, restore = copy it.
