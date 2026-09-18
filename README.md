@@ -145,10 +145,6 @@ ghcr.io/rapha57/dockit:latest
 
 and a CycloneDX SBOM (`dockit-<tag>.cdx.json`) on the release.
 
-To make the GitHub Container Registry package public for the first time:
-
-**GitHub → Packages → dockit → Change visibility → Public**
-
 ### Reverse proxy
 
 When Dockit is behind a reverse proxy, configure its public origin and trust the proxy headers:
@@ -240,35 +236,7 @@ Dockit supports:
 
 Local login always remains available, even when LDAP or OIDC is configured.
 
-OIDC users can inherit Dockit roles from their identity-provider groups.
-
-## OIDC groups
-
-Go to:
-
-**Settings → Sign-in → Scopes**
-
-The default scopes are:
-
-```text
-openid profile email
-```
-
-To map OIDC groups to Dockit groups, request the `groups` claim as well:
-
-```text
-openid profile email groups
-```
-
-Providers such as Pocket ID, Authentik and Keycloak generally require the groups scope before including group membership in the token.
-
-After the user's next sign-in, claimed groups appear under:
-
-**Access → Groups**
-
-Assign a Dockit role to the group and its members inherit that role.
-
-`openid` is always requested regardless of what is entered in the scopes field.
+OIDC (OpenID Connect) lets people sign in with an identity provider such as Entra, Authentik, Keycloak or Pocket ID. Dockit talks to the issuer for login; after that, groups claimed by the IdP can be given Dockit roles under **Access → Groups**. Configure the client under **Access → Identity Provider**.
 
 ## LDAP / AD bind secrets
 
@@ -276,9 +244,7 @@ There are two ways to configure LDAP and OIDC secrets. Neither is mandatory.
 
 ### Store secrets in Dockit
 
-Go to:
-
-**Settings → Sign-in**
+Go to **Access → Identity Provider**.
 
 Paste the OIDC client secret and LDAP bind password as usual.
 
