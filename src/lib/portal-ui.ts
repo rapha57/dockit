@@ -93,6 +93,7 @@ export type OidcPayload = {
   oidcClientId: string;
   oidcClientSecret?: string;
   oidcScope?: string;
+  oidcGroupFilter?: string;
   oidcLabel?: string;
   oidcAutoCreate?: boolean;
   oidcAutoRedirect?: boolean;

@@ -8,6 +8,7 @@ import { SPACE_XFER_KIND, SPACE_XFER_VERSION, collectIconValues, parseSpaceXfer 
 import { CSS_MAX, sanitizeThemeCss } from "./theme-css";
 import { isWeakPassword, passwordPolicyError, PASSWORD_MAX } from "./security";
 import { DEFAULT_OIDC_SCOPE, normalizeScope, OIDC_SCOPE_MAX } from "./oidc-scope";
+import { filterGroupNames, GROUP_FILTER_MAX } from "./oidc-groups";
 import { cleanProxyHost, cleanProxyPort, setOutboundProxy } from "./outbound-proxy";
 import { assertProductionSecrets, clientIp, envLdapBindPassword, envOidcClientSecret, isDevRuntime, trustProxy } from "./security-runtime";
 import { parseSessCookie } from "./session-cookie";
@@ -219,6 +220,7 @@ export type PortalSettings = {
   oidcClientId: string;
   oidcClientSecret: string;
   oidcScope: string;
+  oidcGroupFilter: string;
   oidcLabel: string;
   oidcAutoCreate: boolean;
   oidcAutoRedirect: boolean;
@@ -542,6 +544,7 @@ function defaultSettings(): PortalSettings {
 		oidcClientId: "",
 		oidcClientSecret: "",
 		oidcScope: DEFAULT_OIDC_SCOPE,
+		oidcGroupFilter: "",
 		oidcLabel: "SSO",
 		oidcAutoCreate: false,
 		oidcAutoRedirect: false,
@@ -1135,8 +1138,12 @@ function upsertOidcGroups(doc: Doc, issuer: string, names: string[]) {
 		});
 	}
 }
-function applyOidcGroups(doc: Doc, user: StoredUser | null | undefined, issuer: string, names: string[]) {
+export function applyOidcGroups(doc: Doc, user: StoredUser | null | undefined, issuer: string, claimed: string[]) {
 	if (!user || user.id === "admin") return;
+	// Filtering here covers creation and membership in one place: a group the
+	// filter now excludes also drops the user on this login, rather than keeping
+	// a stale membership no admin can see the source of.
+	const names = filterGroupNames(claimed, doc.settings?.oidcGroupFilter);
 	upsertOidcGroups(doc, issuer, names);
 	ensureGroups(doc);
 	const keys = new Set(names.map((name) => `oidc:${issuer.slice(0, 60)}:${name.slice(0, 200)}`));
@@ -1347,6 +1354,7 @@ function asStore(raw: any): Doc | null {
 			oidcClientId: String(doc.settings.oidcClientId || "").trim().slice(0, 120),
 			oidcClientSecret: String(doc.settings.oidcClientSecret || "").slice(0, 200),
 			oidcScope: normalizeScope(doc.settings.oidcScope),
+			oidcGroupFilter: String(doc.settings.oidcGroupFilter || "").trim().slice(0, GROUP_FILTER_MAX),
 			oidcLabel: String(doc.settings.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
 			oidcAutoCreate: Boolean(doc.settings.oidcAutoCreate),
 			oidcAutoRedirect: Boolean(doc.settings.oidcAutoRedirect),
@@ -1635,6 +1643,7 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 		delete out.oidcIssuer;
 		delete out.oidcClientId;
 		delete out.oidcScope;
+		delete out.oidcGroupFilter;
 		delete out.oidcAutoCreate;
 		delete out.proxyAuthHeader;
 		delete out.outboundProxyHost;
@@ -1657,6 +1666,7 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 		out.oidcIssuer = String(s.oidcIssuer || "");
 		out.oidcClientId = String(s.oidcClientId || "");
 		out.oidcScope = normalizeScope(s.oidcScope);
+		out.oidcGroupFilter = String(s.oidcGroupFilter || "");
 		out.oidcAutoCreate = Boolean(s.oidcAutoCreate);
 		out.ldapHost = String(s.ldapHost || "");
 		out.ldapPort = Number(s.ldapPort) || (s.ldapTls === false ? 389 : 636);
@@ -2335,6 +2345,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 	oidcClientId: z.string().max(120),
 	oidcClientSecret: z.string().max(200).optional(),
 	oidcScope: z.string().max(OIDC_SCOPE_MAX).optional(),
+	oidcGroupFilter: z.string().max(GROUP_FILTER_MAX).optional(),
 	oidcLabel: z.string().max(40).optional(),
 	oidcAutoCreate: z.boolean().optional(),
 	oidcAutoRedirect: z.boolean().optional(),
@@ -2360,6 +2371,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 		oidcClientId: clientId.slice(0, 120),
 		oidcClientSecret: fromEnv ? "" : secret,
 		oidcScope: normalizeScope(typeof data.oidcScope === "string" ? data.oidcScope : doc.settings.oidcScope),
+		oidcGroupFilter: String(typeof data.oidcGroupFilter === "string" ? data.oidcGroupFilter : doc.settings.oidcGroupFilter || "").trim().slice(0, GROUP_FILTER_MAX),
 		oidcLabel: String(data.oidcLabel || "SSO").trim().slice(0, 40) || "SSO",
 		oidcAutoCreate: Boolean(data.oidcAutoCreate),
 		oidcAutoRedirect: Boolean(data.oidcAutoRedirect)

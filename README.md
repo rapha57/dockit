@@ -238,6 +238,10 @@ Local login always remains available, even when LDAP or OIDC is configured.
 
 OIDC (OpenID Connect) lets people sign in with an identity provider such as Entra, Authentik, Keycloak or Pocket ID. Dockit talks to the issuer for login; after that, groups claimed by the IdP can be given Dockit roles under **Access → Groups**. Configure the client under **Access → Identity Provider**.
 
+Groups only arrive if the issuer is asked for them: add `groups` to **Scopes**, which otherwise requests `openid profile email`. Providers such as Pocket ID, Authentik and Keycloak omit the claim until it is requested, so group roles silently do nothing without it.
+
+Every claimed group is then mirrored, which on a large directory is more than you want. Narrow it with **Group filter**: comma-separated patterns, `*` as the only wildcard, matched case-insensitively. Empty mirrors everything.
+
 ## LDAP / AD bind secrets
 
 There are two ways to configure LDAP and OIDC secrets. Neither is mandatory.
