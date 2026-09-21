@@ -4,8 +4,7 @@ export const CSS_MAX = 24e3;
 export function sanitizeThemeCss(raw: string): string {
 	return String(raw ?? "")
 		.slice(0, CSS_MAX)
-		.replace(/<\/style/gi, "")
-		.replace(/<script/gi, "")
+		.replace(/</g, "")
 		.replace(/@import\b/gi, "/* @import */")
 		.replace(/url\s*\(/gi, "/* url( */")
 		.replace(/expression\s*\(/gi, "/* expression( */")

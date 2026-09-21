@@ -1750,7 +1750,7 @@ export function parseThemeCss(css: string, fallback: ThemeColors) {
     ...fallback,
   };
   for (const field of THEME_COLOR_FIELDS) {
-    const re = new RegExp(`${field.cssVar.replace(/-/g, "\\-")}\\s*:\\s*(#[0-9a-fA-F]{3,8})`, "g");
+    const re = new RegExp(`${field.cssVar.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*(#[0-9a-fA-F]{3,8})`, "g");
     let match;
     let last = null;
     while ((match = re.exec(css))) last = match[1];

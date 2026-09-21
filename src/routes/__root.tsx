@@ -22,6 +22,12 @@ function RootShell() {
     <html lang="en" className="light" suppressHydrationWarning>
       <head>
         <ThemeScript />
+        <style
+          dangerouslySetInnerHTML={{
+            __html:
+              "html,body{margin:0;background:#fcfcfd;color:#050505}html.dark,html.dark body{background:#0e1116;color:#e2e6ec}",
+          }}
+        />
         <HeadContent />
       </head>
       <body className="min-h-dvh text-fg antialiased">
