@@ -28,6 +28,7 @@ export function OidcForm({
   const [oidcClientId, setOidcClientId] = useState(initial.oidcClientId || "");
   const [oidcClientSecret, setOidcClientSecret] = useState("");
   const [oidcScope, setOidcScope] = useState(initial.oidcScope || DEFAULT_OIDC_SCOPE);
+  const [oidcGroupFilter, setOidcGroupFilter] = useState(initial.oidcGroupFilter || "");
   const [oidcLabel, setOidcLabel] = useState(initial.oidcLabel || t("oidc.defaultLabel"));
   const [oidcAutoCreate, setOidcAutoCreate] = useState(Boolean(initial.oidcAutoCreate));
   const [oidcAutoRedirect, setOidcAutoRedirect] = useState(Boolean(initial.oidcAutoRedirect));
@@ -45,6 +46,7 @@ export function OidcForm({
           oidcClientId: oidcClientId.trim(),
           oidcClientSecret,
           oidcScope: oidcScope.trim(),
+          oidcGroupFilter: oidcGroupFilter.trim(),
           oidcLabel: oidcLabel.trim() || t("oidc.defaultLabel"),
           oidcAutoCreate,
           oidcAutoRedirect,
@@ -129,6 +131,13 @@ export function OidcForm({
             value={oidcScope}
             onChange={(e) => setOidcScope(e.target.value)}
             placeholder={DEFAULT_OIDC_SCOPE}
+          />
+        </Field>
+        <Field label={t("oidc.groupFilter")} hint={t("oidc.groupFilterHint")}>
+          <Input
+            value={oidcGroupFilter}
+            onChange={(e) => setOidcGroupFilter(e.target.value)}
+            placeholder={t("oidc.groupFilterPlaceholder")}
           />
         </Field>
       </div>
