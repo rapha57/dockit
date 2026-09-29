@@ -1803,6 +1803,7 @@ function Home() {
               onOpenFavs={setOpenFavs}
               onResetLocal={resetLocalPrefs}
               onLogout={logoutEdit}
+              onExportBookmarks={() => setModal({ kind: "bookmarks" })}
             />
             {editMode ? (
               <Button

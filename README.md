@@ -92,6 +92,7 @@ Dockit doesn't replace your existing tools. It sits in front of them:
 | **Access control** | Users, groups, roles and grants |
 | **History** | Audit changes and restore previous versions |
 | **Reports** | Export audit and inventory data as CSV / PDF |
+| **Bookmarks** | Export the links you can see as HTML, then import them in Chrome, Edge or Firefox |
 | **Authentication** | Local accounts, LDAP / Active Directory and OIDC |
 | **Customisation** | Light / dark mode, logo, favicon and tags |
 | **Import / export** | Export or restore the whole portal, or a single space |
@@ -390,8 +391,11 @@ Dockit can export:
 - an individual space
 - inventory data
 - audit data
+- bookmarks as HTML
 
 Exports can be used for backups, migrations or moving a space between environments.
+
+**Export bookmarks** (account menu) downloads a Netscape HTML file of the links you are allowed to see — spaces, categories and cards, with the same access control as the portal. Pick what to include, then import the file in Chrome, Edge or Firefox. Notes and embeds without a URL are skipped. This is not a portal backup: CSV / PDF inventories and JSON export stay under Settings.
 
 ## Stack
 

@@ -8,6 +8,7 @@ import { LegendPanel, StatsPanel } from "@/components/stats";
 import { AdminPanel } from "@/components/settings-panel";
 import { LockForm } from "@/components/auth-panel";
 import { AccessFrame } from "@/components/access-frame";
+import { BookmarksExport } from "@/components/bookmarks-export";
 import { ItemForm, CardForm, FavsForm } from "@/components/editors";
 import { MovePickDialog, MoveSectionDialog } from "@/components/access";
 import { itemKind } from "@/lib/item-kind";
@@ -137,6 +138,7 @@ export function PortalOverlays({
         modal.kind === "space" ||
         modal.kind === "category"
       }
+      padded={modal.kind !== "bookmarks"}
       onClose={() => {
         if (lockForced) return;
         setBusy(false);
@@ -560,6 +562,13 @@ export function PortalOverlays({
                   }),
             )
           }
+        />
+      )}
+      {modal.kind === "bookmarks" && (
+        <BookmarksExport
+          catalog={data.catalog}
+          title={data.settings.title}
+          onClose={close}
         />
       )}
       {modal.kind === "favs" && (

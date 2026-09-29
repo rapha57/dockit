@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Bookmark,
   CircleUser,
   History,
   LogIn,
@@ -63,6 +64,7 @@ export function AccountMenu({
   onResetLocal,
   onLogout,
   isOwner,
+  onExportBookmarks,
 }: {
   loggedIn: boolean;
   editMode: boolean;
@@ -84,6 +86,7 @@ export function AccountMenu({
   onOpenFavs: (on: boolean) => void;
   onResetLocal: () => void;
   onLogout: () => void;
+  onExportBookmarks?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -178,7 +181,20 @@ export function AccountMenu({
               {t("account.edit")}
             </button>
           ) : null}
-          {showEdit && showInstance ? <div className="menu-sep" /> : null}
+          {onExportBookmarks ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onExportBookmarks();
+              }}
+            >
+              <Bookmark className="size-4 shrink-0" />
+              {t("account.exportBookmarks")}
+            </button>
+          ) : null}
+          {(showEdit || onExportBookmarks) && showInstance ? <div className="menu-sep" /> : null}
           {showInstance ? <p className="menu-kicker">{t("account.instance")}</p> : null}
           {showSettings ? (
             <button
