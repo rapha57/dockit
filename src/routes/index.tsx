@@ -53,8 +53,8 @@ import {
   arrangeCategory,
   cardsAlphaDir,
 } from "@/lib/portal";
+import { usePortalProbes } from "@/lib/use-portal-probes";
 import { probeTargets } from "@/lib/probe";
-import type { ProbeResult } from "@/lib/probe";
 import { DEFAULT_UI_PREFS, clearUiPrefs, readUiPrefs, writeUiPrefs } from "@/lib/ui-prefs";
 import { t, te, asLocale, applyDisplayPrefs, modKeyLabel } from "@/lib/i18n";
 import type {
@@ -268,8 +268,7 @@ function Home() {
   );
   const [ui, setUi] = useState(DEFAULT_UI_PREFS);
   const [page, setPage] = useState("space");
-  const [health, setHealth] = useState<Record<string, ProbeResult>>({});
-  const healthBusy = useRef(false);
+  const { health, setHealth } = usePortalProbes(data, token);
   const [spaceOverflow, setSpaceOverflow] = useState<string[]>([]);
   const [moreOpen, setMoreOpen] = useState(false);
   const dataRef = useRef(data);
@@ -1167,90 +1166,6 @@ function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- settings-only fields used; catalog/favSet/ui.favIds cover the rest
   }, [data.catalog, favSet, ui.favIds]);
   const favCount = favGroups.reduce((n, g) => n + g.cards.length, 0);
-  const probeList = useMemo(() => {
-    if (data.settings.healthChecks === false) return [];
-    const out = [];
-    for (const space of data.catalog ?? [])
-      for (const cat of space.categories)
-        for (const app of cat.cards) {
-          if ((app.kind || "app") !== "app" || app.check === "off" || !app.check) continue;
-          if (app.check === "http")
-            out.push({
-              id: app.id,
-              mode: "http",
-              url: app.url,
-            });
-          else if (app.check === "icmp")
-            out.push({
-              id: app.id,
-              mode: "icmp",
-              host: app.checkHost,
-            });
-        }
-    return out;
-  }, [data.catalog, data.settings.healthChecks]);
-  const probeKey = probeList
-    .map((t) => `${t.id}:${t.mode}:${t.url ?? ""}:${t.host ?? ""}`)
-    .join("|");
-  useEffect(() => {
-    if (!probeList.length) {
-      setHealth({});
-      return;
-    }
-    let cancelled = false;
-    async function run() {
-      if (healthBusy.current) return;
-      healthBusy.current = true;
-      try {
-        const chunkSize = 4;
-        for (let i = 0; i < probeList.length; i += chunkSize) {
-          if (cancelled) return;
-          const chunk = probeList.slice(i, i + chunkSize);
-          try {
-            const rows = await probeTargets({
-              data: {
-                token: token || undefined,
-                ids: chunk.map((t) => t.id),
-              },
-            });
-            if (cancelled) return;
-            setHealth((cur) => {
-              const next = {
-                ...cur,
-              };
-              for (const row of rows) next[row.id] = row;
-              return next;
-            });
-          } catch {
-            // ignore
-          }
-        }
-      } finally {
-        healthBusy.current = false;
-      }
-    }
-    let idleId = 0;
-    const kick = () => {
-      if (cancelled) return;
-      run();
-    };
-    if (typeof requestIdleCallback === "function")
-      idleId = requestIdleCallback(kick, {
-        timeout: 800,
-      });
-    else idleId = window.setTimeout(kick, 280);
-    const timer = window.setInterval(() => {
-      if (document.hidden) return;
-      run();
-    }, 6e4);
-    return () => {
-      cancelled = true;
-      if (typeof cancelIdleCallback === "function") cancelIdleCallback(idleId);
-      window.clearTimeout(idleId);
-      window.clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- probe run keyed on probeKey, not the array identity
-  }, [probeKey, token]);
   const filtered = useMemo(() => {
     if (searching) return searchHits.flatMap((space) => space.categories);
     return data.categories;

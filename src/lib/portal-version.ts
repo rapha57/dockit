@@ -1,4 +1,4 @@
-export const PORTAL_VERSION = "2026.10.08.1";
+export const PORTAL_VERSION = "2026.10.08.2";
 
 function versionParts(raw: unknown) {
   return String(raw || "")
