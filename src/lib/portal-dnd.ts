@@ -141,7 +141,45 @@ export function itemMatches(app: PortalCard, needle: string, tags: string[], dow
 		if (!required.every((tag) => have.has(tag.toLowerCase()))) return false;
 	}
 	if (!extra) return true;
-	return `${app.title} ${app.description} ${app.url} ${app.tags.join(" ")} ${app.kind}`
+	const extras = (app.links ?? []).map((row) => `${row.title ?? ""} ${row.url ?? ""}`).join(" ");
+	return `${app.title} ${app.description} ${app.url ?? ""} ${extras} ${app.tags.join(" ")} ${app.kind}`
 		.toLowerCase()
 		.includes(extra);
+}
+
+export type SearchJump = {
+	spaceId: string;
+	spaceName: string;
+	catName: string;
+	cardId: string;
+	title: string;
+	url: string;
+	path: string;
+};
+
+export function searchJumps(
+	hits: { id: string; name: string; categories: { name: string; cards: PortalCard[] }[] }[],
+	limit = 8,
+): SearchJump[] {
+	const out: SearchJump[] = [];
+	for (const space of hits) {
+		for (const cat of space.categories) {
+			for (const card of cat.cards) {
+				const url = String(
+					(card.kind || "app") === "embed" ? card.url || "" : card.links?.[0]?.url || card.url || "",
+				).trim();
+				out.push({
+					spaceId: space.id,
+					spaceName: space.name,
+					catName: cat.name,
+					cardId: card.id,
+					title: card.title || "",
+					url,
+					path: `${space.name} / ${cat.name}`,
+				});
+				if (out.length >= limit) return out;
+			}
+		}
+	}
+	return out;
 }

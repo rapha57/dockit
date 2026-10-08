@@ -29,6 +29,8 @@ import {
   catIsFolded,
   editArmed,
   itemMatches,
+  searchJumps,
+  type SearchJump,
   lockSelection,
   writeEditMode,
 } from "@/lib/portal-dnd";
@@ -54,6 +56,7 @@ import {
   cardsAlphaDir,
 } from "@/lib/portal";
 import { usePortalProbes } from "@/lib/use-portal-probes";
+import { safeAppHref } from "@/lib/safe-href";
 import { probeTargets } from "@/lib/probe";
 import { DEFAULT_UI_PREFS, clearUiPrefs, readUiPrefs, writeUiPrefs } from "@/lib/ui-prefs";
 import { t, te, asLocale, applyDisplayPrefs, modKeyLabel } from "@/lib/i18n";
@@ -889,6 +892,22 @@ function Home() {
       return next;
     });
   }
+  function jumpTo(row: SearchJump) {
+    void switchSpace(row.spaceId);
+    setQuery("");
+    setTagHi(0);
+    const href = safeAppHref(row.url);
+    if (!href) return;
+    window.open(href, "_blank", "noopener,noreferrer");
+    for (const space of dataRef.current.catalog ?? [])
+      for (const cat of space.categories) {
+        const app = cat.cards.find((a) => a.id === row.cardId);
+        if (app) {
+          bumpClick(app);
+          return;
+        }
+      }
+  }
   function bumpClick(app: PortalCard) {
     if ((app.kind || "app") !== "app") return;
     setData((cur) => {
@@ -1125,6 +1144,10 @@ function Home() {
       })
       .filter((t) => t.categories.length > 0);
   }, [data.catalog, query, tagFilter, downFilter, downIds]);
+  const jumpHits = useMemo(
+    () => (query.trim() ? searchJumps(searchHits, 8) : []),
+    [query, searchHits],
+  );
   const allTags = useMemo(
     () => collectTags(data.catalog, data.settings.tagColors, data.settings.tagsAlpha !== false),
     [data.catalog, data.settings.tagColors, data.settings.tagsAlpha],
@@ -1660,19 +1683,22 @@ function Home() {
                 setTagHi(0);
               }}
               onKeyDown={(e) => {
-                if (e.key === "ArrowDown" && tagMatches.length) {
+                const n = tagMatches.length + jumpHits.length;
+                if (e.key === "ArrowDown" && n) {
                   e.preventDefault();
-                  setTagHi((i) => (i + 1) % tagMatches.length);
+                  setTagHi((i) => (i + 1) % n);
                   return;
                 }
-                if (e.key === "ArrowUp" && tagMatches.length) {
+                if (e.key === "ArrowUp" && n) {
                   e.preventDefault();
-                  setTagHi((i) => (i - 1 + tagMatches.length) % tagMatches.length);
+                  setTagHi((i) => (i - 1 + n) % n);
                   return;
                 }
-                if (e.key === "Enter" && tagMatches.length) {
+                if (e.key === "Enter" && n) {
                   e.preventDefault();
-                  applyTagFromSearch(tagMatches[tagHi % tagMatches.length].name);
+                  const i = tagHi % n;
+                  if (i < tagMatches.length) applyTagFromSearch(tagMatches[i].name);
+                  else jumpTo(jumpHits[i - tagMatches.length]);
                   return;
                 }
                 if (e.key === "Escape" && (query || tagFilter.length || downFilter)) {
@@ -1690,29 +1716,51 @@ function Home() {
               autoComplete="off"
               role="combobox"
               aria-autocomplete="list"
-              aria-expanded={tagMatches.length > 0}
+              aria-expanded={tagMatches.length + jumpHits.length > 0}
             />
-            {tagMatches.length > 0 ? (
+            {tagMatches.length + jumpHits.length > 0 ? (
               <div className="search-suggest" role="listbox">
-                {tagMatches.map((t, i) => {
-                  const paint = tagPaint(t.name, data.settings.tagColors);
-                  const hi = tagMatches.length ? tagHi % tagMatches.length : 0;
+                {tagMatches.map((row, i) => {
+                  const paint = tagPaint(row.name, data.settings.tagColors);
+                  const hi = tagHi % (tagMatches.length + jumpHits.length);
                   return (
                     <button
-                      key={t.name}
+                      key={`tag:${row.name}`}
                       type="button"
                       role="option"
                       aria-selected={i === hi}
                       className={i === hi ? "is-hi" : ""}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        applyTagFromSearch(t.name);
+                        applyTagFromSearch(row.name);
                       }}
                     >
                       <span data-tone={paint.tone} style={paint.style} className="tag-chip">
-                        {t.name}
+                        {row.name}
                       </span>
-                      <span className="text-xs text-muted">{t.count}</span>
+                      <span className="text-xs text-muted">{row.count}</span>
+                    </button>
+                  );
+                })}
+                {jumpHits.map((row, j) => {
+                  const i = tagMatches.length + j;
+                  const hi = tagHi % (tagMatches.length + jumpHits.length);
+                  return (
+                    <button
+                      key={`jump:${row.cardId}`}
+                      type="button"
+                      role="option"
+                      aria-selected={i === hi}
+                      className={i === hi ? "is-hi" : ""}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        jumpTo(row);
+                      }}
+                    >
+                      <span className="min-w-0 truncate">
+                        {row.title}
+                        <span className="am-dim"> · {row.path}</span>
+                      </span>
                     </button>
                   );
                 })}
