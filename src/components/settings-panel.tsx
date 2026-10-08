@@ -123,6 +123,7 @@ export function AdminPanel({
   onSaveTheme,
   onResetPortal,
   onImportPortal,
+  onImportBookmarks,
   clickStats,
   registerGuard,
 }: {
@@ -146,6 +147,7 @@ export function AdminPanel({
   onSaveTheme: (payload: { cssLight: string; cssDark: string }, opts?: SaveOpts) => Promise<void> | void;
   onResetPortal: () => void;
   onImportPortal: (payload: unknown) => void;
+  onImportBookmarks: (html: string) => void;
   registerGuard: (guard: { dirty: () => boolean; prompt: () => void }) => void;
 }) {
   const sections = settingsSections().filter((s) => {
@@ -367,6 +369,7 @@ export function AdminPanel({
               catalog={catalog}
               title={settings.title}
               onImport={onImportPortal}
+              onImportBookmarks={onImportBookmarks}
             />
           </EdgeFade>
         ) : tab === "reset" && session?.canManageSettings ? (
@@ -933,12 +936,14 @@ export function BackupForm({
   catalog,
   title,
   onImport,
+  onImportBookmarks,
 }: {
   token: string;
   busy: boolean;
   catalog: CatalogSpace[];
   title: string;
   onImport: (payload: unknown) => void;
+  onImportBookmarks: (html: string) => void;
 }) {
   const [pending, setPending] = useState(false);
   const working = busy || pending;
@@ -992,6 +997,29 @@ export function BackupForm({
         throw new Error("errors.badBackup");
       }
       await onImport(payload);
+    } catch (err) {
+      toast.error(te(err));
+    } finally {
+      setPending(false);
+    }
+  }
+  async function doImportBookmarks(file: File) {
+    if (!file) return;
+    if (file.size > 2e6) {
+      toast.error(t("backup.fileTooBig"));
+      return;
+    }
+    if (
+      !(await askConfirm({
+        title: t("actions.importHtml"),
+        body: t("confirm.importBookmarks"),
+        okLabel: t("actions.importHtml"),
+      }))
+    )
+      return;
+    setPending(true);
+    try {
+      onImportBookmarks(await file.text());
     } catch (err) {
       toast.error(te(err));
     } finally {
@@ -1061,6 +1089,27 @@ export function BackupForm({
                 const file = e.target.files?.[0];
                 e.target.value = "";
                 if (file) void doImport(file);
+              }}
+            />
+          </label>
+        </div>
+      </div>
+      <div className="settings-card">
+        <p className="settings-kicker">{t("backup.bookmarks")}</p>
+        <p className="settings-hint">{t("backup.bookmarksHint")}</p>
+        <div className="settings-actions is-start">
+          <label className={`settings-file ${working ? "is-disabled" : ""}`}>
+            <Upload className="size-3.5" />
+            {t("actions.importHtml")}
+            <input
+              type="file"
+              accept="text/html,.html,.htm"
+              className="hidden"
+              disabled={working}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void doImportBookmarks(file);
               }}
             />
           </label>

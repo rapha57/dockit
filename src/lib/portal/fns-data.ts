@@ -8,6 +8,7 @@ import { curationJobRunning, curationJobSnapshot, curationJobStop, curationScanA
 import { newId } from "../id";
 import { safeAppHref, safeEmbedHref } from "../safe-href";
 import { z } from "zod";
+import { parseNetscapeBookmarks } from "../bookmarks-html";
 import { CustomIcon, Doc, DocSpace, HydratedUser, ItemKind, PortalCard, asCheck, asCheckHost, asStore, cardOf, cardUrl, catCanSee, emit, ensureRoles, ensureUsers, historyVisible, mutate, normalizeItem, readDoc, readDocUnlocked, requireAdmin, requireCreateSpace, requireEdit, requireUser, spaceCanSee, toDisk, tok, unwrapBackup, tokenField, tt, withLock, writeDocUnlocked } from "./core";
 
 export const exportPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
@@ -186,6 +187,63 @@ export const importSpace = createServerFn({ method: "POST" }).middleware([attach
 	const ids = ordered.map((row) => row.id).filter((id) => id !== spaceId);
 	const at = data.afterId ? ids.indexOf(data.afterId) : -1;
 	ids.splice(at < 0 ? ids.length : at + 1, 0, spaceId);
+	ids.forEach((id, i) => {
+		const row = doc.spaces.find((s) => s.id === id);
+		if (row) row.sortOrder = i + 1;
+	});
+	appendHistory(doc, user, {
+		type: "space.import",
+		label: name,
+		snapshot: { space: snapshotSpace(space) }
+	});
+	return emit(doc, user, spaceId);
+}));
+export const importBookmarks = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
+	token: tokenField,
+	html: z.string().min(20).max(2e6)
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+	const user = requireCreateSpace(doc, tok(data, request));
+	const parsed = parseNetscapeBookmarks(data.html);
+	if (!parsed) throw new Error("errors.badBackup");
+	const spaceId = newId();
+	const name = parsed.spaceName.slice(0, 40) || tt(doc, "nav.space");
+	const space: DocSpace = {
+		id: spaceId,
+		name,
+		icon: "Layers",
+		sortOrder: 0,
+		restricted: false,
+		viewers: [],
+		editors: [],
+		hideLabel: false,
+		categories: parsed.categories.map((c, ci) => {
+			const catId = newId();
+			return {
+				id: catId,
+				name: c.name.slice(0, 60) || tt(doc, "seed.category"),
+				icon: "AppWindow",
+				sortOrder: ci + 1,
+				restricted: false,
+				viewers: [] as string[],
+				editors: [] as string[],
+				cards: c.cards.map((card, ai) => normalizeItem({
+					kind: "app",
+					title: card.title,
+					url: card.url,
+					icon: "Link",
+					clicks: 0
+				}, catId, ai + 1))
+			};
+		})
+	};
+	if (!isOwnerUser(user)) {
+		const live = doc.users.find((u) => u.id === user.id);
+		if (live) live.grants = mergeGrant(asGrants(live.grants), { res: "space", id: spaceId, allow: ["view", "open", "edit", "create", "delete", "move"] });
+	}
+	doc.spaces.push(space);
+	const ordered = [...doc.spaces].sort((a, b) => a.sortOrder - b.sortOrder);
+	const ids = ordered.map((row) => row.id).filter((id) => id !== spaceId);
+	ids.push(spaceId);
 	ids.forEach((id, i) => {
 		const row = doc.spaces.find((s) => s.id === id);
 		if (row) row.sortOrder = i + 1;

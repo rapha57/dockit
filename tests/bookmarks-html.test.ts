@@ -6,6 +6,7 @@ import {
 	checkState,
 	escapeHtml,
 	hasBookmarkLinks,
+	parseNetscapeBookmarks,
 	toggleIds,
 } from "@/lib/bookmarks-html";
 
@@ -186,6 +187,50 @@ describe("bookmarksHtml", () => {
 		expect(html).not.toContain("Grafana");
 		expect(html).not.toContain("Monitoring");
 		expect(html).not.toContain("Status");
+	});
+});
+
+describe("parseNetscapeBookmarks", () => {
+	it("round-trips a Netscape file into space / categories / cards", () => {
+		const tree = bookmarkTree([
+			{
+				id: "infra",
+				name: "Infra",
+				categories: [
+					{
+						id: "mon",
+						name: "Monitoring",
+						cards: [
+							{
+								id: "graf",
+								kind: "app",
+								title: "Grafana",
+								links: [{ title: "", url: "https://grafana.example" }],
+							},
+						],
+					},
+				],
+			},
+		]);
+		const html = bookmarksHtml(tree, new Set(allLinkIds(tree)), "Dockit");
+		const parsed = parseNetscapeBookmarks(html);
+		expect(parsed?.spaceName).toBe("Bookmarks");
+		expect(parsed?.categories.map((c) => c.name)).toContain("Monitoring");
+		expect(parsed?.categories.flatMap((c) => c.cards).map((c) => c.url)).toContain("https://grafana.example");
+	});
+
+	it("skips javascript URLs and empty files", () => {
+		expect(parseNetscapeBookmarks("<html></html>")).toBeNull();
+		const parsed = parseNetscapeBookmarks(`<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<H1>Bookmarks</H1>
+<DL><p>
+<DT><H3>Misc</H3>
+<DL><p>
+<DT><A HREF="javascript:alert(1)">X</A>
+<DT><A HREF="https://ok.example">Ok</A>
+</DL><p>
+</DL><p>`);
+		expect(parsed?.categories[0].cards).toEqual([{ title: "Ok", url: "https://ok.example" }]);
 	});
 });
 

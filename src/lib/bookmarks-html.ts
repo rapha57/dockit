@@ -186,6 +186,53 @@ function linkLine(link: BookmarkLink, depth: number): string {
 	return `${pad(depth)}<DT><A HREF="${escapeHtml(link.url)}">${escapeHtml(link.title)}</A>\n`;
 }
 
+function decodeEntities(value: string): string {
+	return value
+		.replace(/&quot;/g, '"')
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&amp;/g, "&")
+		.replace(/<\/?[^>]+>/g, "")
+		.trim();
+}
+
+export type ParsedBookmarkCard = { title: string; url: string };
+export type ParsedBookmarkCategory = { name: string; cards: ParsedBookmarkCard[] };
+export type ParsedBookmarkSpace = { spaceName: string; categories: ParsedBookmarkCategory[] };
+
+export function parseNetscapeBookmarks(html: string): ParsedBookmarkSpace | null {
+	const raw = String(html || "");
+	if (!/NETSCAPE-Bookmark-file-1|<DT>\s*<A\s/i.test(raw)) return null;
+	const h1 = raw.match(/<H1[^>]*>([\s\S]*?)<\/H1>/i);
+	const spaceName = decodeEntities(h1?.[1] || "") || "Bookmarks";
+	const categories: ParsedBookmarkCategory[] = [];
+	let current: ParsedBookmarkCategory | null = null;
+	const token = /<DT>\s*(?:<H3[^>]*>([\s\S]*?)<\/H3>|<A\s+[^>]*HREF\s*=\s*"([^"]*)"[^>]*>([\s\S]*?)<\/A>)/gi;
+	let m: RegExpExecArray | null;
+	while ((m = token.exec(raw))) {
+		if (m[1] != null) {
+			const name = decodeEntities(m[1]);
+			if (!name) continue;
+			current = { name, cards: [] };
+			categories.push(current);
+			continue;
+		}
+		const url = safeAppHref(decodeEntities(m[2] || ""));
+		if (!url) continue;
+		if (!current) {
+			current = { name: spaceName, cards: [] };
+			categories.push(current);
+		}
+		current.cards.push({
+			title: decodeEntities(m[3] || "") || url,
+			url,
+		});
+	}
+	const kept = categories.filter((cat) => cat.cards.length);
+	if (!kept.length) return null;
+	return { spaceName, categories: kept };
+}
+
 export function bookmarksHtml(
 	tree: BookmarkSpace[],
 	selected: ReadonlySet<string>,

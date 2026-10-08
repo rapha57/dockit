@@ -24,6 +24,7 @@ import {
   deleteCategory,
   deleteSpace,
   getPortal,
+  importBookmarks,
   importPortal,
   importSpace,
   manageTags,
@@ -511,6 +512,15 @@ export function PortalOverlays({
               });
               if (next.clickStats) setClickStats(next.clickStats);
               toast.success(t("toast.imported"));
+              return next;
+            })
+          }
+          onImportBookmarks={(html) =>
+            apply(async () => {
+              const next = await importBookmarks({
+                data: { token, html },
+              });
+              toast.success(t("toast.bookmarksImported"));
               return next;
             })
           }

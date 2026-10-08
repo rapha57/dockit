@@ -134,6 +134,7 @@
     "changeKind": "Changing type resets the fields — All changes will be lost.",
     "emptyTrash": "Empty the trash? Items can no longer be restored. The audit log is kept.",
     "importPortal": "Replace the whole portal with this file? Spaces, cards, themes, tags, statistics, accounts and the journal will be overwritten.",
+    "importBookmarks": "Import this HTML file as a new space? Existing spaces stay in place.",
     "importSpace": "Create a new space from this file? The current space is not replaced.",
     "hubLastLink": "Removing this link turns off the link hub.",
     "deleteSpaceBody": "“{name}” and all of its content will be removed."
@@ -157,6 +158,7 @@
     "exportHtml": "Export HTML",
     "exportJson": "Export JSON",
     "importJson": "Import JSON",
+    "importHtml": "Import HTML",
     "addLink": "Add a link",
     "addCard": "Add a card",
     "addSpace": "Add a space",
@@ -505,6 +507,8 @@
     "downloaded": "Backup downloaded",
     "csvDownloaded": "CSV inventory downloaded",
     "pdfDownloaded": "PDF inventory downloaded",
+    "bookmarks": "Browser bookmarks",
+    "bookmarksHint": "Netscape HTML from Chrome, Edge or Firefox. Creates a new space; it does not replace the portal.",
     "fileTooBig": "File too large (max 5 MB)",
     "badJson": "Unreadable JSON file"
   },
@@ -538,6 +542,7 @@
     "themesSaved": "Themes saved",
     "portalReset": "Portal reset",
     "imported": "Backup imported",
+    "bookmarksImported": "Bookmarks imported as a new space",
     "spaceExported": "Space downloaded",
     "spaceImported": "Space imported",
     "maxTags": "Three tags maximum",
