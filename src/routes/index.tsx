@@ -36,6 +36,7 @@ import { usePortalDrag } from "@/lib/use-portal-drag";
 import { collectTags, fold, tagPaint } from "@/lib/tag-ui";
 import { cardResizeEdge, finePointer } from "@/lib/card-resize";
 import { sessionGone } from "@/lib/session-gone";
+import { isConflict, noteDocRev } from "@/lib/doc-rev";
 import { PORTAL_VERSION } from "@/lib/portal-version";
 import type { MenuSpace, PortalData } from "@/lib/portal-ui";
 import { DockitMark } from "@/lib/icons";
@@ -225,6 +226,9 @@ function sessionCanCreateSpaces(session: SessionInfo | null | undefined): boolea
 function Home() {
   const initial: PortalData = Route.useLoaderData();
   const [data, setData] = useState<PortalData>(initial);
+  useEffect(() => {
+    noteDocRev(data);
+  }, [data]);
   applyDisplayPrefs(data.settings);
   const [editMode, setEditMode] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -613,8 +617,27 @@ function Home() {
   }
   useEffect(() => {
     const onGone = () => expireSession();
+    const onConflict = () => {
+      getPortal({
+        data: {
+          spaceId: dataRef.current.activeSpaceId,
+          token: tokenRef.current,
+        },
+      })
+        .then((next) => {
+          setData(next);
+          setModal({ kind: "none" });
+        })
+        .catch((err) => {
+          if (!sessionGone(err)) toast.error(te(err));
+        });
+    };
     window.addEventListener("portal-session-gone", onGone);
-    return () => window.removeEventListener("portal-session-gone", onGone);
+    window.addEventListener("portal-doc-conflict", onConflict);
+    return () => {
+      window.removeEventListener("portal-session-gone", onGone);
+      window.removeEventListener("portal-doc-conflict", onConflict);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- event-listener-only effect; expireSession is stable per render
   }, []);
   useEffect(() => {
@@ -681,6 +704,7 @@ function Home() {
     } catch (err) {
       if (sessionGone(err)) return;
       toast.error(te(err));
+      isConflict(err);
     } finally {
       setBusy(false);
     }

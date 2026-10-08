@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { asDocRev, assertWritableRev, attachDocRev, bumpDocRev, takeExpectedRev } from "./doc-rev";
 import { z } from "zod";
 import { randomBytes, scryptSync } from "node:crypto";
 import { newId } from "./id";
@@ -275,6 +276,7 @@ export type Doc = Omit<AclDoc, "spaces" | "users" | "groups" | "roles" | "histor
   roles: Role[];
   history: HistoryEvent[];
   spaces: DocSpace[];
+  rev: number;
 };
 
 const SESSION_MS = 432e5;
@@ -608,7 +610,8 @@ function defaultStore(): Doc {
 		groups: [],
 		roles: defaultRoles(),
 		history: [],
-		spaces: blank.spaces
+		spaces: blank.spaces,
+		rev: 0
 	};
 }
 function assignTagColors(doc: Doc, tags: unknown, extras: unknown) {
@@ -1193,7 +1196,8 @@ function directoryPayload(doc: Doc, actor: User) {
 		groups: doc.groups.map((g) => publicGroup(g, doc)),
 		roles: doc.roles.map((r) => publicRole(r, doc)),
 		spaces: manageSpaces(doc),
-		directory: directoryOf(doc)
+		directory: directoryOf(doc),
+		rev: asDocRev(doc.rev)
 	};
 }
 function stripUserAccess(doc: Doc, userId: string) {
@@ -1383,6 +1387,7 @@ function asStore(raw: any): Doc | null {
 		groups: asGroups(doc.groups),
 		roles: asRoles(doc.roles),
 		history: asHistory(doc.history),
+		rev: asDocRev(doc.rev),
 		spaces: spaces.map((t: any, i: number) => ({
 			id: t.id || newId(),
 			name: t.name,
@@ -1550,10 +1555,17 @@ function withLock<T>(fn: () => T | Promise<T>): Promise<T> {
 async function readDoc() {
 	return withLock(readDocUnlocked);
 }
-function mutate<T>(fn: (doc: Doc) => T | Promise<T>): Promise<T> {
+function mutate<T>(
+	data: unknown,
+	request: { headers?: { get?: (k: string) => string | null } } | null | undefined,
+	fn: (doc: Doc) => T | Promise<T>,
+): Promise<T> {
 	return withLock(async () => {
 		const doc = await readDocUnlocked();
+		const payload = data && typeof data === "object" ? (data as { token?: unknown; rev?: unknown }) : undefined;
+		const bump = assertWritableRev(doc, takeExpectedRev(payload, request));
 		const result = await fn(doc);
+		if (bump) bumpDocRev(doc);
 		await writeDocUnlocked(doc);
 		return result;
 	});
@@ -1711,6 +1723,7 @@ function view(doc: Doc, spaceId: string | undefined, user: HydratedUser | null) 
 				publicOrigin: String(process.env.PORTAL_PUBLIC_ORIGIN || "").trim(),
 				trustProxy: trustProxy(),
 			},
+			rev: asDocRev(doc.rev),
 		};
 	}
 	const spaces = publicSpaces(doc, user);
@@ -1750,7 +1763,8 @@ function view(doc: Doc, spaceId: string | undefined, user: HydratedUser | null) 
 			isDev: isDevRuntime(),
 			publicOrigin: String(process.env.PORTAL_PUBLIC_ORIGIN || "").trim(),
 			trustProxy: trustProxy()
-		}
+		},
+		rev: asDocRev(doc.rev)
 	};
 }
 function spaceOfCategory(doc: Doc, categoryId: string): DocSpace {
@@ -1939,7 +1953,7 @@ export const getPortal = createServerFn({ method: "GET" }).validator(z.object({
 	spaceId: z.string().optional(),
 	token: z.string().optional()
 })).handler(async ({ data, request }: any) => loadPortal(data.spaceId, tok(data, request)));
-export const listHistory = createServerFn({ method: "POST" }).validator(z.object({
+export const listHistory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
 })).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
@@ -1957,12 +1971,12 @@ export const listHistory = createServerFn({ method: "POST" }).validator(z.object
 		canRestore: Boolean(user.canRestore)
 	}));
 }));
-export const restoreHistory = createServerFn({ method: "POST" }).validator(z.object({
+export const restoreHistory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1),
 	scope: z.enum(["card", "category", "space"]),
 	targetId: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canRestore) throw new Error("errors.insufficient");
 	const ev = (doc.history || []).find((row) => row.id === data.id);
@@ -1971,9 +1985,9 @@ export const restoreHistory = createServerFn({ method: "POST" }).validator(z.obj
 	pruneUnusedTags(doc);
 	return emit(doc, user, spaceId);
 }));
-export const purgeTrash = createServerFn({ method: "POST" }).validator(z.object({
+export const purgeTrash = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
-})).handler(async ({ data, request }: any) => mutate(async (doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canPurge) throw new Error("errors.insufficient");
 	emptyTrash(doc);
@@ -1985,7 +1999,7 @@ export const purgeTrash = createServerFn({ method: "POST" }).validator(z.object(
 		canEmpty: true
 	}));
 }));
-export const rememberSpace = createServerFn({ method: "POST" }).validator(z.object({
+export const rememberSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	spaceId: z.string().min(1),
 	token: z.string().optional()
 })).handler(async ({ data, request }: any) => withLock(async () => {
@@ -2004,7 +2018,7 @@ export const rememberSpace = createServerFn({ method: "POST" }).validator(z.obje
 	doc.lastSpaceId = data.spaceId;
 	await writeDocUnlocked(doc);
 }));
-export const recordClick = createServerFn({ method: "POST" }).validator(z.object({
+export const recordClick = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	id: z.string().min(1),
 	token: z.string().optional()
 })).handler(async ({ data, request }: any) => withLock(async () => {
@@ -2035,19 +2049,19 @@ export const recordClick = createServerFn({ method: "POST" }).validator(z.object
 		clickStats: clickStatsFor(doc, user)
 	};
 }));
-export const resetClicks = createServerFn({ method: "POST" }).validator(z.object({
+export const resetClicks = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	for (const space of doc.spaces) for (const cat of space.categories) for (const app of cat.cards) if (app.kind === "app") app.clicks = 0;
 	doc.clickDays = {};
 	return emit(doc, user, data.spaceId);
 }));
-export const resetProbes = createServerFn({ method: "POST" }).validator(z.object({
+export const resetProbes = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	for (const space of doc.spaces)
 		for (const cat of space.categories)
@@ -2063,7 +2077,7 @@ export const resetProbes = createServerFn({ method: "POST" }).validator(z.object
 	});
 	return emit(doc, user, data.spaceId);
 }));
-export const resetPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => mutate(async (doc) => {
+export const resetPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
 	requireAdmin(doc, tok(data, request));
 	const fresh = blankSpaces("en");
 	doc.settings = defaultSettings();
@@ -2095,7 +2109,7 @@ export const resetPortal = createServerFn({ method: "POST" }).validator(z.object
 	});
 	return emit(doc, admin);
 }));
-export const updateSettings = createServerFn({ method: "POST" }).validator(z.object({
+export const updateSettings = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	title: z.string().min(1).max(60),
 	subtitle: z.string().max(120),
@@ -2141,7 +2155,7 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	timezone: z.string().max(80).optional(),
 	numberFormat: z.enum(["auto", "space-comma", "comma-dot", "dot-comma", "apostrophe-comma"]).optional(),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
@@ -2208,12 +2222,12 @@ export const updateSettings = createServerFn({ method: "POST" }).validator(z.obj
 	});
 	return emit(doc, user, data.spaceId);
 }));
-export const updateThemeCss = createServerFn({ method: "POST" }).validator(z.object({
+export const updateThemeCss = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	cssLight: z.string().max(CSS_MAX),
 	cssDark: z.string().max(CSS_MAX),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
@@ -2226,7 +2240,7 @@ export const updateThemeCss = createServerFn({ method: "POST" }).validator(z.obj
 	});
 	return emit(doc, user, data.spaceId);
 }));
-export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object({
+export const unlockEdit = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	username: z.string().max(80).optional().default(""),
 	password: z.string().max(PASSWORD_MAX).optional().default(""),
 	domain: z.string().min(1).max(80).optional()
@@ -2254,7 +2268,7 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 			loginFail(key);
 			throw err instanceof Error ? err : new Error("errors.ldapFail");
 		}
-		return mutate(async (doc) => {
+		return mutate(data, (ctx as any).request, async (doc) => {
 			ensureUsers(doc);
 			ensureGroups(doc);
 			const extId = authExternalId("ad", dir.id, username);
@@ -2299,7 +2313,7 @@ export const unlockEdit = createServerFn({ method: "POST" }).validator(z.object(
 			};
 		});
 	}
-	return mutate(async (doc) => {
+	return mutate(data, (ctx as any).request, async (doc) => {
 		ensureUsers(doc);
 		const owner = doc.users.find((u) => isOwnerUser(u));
 		const asOwner = noPass && (!data.username?.trim() || username === "admin" || username === owner?.username);
@@ -2338,7 +2352,7 @@ function pruneOidcPending() {
 		}
 	}
 }
-export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z.object({
+export const updateOidcSettings = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	oidcEnabled: z.boolean(),
 	oidcIssuer: z.string().max(300),
@@ -2350,7 +2364,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 	oidcAutoCreate: z.boolean().optional(),
 	oidcAutoRedirect: z.boolean().optional(),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(async (doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	const issuer = data.oidcIssuer.trim();
 	const clientId = data.oidcClientId.trim();
@@ -2382,7 +2396,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).validator(z
 	});
 	return emit(doc, user, data.spaceId);
 }));
-export const updateLdapSettings = createServerFn({ method: "POST" }).validator(z.object({
+export const updateLdapSettings = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	ldapDirectories: z.array(z.object({
 		id: z.string().min(1).max(80),
@@ -2399,7 +2413,7 @@ export const updateLdapSettings = createServerFn({ method: "POST" }).validator(z
 		autoCreate: z.boolean().optional()
 	})).max(8),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(async (doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	const prev = asDirectories(doc.settings);
 	const prevById = new Map(prev.map((d) => [d.id, d]));
@@ -2452,7 +2466,7 @@ export const updateLdapSettings = createServerFn({ method: "POST" }).validator(z
 	});
 	return emit(doc, user, data.spaceId);
 }));
-export const searchLdapGroups = createServerFn({ method: "POST" }).validator(z.object({
+export const searchLdapGroups = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	directoryId: z.string().min(1).max(80),
 	query: z.string().max(80)
@@ -2487,7 +2501,7 @@ function applyAdGroupMirror(doc: Doc, pairs: { groupId: string; uids: string[] }
 		}
 	}
 }
-export const linkLdapGroups = createServerFn({ method: "POST" }).validator(z.object({
+export const linkLdapGroups = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	directoryId: z.string().min(1).max(80),
 	groups: z.array(z.object({
@@ -2514,7 +2528,7 @@ export const linkLdapGroups = createServerFn({ method: "POST" }).validator(z.obj
 			// annuaire injoignable : le miroir se remplira à la connexion
 		}
 	}
-	return mutate((doc) => {
+	return mutate(data, request, (doc) => {
 		const actor = requireAccountManager(doc, tok(data, request));
 		if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
 		upsertAdGroups(doc, dir, listed);
@@ -2532,7 +2546,7 @@ export const linkLdapGroups = createServerFn({ method: "POST" }).validator(z.obj
 		return directoryPayload(doc, actor);
 	});
 });
-export const syncLdapGroup = createServerFn({ method: "POST" }).validator(z.object({
+export const syncLdapGroup = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	groupId: z.string().min(1)
 })).handler(async ({ data, request }: any) => {
@@ -2551,7 +2565,7 @@ export const syncLdapGroup = createServerFn({ method: "POST" }).validator(z.obje
 	} catch {
 		throw new Error("errors.ldapUnreachable");
 	}
-	return mutate((doc) => {
+	return mutate(data, request, (doc) => {
 		const actor = requireAccountManager(doc, tok(data, request));
 		if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
 		applyAdGroupMirror(doc, [{ groupId: target.id, uids }]);
@@ -2562,11 +2576,11 @@ export const syncLdapGroup = createServerFn({ method: "POST" }).validator(z.obje
 		return directoryPayload(doc, actor);
 	});
 });
-export const updateLoginOrder = createServerFn({ method: "POST" }).validator(z.object({
+export const updateLoginOrder = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	loginOrder: z.array(z.string().min(1).max(80)).min(1).max(16),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
@@ -2578,7 +2592,7 @@ export const updateLoginOrder = createServerFn({ method: "POST" }).validator(z.o
 	});
 	return emit(doc, user, data.spaceId);
 }));
-export const startOidc = createServerFn({ method: "POST" }).validator(z.object({})).handler(async (ctx) => {
+export const startOidc = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({})).handler(async (ctx) => {
 	const doc = await readDoc();
 	const s = doc.settings;
 	if (!s.oidcEnabled || !s.oidcIssuer || !s.oidcClientId) throw new Error("errors.oidcOff");
@@ -2610,7 +2624,7 @@ export const startOidc = createServerFn({ method: "POST" }).validator(z.object({
 		})
 	};
 });
-export const finishOidc = createServerFn({ method: "POST" }).validator(z.object({
+export const finishOidc = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	code: z.string().min(1).max(4000),
 	state: z.string().min(1).max(200)
 })).handler(async (ctx) => {
@@ -2647,7 +2661,7 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 		loginFail(key);
 		throw err instanceof Error ? err : new Error("errors.oidcFail");
 	}
-	return mutate(async (doc) => {
+	return mutate(ctx.data, (ctx as any).request, async (doc) => {
 		const live = doc.settings;
 		if (!live.oidcEnabled || !live.oidcIssuer || !live.oidcClientId) throw new Error("errors.oidcOff");
 		ensureUsers(doc);
@@ -2693,7 +2707,7 @@ export const finishOidc = createServerFn({ method: "POST" }).validator(z.object(
 		};
 	});
 });
-export const proxyLogin = createServerFn({ method: "POST" }).validator(z.object({})).handler(async (ctx) => {
+export const proxyLogin = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({})).handler(async (ctx) => {
 	const doc = await readDoc();
 	const s = doc.settings;
 	if (!s.proxyAuthEnabled || !trustProxy()) throw new Error("errors.proxyOff");
@@ -2717,7 +2731,7 @@ export const proxyLogin = createServerFn({ method: "POST" }).validator(z.object(
 			// try next directory
 		}
 	}
-	return mutate(async (doc) => {
+	return mutate(ctx.data, (ctx as any).request, async (doc) => {
 		ensureUsers(doc);
 		const extId = authExternalId("proxy", username);
 		let user = findUserForAuth(doc.users, username, "proxy", extId);
@@ -2781,12 +2795,12 @@ function cleanRoleIds(doc: Doc, ids: unknown, { allowOwner = false, allowEmpty =
 	if (out.length) return out;
 	return allowEmpty ? [] : ["lecteur"];
 }
-export const listUsers = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
+export const listUsers = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const actor = requireAccountManager(doc, tok(data, request));
 	return directoryPayload(doc, actor);
 }));
-export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
+export const saveUser = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().optional(),
 	username: z.string().min(1).max(40),
@@ -2796,7 +2810,7 @@ export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
 	grants: z.array(grantField).optional(),
 	disabled: z.boolean().optional(),
 	groupIds: z.array(z.string()).optional()
-})).handler(async ({ data, request }: any) => mutate(async (doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageUsers) throw new Error("errors.insufficient");
 	ensureRoles(doc);
@@ -2854,10 +2868,10 @@ export const saveUser = createServerFn({ method: "POST" }).validator(z.object({
 	});
 	return directoryPayload(doc, actor);
 }));
-export const deleteUser = createServerFn({ method: "POST" }).validator(z.object({
+export const deleteUser = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	const target = doc.users.find((u) => u.id === data.id);
 	if (!target) throw new Error("errors.userNotFound");
@@ -2872,7 +2886,7 @@ export const deleteUser = createServerFn({ method: "POST" }).validator(z.object(
 	});
 	return directoryPayload(doc, actor);
 }));
-export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
+export const saveGroup = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().optional(),
 	name: z.string().min(1).max(60),
@@ -2880,7 +2894,7 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 	roleIds: z.array(z.string()).optional(),
 	members: z.array(z.string()).optional(),
 	grants: z.array(grantField).optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
 	ensureGroups(doc);
@@ -2921,10 +2935,10 @@ export const saveGroup = createServerFn({ method: "POST" }).validator(z.object({
 	});
 	return directoryPayload(doc, actor);
 }));
-export const deleteGroup = createServerFn({ method: "POST" }).validator(z.object({
+export const deleteGroup = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	ensureGroups(doc);
 	const target = doc.groups.find((g) => g.id === data.id);
@@ -2938,7 +2952,7 @@ export const deleteGroup = createServerFn({ method: "POST" }).validator(z.object
 	});
 	return directoryPayload(doc, actor);
 }));
-export const saveRole = createServerFn({ method: "POST" }).validator(z.object({
+export const saveRole = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().optional(),
 	name: z.string().min(1).max(40),
@@ -2946,7 +2960,7 @@ export const saveRole = createServerFn({ method: "POST" }).validator(z.object({
 	grants: z.array(grantField).optional(),
 	userIds: z.array(z.string()).optional(),
 	groupIds: z.array(z.string()).optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageRoles) throw new Error("errors.insufficient");
 	ensureRoles(doc);
@@ -2989,10 +3003,10 @@ export const saveRole = createServerFn({ method: "POST" }).validator(z.object({
 	});
 	return directoryPayload(doc, actor);
 }));
-export const deleteRole = createServerFn({ method: "POST" }).validator(z.object({
+export const deleteRole = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageRoles) throw new Error("errors.insufficient");
 	ensureRoles(doc);
@@ -3007,7 +3021,7 @@ export const deleteRole = createServerFn({ method: "POST" }).validator(z.object(
 	});
 	return directoryPayload(doc, actor);
 }));
-export const createSpace = createServerFn({ method: "POST" }).validator(z.object({
+export const createSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	name: z.string().min(1).max(40),
 	icon: z.string().min(1).max(4e5),
@@ -3015,7 +3029,7 @@ export const createSpace = createServerFn({ method: "POST" }).validator(z.object
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional(),
 	hideLabel: z.boolean().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	const id = newId();
 	const next = Math.max(0, ...doc.spaces.map((t) => t.sortOrder)) + 1;
@@ -3041,10 +3055,10 @@ export const createSpace = createServerFn({ method: "POST" }).validator(z.object
 	});
 	return emit(doc, user, id);
 }));
-export const duplicateSpace = createServerFn({ method: "POST" }).validator(z.object({
+export const duplicateSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	const src = doc.spaces.find((t) => t.id === data.id);
 	if (!src) throw new Error("errors.spaceNotFound");
@@ -3092,7 +3106,7 @@ export const duplicateSpace = createServerFn({ method: "POST" }).validator(z.obj
 	});
 	return emit(doc, user, spaceId);
 }));
-export const updateSpace = createServerFn({ method: "POST" }).validator(z.object({
+export const updateSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1),
 	name: z.string().min(1).max(40),
@@ -3101,7 +3115,7 @@ export const updateSpace = createServerFn({ method: "POST" }).validator(z.object
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional(),
 	hideLabel: z.boolean().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.id);
 	const space = doc.spaces.find((t) => t.id === data.id);
 	if (!space) throw new Error("errors.portalNotFound");
@@ -3116,19 +3130,19 @@ export const updateSpace = createServerFn({ method: "POST" }).validator(z.object
 	});
 	return emit(doc, user, data.id);
 }));
-export const updateFavsOptions = createServerFn({ method: "POST" }).validator(z.object({
+export const updateFavsOptions = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	hideLabel: z.boolean(),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	doc.settings.favsHideLabel = data.hideLabel;
 	return emit(doc, user, data.spaceId);
 }));
-export const deleteSpace = createServerFn({ method: "POST" }).validator(z.object({
+export const deleteSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.id);
 	if (doc.spaces.length <= 1) throw new Error("errors.lastSpace");
 	const space = doc.spaces.find((t) => t.id === data.id);
@@ -3147,7 +3161,7 @@ export const deleteSpace = createServerFn({ method: "POST" }).validator(z.object
 	pruneUnusedTags(doc);
 	return emit(doc, user);
 }));
-export const createCategory = createServerFn({ method: "POST" }).validator(z.object({
+export const createCategory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	spaceId: z.string().min(1),
 	name: z.string().min(1).max(60),
@@ -3155,7 +3169,7 @@ export const createCategory = createServerFn({ method: "POST" }).validator(z.obj
 	restricted: z.boolean().optional(),
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.spaceId);
 	const space = doc.spaces.find((t) => t.id === data.spaceId);
 	if (!space) throw new Error("errors.portalNotFound");
@@ -3187,7 +3201,7 @@ export const createCategory = createServerFn({ method: "POST" }).validator(z.obj
 	});
 	return emit(doc, user, data.spaceId);
 }));
-export const updateCategory = createServerFn({ method: "POST" }).validator(z.object({
+export const updateCategory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1),
 	name: z.string().min(1).max(60),
@@ -3195,7 +3209,7 @@ export const updateCategory = createServerFn({ method: "POST" }).validator(z.obj
 	restricted: z.boolean().optional(),
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	const { space, cat } = categoryOf(doc, data.id);
 	requireEdit(doc, tok(data, request), space.id);
@@ -3212,10 +3226,10 @@ export const updateCategory = createServerFn({ method: "POST" }).validator(z.obj
 	});
 	return emit(doc, user, space.id);
 }));
-export const deleteCategory = createServerFn({ method: "POST" }).validator(z.object({
+export const deleteCategory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	const space = spaceOfCategory(doc, data.id);
 	requireEdit(doc, tok(data, request), space.id);
@@ -3287,10 +3301,10 @@ function requireBody(kind: unknown, description: unknown) {
 	if (kind !== "note") return;
 	if (!String(description || "").trim()) throw new Error("errors.contentRequired");
 }
-export const createCard = createServerFn({ method: "POST" }).validator(z.object({
+export const createCard = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	...itemPayload
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	requireUrl(data.kind, data.links?.[0]?.url || data.url);
 	requireTitle(data.kind, data.title);
@@ -3327,11 +3341,11 @@ export const createCard = createServerFn({ method: "POST" }).validator(z.object(
 	});
 	return emit(doc, user, space.id);
 }));
-export const updateCard = createServerFn({ method: "POST" }).validator(z.object({
+export const updateCard = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1),
 	...itemPayload
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	requireUrl(data.kind, data.links?.[0]?.url || data.url);
 	requireTitle(data.kind, data.title);
@@ -3378,10 +3392,10 @@ export const updateCard = createServerFn({ method: "POST" }).validator(z.object(
 	});
 	return emit(doc, user, dest.space.id);
 }));
-export const deleteCard = createServerFn({ method: "POST" }).validator(z.object({
+export const deleteCard = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	const { space, cat, app } = cardOf(doc, data.id);
 	requireEdit(doc, tok(data, request), space.id);
@@ -3398,7 +3412,7 @@ export const deleteCard = createServerFn({ method: "POST" }).validator(z.object(
 	pruneUnusedTags(doc);
 	return emit(doc, user, space.id);
 }));
-export const reorderCards = createServerFn({ method: "POST" }).validator(z.object({
+export const reorderCards = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	spaceId: z.string().min(1),
 	placements: z.array(z.object({
@@ -3406,7 +3420,7 @@ export const reorderCards = createServerFn({ method: "POST" }).validator(z.objec
 		categoryId: z.string().min(1),
 		sortOrder: z.number().int().min(0).max(9999)
 	})).min(1).max(400)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.spaceId);
 	const space = doc.spaces.find((t) => t.id === data.spaceId);
 	if (!space) throw new Error("errors.portalNotFound");
@@ -3428,12 +3442,12 @@ export const reorderCards = createServerFn({ method: "POST" }).validator(z.objec
 	for (const leftover of bag.values()) space.categories.find((c) => c.id === leftover.categoryId)?.cards.push(leftover);
 	return emit(doc, user, data.spaceId);
 }));
-export const arrangeCategory = createServerFn({ method: "POST" }).validator(z.object({
+export const arrangeCategory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	categoryId: z.string().min(1),
 	sort: z.enum(["alpha", "za"]).optional(),
 	resetSpans: z.boolean().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const { space, cat } = categoryOf(doc, data.categoryId);
 	const user = requireEdit(doc, tok(data, request), space.id);
 	let changed = false;
@@ -3465,13 +3479,13 @@ export const arrangeCategory = createServerFn({ method: "POST" }).validator(z.ob
 	});
 	return emit(doc, user, space.id);
 }));
-export const moveCard = createServerFn({ method: "POST" }).validator(z.object({
+export const moveCard = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1),
 	destSpaceId: z.string().min(1),
 	destCategoryId: z.string().min(1),
 	sortOrder: z.number().int().min(0).max(9999)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	const found = cardOf(doc, data.id);
 	if (!isOwnerUser(user) && !can(user, "move", { res: "card", id: found.app.id }, doc)) throw new Error("errors.noMove");
@@ -3502,11 +3516,11 @@ export const moveCard = createServerFn({ method: "POST" }).validator(z.object({
 	});
 	return emit(doc, user, dest.space.id);
 }));
-export const reorderCategories = createServerFn({ method: "POST" }).validator(z.object({
+export const reorderCategories = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	spaceId: z.string().min(1),
 	order: z.array(z.string().min(1)).min(1).max(80)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.spaceId);
 	const space = doc.spaces.find((t) => t.id === data.spaceId);
 	if (!space) throw new Error("errors.portalNotFound");
@@ -3517,7 +3531,7 @@ export const reorderCategories = createServerFn({ method: "POST" }).validator(z.
 	space.categories.sort((a, b) => a.sortOrder - b.sortOrder);
 	return emit(doc, user, data.spaceId);
 }));
-export const previewMoveCategory = createServerFn({ method: "POST" }).validator(z.object({
+export const previewMoveCategory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	categoryId: z.string().min(1),
 	destSpaceId: z.string().min(1)
@@ -3529,12 +3543,12 @@ export const previewMoveCategory = createServerFn({ method: "POST" }).validator(
 	if (!impact) throw new Error("errors.categoryNotFound");
 	return impact;
 }));
-export const moveCategory = createServerFn({ method: "POST" }).validator(z.object({
+export const moveCategory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	categoryId: z.string().min(1),
 	destSpaceId: z.string().min(1),
 	insertAt: z.number().int().min(0).max(80).optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!isOwnerUser(user) && !can(user, "move", { res: "cat", id: data.categoryId }, doc)) throw new Error("errors.noMove");
 	if (!isOwnerUser(user) && !can(user, "move", { res: "space", id: data.destSpaceId }, doc) && !can(user, "edit", { res: "space", id: data.destSpaceId }, doc)) throw new Error("errors.noMove");
@@ -3550,11 +3564,11 @@ export const moveCategory = createServerFn({ method: "POST" }).validator(z.objec
 	});
 	return emit(doc, user, moved.dest.id);
 }));
-export const reorderSpaces = createServerFn({ method: "POST" }).validator(z.object({
+export const reorderSpaces = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	spaceId: z.string().optional(),
 	order: z.array(z.string().min(1)).min(1).max(40)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	data.order.forEach((id: string, i: number) => {
 		const space = doc.spaces.find((t) => t.id === id);
@@ -3569,7 +3583,7 @@ function eachItem(doc: Doc, fn: (app: PortalCard) => void) {
 function tagColorFromName(name: unknown) {
 	return defaultTagHex(String(name));
 }
-export const manageTags = createServerFn({ method: "POST" }).validator(z.object({
+export const manageTags = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	spaceId: z.string().optional(),
 	create: z.array(z.string().min(1).max(32)).max(40).optional(),
@@ -3579,7 +3593,7 @@ export const manageTags = createServerFn({ method: "POST" }).validator(z.object(
 	})).max(80).optional(),
 	remove: z.array(z.string().min(1).max(32)).max(80).optional(),
 	colors: z.record(z.string().min(1).max(32), z.string().max(7)).optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	const removeKeys = new Set((data.remove ?? []).map((t: string) => t.trim().toLowerCase()).filter(Boolean));
 	const renameMap = /* @__PURE__ */ new Map();
@@ -3631,11 +3645,11 @@ export const manageTags = createServerFn({ method: "POST" }).validator(z.object(
 	doc.settings.tagColors = colors;
 	return emit(doc, user, data.spaceId);
 }));
-export const saveCustomIcon = createServerFn({ method: "POST" }).validator(z.object({
+export const saveCustomIcon = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	name: z.string().min(1).max(80),
 	dataUrl: z.string().min(20).max(4e5).regex(/^data:image\//)
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	requireEdit(doc, tok(data, request));
 	if ((doc.customIcons || []).length >= MAX_CUSTOM_ICONS) throw new Error("errors.tooManyIcons");
 	doc.customIcons.push({
@@ -3655,7 +3669,7 @@ function unwrapBackup(raw: any) {
 	if (raw.backup && typeof raw.backup === "object") return raw.backup;
 	return raw;
 }
-export const exportPortal = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
+export const exportPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
 	const { assetToDataUrl } = await import("./assets");
 	const doc = await readDocUnlocked();
 	requireAdmin(doc, tok(data, request));
@@ -3678,7 +3692,7 @@ export const exportPortal = createServerFn({ method: "POST" }).validator(z.objec
 		})
 	};
 }));
-export const exportAudit = createServerFn({ method: "POST" }).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
+export const exportAudit = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canAudit) throw new Error("errors.insufficient");
@@ -3728,7 +3742,7 @@ function catalogOfSpace(space: DocSpace) {
 		}))
 	};
 }
-export const exportSpace = createServerFn({ method: "POST" }).validator(z.object({
+export const exportSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
 })).handler(async ({ data, request }: any) => withLock(async () => {
@@ -3764,11 +3778,11 @@ export const exportSpace = createServerFn({ method: "POST" }).validator(z.object
 		customIcons
 	};
 }));
-export const importSpace = createServerFn({ method: "POST" }).validator(z.object({
+export const importSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	payload: z.unknown(),
 	afterId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	const parsed = parseSpaceXfer(data.payload);
 	if (!parsed) throw new Error("errors.badSpaceFile");
@@ -3842,10 +3856,10 @@ export const importSpace = createServerFn({ method: "POST" }).validator(z.object
 	});
 	return emit(doc, user, spaceId);
 }));
-export const importPortal = createServerFn({ method: "POST" }).validator(z.object({
+export const importPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	payload: z.unknown()
-})).handler(async ({ data, request }: any) => mutate((doc) => {
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const actor = requireAdmin(doc, tok(data, request));
 	const parsed = asStore(unwrapBackup(data.payload));
 	if (!parsed || !parsed.spaces.length) throw new Error("errors.badBackup");
@@ -4003,7 +4017,7 @@ function allCardIds(doc: Doc): Set<string> {
 	return ids;
 }
 
-export const getCuration = createServerFn({ method: "POST" }).validator(z.object({
+export const getCuration = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
 })).handler(async ({ data, request }: any) => withLock(async () => {
 	const doc = await readDocUnlocked();
@@ -4020,7 +4034,7 @@ export const getCuration = createServerFn({ method: "POST" }).validator(z.object
 	return { items, queue: curationQueueOf(items), checks, lastRunAt: store.updatedAt };
 }));
 
-export const curationStatus = createServerFn({ method: "POST" }).validator(z.object({
+export const curationStatus = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
 })).handler(async ({ data, request }: any) => {
 	const doc = await readDoc();
@@ -4029,7 +4043,7 @@ export const curationStatus = createServerFn({ method: "POST" }).validator(z.obj
 	return curationJobSnapshot();
 });
 
-export const curationStop = createServerFn({ method: "POST" }).validator(z.object({
+export const curationStop = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
 })).handler(async ({ data, request }: any) => {
 	const doc = await readDoc();
@@ -4038,7 +4052,7 @@ export const curationStop = createServerFn({ method: "POST" }).validator(z.objec
 	return { stopped: curationJobStop() };
 });
 
-export const curationStart = createServerFn({ method: "POST" }).validator(z.object({
+export const curationStart = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
 })).handler(async ({ data, request }: any) => withLock(async () => {
 	if (!curationScanAllowed(request)) throw new Error("errors.tooManyProbes");
@@ -4076,7 +4090,7 @@ export const curationStart = createServerFn({ method: "POST" }).validator(z.obje
 	return { started: true, total: targets.length };
 }));
 
-export const probeTargets = createServerFn({ method: "POST" }).validator(z.object({
+export const probeTargets = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: z.string().optional(),
 	ids: z.array(z.string().min(1).max(80)).min(1).max(8)
 })).handler(async (ctx) => {
@@ -4095,7 +4109,7 @@ export const probeTargets = createServerFn({ method: "POST" }).validator(z.objec
 	return Promise.all(targets.map((target) => probeOne(target as import("./probe-runtime").ProbeTarget, Boolean(doc.settings.probeTlsVerify))));
 });
 
-export const probePreview = createServerFn({ method: "POST" }).validator(z.object({
+export const probePreview = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: z.string().min(1),
 	mode: z.enum(["http", "icmp"]),
 	url: z.string().max(2000).optional(),
@@ -4112,7 +4126,7 @@ export const probePreview = createServerFn({ method: "POST" }).validator(z.objec
 	return probeHttp("preview", url, tlsVerify);
 });
 
-export const grabSiteFavicon = createServerFn({ method: "POST" }).validator(z.object({
+export const grabSiteFavicon = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: z.string().min(1),
 	url: z.string().max(2000)
 })).handler(async (ctx) => {

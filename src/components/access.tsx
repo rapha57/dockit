@@ -49,6 +49,7 @@ import {
 } from "@/lib/portal";
 import type { LdapGroupHit } from "@/lib/ldap-runtime";
 import { sessionGone } from "@/lib/session-gone";
+import { isConflict, noteDocRev } from "@/lib/doc-rev";
 
 const INPUT_SM = "h-9 rounded-md bg-transparent";
 
@@ -207,7 +208,8 @@ function useDirectory(token: string): Dir {
   const [roles, setRoles] = useState<Role[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [busy, setBusy] = useState(true);
-  function apply(res: Partial<{ users: User[]; groups: Group[]; roles: Role[]; spaces: Space[] }>) {
+  function apply(res: Partial<{ users: User[]; groups: Group[]; roles: Role[]; spaces: Space[]; rev?: number }>) {
+    noteDocRev(res);
     if (res.users) setUsers(res.users);
     if (res.groups) setGroups(res.groups);
     if (res.roles) setRoles(res.roles);
@@ -222,7 +224,18 @@ function useDirectory(token: string): Dir {
       .catch((err: unknown) => {
         setBusy(false);
         if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
       });
+    const onConflict = () => {
+      listUsers({ data: { token } })
+        .then((res: any) => apply(res))
+        .catch((err: unknown) => {
+          if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
+        });
+    };
+    window.addEventListener("portal-doc-conflict", onConflict);
+    return () => window.removeEventListener("portal-doc-conflict", onConflict);
   }, [token]);
   return { users, groups, roles, spaces, busy, apply, setBusy };
 }
@@ -1079,6 +1092,7 @@ export function AccessUsers({
       }
     } catch (err) {
       if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
     } finally {
       dir.setBusy(false);
     }
@@ -1107,6 +1121,7 @@ export function AccessUsers({
       }
     } catch (err) {
       if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
     } finally {
       dir.setBusy(false);
     }
@@ -1121,6 +1136,7 @@ export function AccessUsers({
       expand.requestClose(() => load(null));
     } catch (err) {
       if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
     } finally {
       dir.setBusy(false);
     }
@@ -1543,6 +1559,7 @@ export function AccessGroups({
       toast.success(tp("access.groupsLinked", rows.length));
     } catch (err) {
       if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
     } finally {
       dir.setBusy(false);
     }
@@ -1626,6 +1643,7 @@ export function AccessGroups({
       }
     } catch (err) {
       if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
     } finally {
       dir.setBusy(false);
     }
@@ -1640,6 +1658,7 @@ export function AccessGroups({
       expand.requestClose(() => load(null));
     } catch (err) {
       if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
     } finally {
       dir.setBusy(false);
     }
@@ -1651,6 +1670,7 @@ export function AccessGroups({
       toast.success(t("access.groupSynced"));
     } catch (err) {
       if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
     } finally {
       dir.setBusy(false);
     }
@@ -2086,6 +2106,7 @@ export function AccessRoles({
       }
     } catch (err) {
       if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
     } finally {
       dir.setBusy(false);
     }
@@ -2100,6 +2121,7 @@ export function AccessRoles({
       expand.requestClose(() => load(null));
     } catch (err) {
       if (!sessionGone(err)) toast.error(te(err));
+        isConflict(err);
     } finally {
       dir.setBusy(false);
     }

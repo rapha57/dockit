@@ -566,6 +566,7 @@
   "errors": {
     "generic": "Error",
     "sessionExpired": "Session expired. Sign in again.",
+    "conflict": "Someone else saved. Reload and try again.",
     "userNotFound": "User not found",
     "readonly": "Read-only account",
     "noEditSpace": "No permission to edit this space",

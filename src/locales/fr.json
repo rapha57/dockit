@@ -566,6 +566,7 @@
   "errors": {
     "generic": "Erreur",
     "sessionExpired": "Session expirée. Se reconnecter.",
+    "conflict": "Quelqu’un d’autre a enregistré. Recharge et réessaie.",
     "userNotFound": "Utilisateur introuvable",
     "readonly": "Compte en lecture seule",
     "noEditSpace": "Pas le droit de modifier cet espace",

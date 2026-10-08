@@ -10,11 +10,19 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("@tanstack/react-start", () => ({
 	createServerFn: () => {
 		const api: any = {
+			middleware: () => api,
 			validator: () => api,
 			handler: (fn: any) => fn
 		};
 		return api;
-	}
+	},
+	createMiddleware: () => {
+		const api: any = {
+			client: () => api,
+			server: () => api,
+		};
+		return api;
+	},
 }));
 
 const ISSUER = "https://id.example";

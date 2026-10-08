@@ -18,6 +18,7 @@ import {
   spanSize,
 } from "@/lib/card-resize";
 import { sessionGone } from "@/lib/session-gone";
+import { isConflict } from "@/lib/doc-rev";
 import { t, te } from "@/lib/i18n";
 import {
   hoverInsertAt,
@@ -886,6 +887,7 @@ export function usePortalDrag(opts: {
           ...current,
           categories: snapshot,
         });
+        isConflict(err);
         stayEditing();
       });
   }
@@ -987,6 +989,7 @@ export function usePortalDrag(opts: {
       .catch((err) => {
         if (sessionGone(err)) return;
         toast.error(te(err));
+        isConflict(err);
         setData({
           ...current,
           spaces: snapshot,
@@ -1046,11 +1049,12 @@ export function usePortalDrag(opts: {
         stayEditing();
       })
       .catch((err) => {
-        toast.error(te(err));
+        if (!sessionGone(err)) toast.error(te(err));
         setData({
           ...current,
           categories: snapshot,
         });
+        isConflict(err);
         stayEditing();
       });
   }
