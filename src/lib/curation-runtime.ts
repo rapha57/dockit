@@ -160,11 +160,36 @@ export function curationJobSnapshot(): CurationJobView {
  * Runs the whole analysis inside the server process: survives panel close
  * and page refresh. Results merge into curation.json after every batch.
  */
+export async function notifyCurationDown(webhook: string, items: { title: string; url: string; status: string; cardId: string }[]) {
+	const href = String(webhook || "").trim();
+	if (!items.length || !/^https?:\/\//i.test(href) || /^(javascript|data|vbscript|file|about):/i.test(href)) return;
+	const ctrl = new AbortController();
+	const timer = setTimeout(() => ctrl.abort(), 8000);
+	try {
+		await fetch(href, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				source: "dockit",
+				event: "curation.down",
+				at: new Date().toISOString(),
+				items,
+			}),
+			signal: ctrl.signal,
+		});
+	} catch {
+		// ignore webhook failures
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 export async function startCurationJob(opts: {
 	targets: CurationJobTarget[];
 	tlsVerify: boolean;
 	known: string[];
 	locale: unknown;
+	webhook?: string;
 }): Promise<boolean> {
 	if (curationJob?.running) return false;
 	const run = ++curationJobRun;
@@ -233,6 +258,21 @@ export async function startCurationJob(opts: {
 		curationJob.running = false;
 		curationJob.current = "";
 		curationJob.finishedAt = Date.now();
+		const down: { title: string; url: string; status: string; cardId: string }[] = [];
+		for (const [cardId, links] of Object.entries(store.checks)) {
+			for (const check of Object.values(links)) {
+				if (check.status === "error" || check.status === "timeout") {
+					const target = opts.targets.find((row) => row.cardId === cardId && row.url === check.url);
+					down.push({
+						title: target?.title || cardId,
+						url: check.url,
+						status: check.status,
+						cardId,
+					});
+				}
+			}
+		}
+		if (opts.webhook) void notifyCurationDown(opts.webhook, down);
 		if (isDevRuntime()) {
 			const { appendFileSync } = await import("node:fs");
 			appendFileSync(

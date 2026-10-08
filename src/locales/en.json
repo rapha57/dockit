@@ -266,6 +266,8 @@
     "linkCount": "{n} link",
     "linkCount_other": "{n} links",
     "logEmpty": "Run an analysis to fill this log.",
+    "webhook": "Down-link webhook",
+    "webhookHint": "POST JSON when a link is down. Optional schedule: PORTAL_CURATION_CRON (five-field, e.g. 0 3 * * *).",
     "colCard": "Card",
     "colLink": "Links",
     "colResult": "Result",

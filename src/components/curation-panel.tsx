@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, Check, Clock, LayoutGrid, ListChecks, Minus, Pencil, ScanSearch, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/field";
+import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/empty-state";
 import { EdgeFade } from "@/components/edge-fade";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +19,7 @@ import {
   curationStatus,
   curationStop,
   getCuration,
+  updateCurationWebhook,
   type CurationCheck,
   type CurationJobView,
   type CustomIcon,
@@ -65,6 +68,7 @@ export function CurationPanel({
   editContext,
   onSaveCard,
   onClose,
+  webhook,
 }: {
   token: string;
   busy: boolean;
@@ -85,6 +89,7 @@ export function CurationPanel({
   ) => { app: PortalCard; categoryId: string; categories: PortalCategory[] } | null;
   onSaveCard: (app: PortalCard, payload: CardFormPayload, onDone: () => void) => void;
   onClose: () => void;
+  webhook?: string;
 }) {
   const [pane, setPane] = useState<"results" | "apps">("results");
   const [view, setView] = useState<CurationViewData | null>(null);
@@ -96,6 +101,7 @@ export function CurationPanel({
   const [edit, setEdit] = useState<{ app: PortalCard; categoryId: string; categories: PortalCategory[] } | null>(
     null,
   );
+  const [hook, setHook] = useState(webhook || "");
   const seenFinishRef = useRef(0);
   const logEndRef = useRef<HTMLDivElement>(null);
   const reloadRef = useRef<() => void>(() => {});
@@ -474,6 +480,22 @@ export function CurationPanel({
                   </Button>
                 )}
               </div>
+              <Field label={t("curation.webhook")} hint={t("curation.webhookHint")}>
+                <Input
+                  value={hook}
+                  onChange={(e) => setHook(e.target.value)}
+                  onBlur={() => {
+                    if (hook.trim() === (webhook || "").trim()) return;
+                    updateCurationWebhook({ data: { token, url: hook.trim() } })
+                      .then(() => toast.success(t("toast.saved")))
+                      .catch((err) => {
+                        if (!sessionGone(err)) toast.error(te(err));
+                      });
+                  }}
+                  placeholder="https://"
+                  autoComplete="off"
+                />
+              </Field>
             </div>
           </div>
         ) : (

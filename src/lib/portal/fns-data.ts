@@ -1,7 +1,7 @@
 import { ASSET_PREFIX, ASSET_URL, MAX_CUSTOM_ICONS, isAssetRef, toClientAsset } from "../assets-url";
 import { SPACE_XFER_KIND, SPACE_XFER_VERSION, collectIconValues, parseSpaceXfer } from "../space-xfer";
 import { asHistory, pruneHistory, appendHistory, snapshotSpace, publicAudit } from "../history";
-import { asGrants, can, isOwnerUser, mergeGrant } from "../acl";
+import { asGrants, can, isOwnerUser, mergeGrant, type User } from "../acl";
 import { attachDocRev } from "../doc-rev";
 import { createServerFn } from "@tanstack/react-start";
 import { curationJobRunning, curationJobSnapshot, curationJobStop, curationScanAllowed, pruneCurationChecks, readCurationStore, startCurationJob, writeCurationStore, type CurationCheck, type CurationJobTarget } from "../curation-runtime";
@@ -307,7 +307,7 @@ function curationLinksOf(app: PortalCard): CurationLink[] {
 	return links;
 }
 
-function curationItemsOf(doc: Doc, user: HydratedUser | null): CurationItem[] {
+function curationItemsOf(doc: Doc, user: HydratedUser | User | null): CurationItem[] {
 	const items: CurationItem[] = [];
 	for (const space of [...doc.spaces].sort((a, b) => a.sortOrder - b.sortOrder)) {
 		if (!spaceCanSee(space, user, doc)) continue;
@@ -393,13 +393,7 @@ export const curationStop = createServerFn({ method: "POST" }).middleware([attac
 	return { stopped: curationJobStop() };
 });
 
-export const curationStart = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
-	token: tokenField
-})).handler(async ({ data, request }: any) => withLock(async () => {
-	if (!curationScanAllowed(request)) throw new Error("errors.tooManyProbes");
-	const doc = await readDocUnlocked();
-	const user = requireUser(doc, tok(data, request));
-	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
+export async function launchCurationScan(doc: Doc, user: HydratedUser | User | null) {
 	if (curationJobRunning()) return { started: false, total: 0 };
 	const items = curationItemsOf(doc, user);
 	const byCard = new Map(items.map((item) => [item.cardId, item]));
@@ -422,13 +416,37 @@ export const curationStart = createServerFn({ method: "POST" }).middleware([atta
 		const link = item.links.find((row) => row.key === ref.key);
 		if (link) targets.push({ cardId: ref.cardId, key: ref.key, url: link.url, label: link.label, title: item.title, mode: "http" });
 	}
+	const webhook = String(doc.settings.curationWebhook || process.env.PORTAL_CURATION_WEBHOOK || "").trim();
 	void startCurationJob({
 		targets,
 		tlsVerify: Boolean(doc.settings.probeTlsVerify),
 		known: [...allCardIds(doc)],
-		locale: doc.settings.locale
+		locale: doc.settings.locale,
+		webhook,
 	}).catch(() => void 0);
 	return { started: true, total: targets.length };
+}
+
+export const curationStart = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
+	token: tokenField
+})).handler(async ({ data, request }: any) => withLock(async () => {
+	if (!curationScanAllowed(request)) throw new Error("errors.tooManyProbes");
+	const doc = await readDocUnlocked();
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
+	return launchCurationScan(doc, user);
+}));
+
+export const updateCurationWebhook = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
+	token: tokenField,
+	url: z.string().max(2000)
+})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
+	const raw = String(data.url || "").trim();
+	if (raw && !/^https?:\/\//i.test(raw)) throw new Error("errors.httpRequired");
+	doc.settings.curationWebhook = raw.slice(0, 2000);
+	return emit(doc, user);
 }));
 
 export const probeTargets = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({

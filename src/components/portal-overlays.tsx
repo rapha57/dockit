@@ -339,6 +339,7 @@ export function PortalOverlays({
           picker={picker}
           catalog={data.catalog}
           probes={data.settings.healthChecks !== false}
+          webhook={data.settings.curationWebhook}
           knownTags={allTags}
           tagColors={data.settings.tagColors}
           editContext={(cardId) => {

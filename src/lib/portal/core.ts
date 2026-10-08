@@ -160,6 +160,7 @@ export type PortalSettings = {
   infoStats: boolean;
   infoLegend: boolean;
   probeTlsVerify: boolean;
+  curationWebhook?: string;
   probeAuthOnly: boolean;
   requireLogin: boolean;
   sessionHttpOnly: boolean;
@@ -485,6 +486,7 @@ export function defaultSettings(): PortalSettings {
 		infoStats: true,
 		infoLegend: true,
 		probeTlsVerify: false,
+		curationWebhook: "",
 		probeAuthOnly: false,
 		requireLogin: false,
 		sessionHttpOnly: false,
@@ -1313,6 +1315,7 @@ export function asStore(raw: any): Doc | null {
 			infoStats: doc.settings.infoStats !== false,
 			infoLegend: doc.settings.infoLegend !== false,
 			probeTlsVerify: Boolean(doc.settings.probeTlsVerify),
+			curationWebhook: String(doc.settings.curationWebhook || "").trim().slice(0, 2000),
 			probeAuthOnly: Boolean(doc.settings.probeAuthOnly),
 			requireLogin: Boolean(doc.settings.requireLogin),
 			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly),
@@ -1471,12 +1474,14 @@ export async function readDocUnlocked(): Promise<Doc> {
 		ensureGroups(parsed);
 		applyEnvSecrets(parsed);
 		liveDoc = parsed;
+		void import("../curation-schedule").then((m) => m.ensureCurationSchedule()).catch(() => void 0);
 		return parsed;
 	} catch (err) {
 		if (!isMissingStoreFile(err)) throw err;
 	}
 	const seeded = defaultStore();
 	await writeDocUnlocked(seeded);
+	void import("../curation-schedule").then((m) => m.ensureCurationSchedule()).catch(() => void 0);
 	return seeded;
 }
 async function persistDoc(doc: Doc) {
@@ -1613,7 +1618,8 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 		}),
 		ldapRealms: realms,
 		loginOrder: asLoginOrder(s.loginOrder, dirs),
-		devAdminNoPassword: isDevRuntime() && Boolean(s.devAdminNoPassword)
+		devAdminNoPassword: isDevRuntime() && Boolean(s.devAdminNoPassword),
+		curationWebhook: user && (isOwnerUser(user) || user.canCuration) ? String(s.curationWebhook || "") : "",
 	};
 	delete out.oidcClientSecret;
 	delete out.ldapBindPassword;

@@ -266,6 +266,8 @@
     "linkCount": "{n} lien",
     "linkCount_other": "{n} liens",
     "logEmpty": "Lancer une analyse pour remplir ce journal.",
+    "webhook": "Webhook liens down",
+    "webhookHint": "POST JSON quand un lien est down. Planning optionnel : PORTAL_CURATION_CRON (cinq champs, ex. 0 3 * * *).",
     "colCard": "Carte",
     "colLink": "Liens",
     "colResult": "Résultat",
