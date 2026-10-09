@@ -11,10 +11,10 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -24,9 +24,9 @@ jobs:
       - run: npm test
 
   trivy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -36,3 +36,4 @@ jobs:
           exit-code: "1"
           format: table
           skip-dirs: node_modules,.git,.output
+          version: v0.75.0
