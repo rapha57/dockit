@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, Check, Clock, LayoutGrid, ListChecks, Minus, Pencil, ScanSearch, Search, X } from "lucide-react";
+import { ArrowUpRight, Check, Clock, LayoutGrid, ListChecks, Minus, Pencil, ScanSearch, Search, Settings2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/field";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/empty-state";
 import { EdgeFade } from "@/components/edge-fade";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,19 +15,26 @@ import { CardForm } from "@/components/editors";
 import { t, te, td, tp, formatWhen, formatNumber } from "@/lib/i18n";
 import { PortalIcon } from "@/lib/icons";
 import { sessionGone } from "@/lib/session-gone";
+import { noteDocRev } from "@/lib/doc-rev";
 import {
   curationStart,
   curationStatus,
   curationStop,
   getCuration,
+  testCurationWebhook,
   updateCurationWebhook,
   type CurationCheck,
   type CurationJobView,
+  type CurationNotify,
   type CustomIcon,
   type PortalCard,
   type PortalCategory,
 } from "@/lib/portal";
-import type { CardFormPayload, CatalogSpace, CurationViewData } from "@/lib/portal-ui";
+import type { CardFormPayload, CatalogSpace, CurationViewData, PortalData } from "@/lib/portal-ui";
+import { cronScheduleSpec, parseCronSchedule, type CronSchedule } from "@/lib/curation-cron";
+
+const HOURS = Array.from({ length: 24 }, (_, h) => h);
+const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0];
 export function curationTone(status: CurationCheck["status"]): string {
   if (status === "valid") return "text-ok";
   if (status === "redirect") return "text-muted";
@@ -68,7 +76,11 @@ export function CurationPanel({
   editContext,
   onSaveCard,
   onClose,
+  onSaved,
   webhook,
+  cron,
+  cronFromEnv,
+  webhookFromEnv,
 }: {
   token: string;
   busy: boolean;
@@ -89,9 +101,13 @@ export function CurationPanel({
   ) => { app: PortalCard; categoryId: string; categories: PortalCategory[] } | null;
   onSaveCard: (app: PortalCard, payload: CardFormPayload, onDone: () => void) => void;
   onClose: () => void;
+  onSaved?: (next: PortalData) => void;
   webhook?: string;
+  cron?: string;
+  cronFromEnv?: boolean;
+  webhookFromEnv?: boolean;
 }) {
-  const [pane, setPane] = useState<"results" | "apps">("results");
+  const [pane, setPane] = useState<"results" | "apps" | "settings">("results");
   const [view, setView] = useState<CurationViewData | null>(null);
   const [ready, setReady] = useState(false);
   const [filter, setFilter] = useState("all");
@@ -102,6 +118,12 @@ export function CurationPanel({
     null,
   );
   const [hook, setHook] = useState(webhook || "");
+  const [cronSpec, setCronSpec] = useState(cron || "");
+  const [notify, setNotify] = useState<CurationNotify | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
+  const savedHook = useRef((webhook || "").trim());
+  const saveChain = useRef(Promise.resolve());
+  const saveGen = useRef(0);
   const seenFinishRef = useRef(0);
   const logEndRef = useRef<HTMLDivElement>(null);
   const reloadRef = useRef<() => void>(() => {});
@@ -111,7 +133,10 @@ export function CurationPanel({
     async function reload() {
       try {
         const res = await getCuration({ data: { token } });
-        if (alive) setView(res);
+        if (alive) {
+          setView(res);
+          if (res.lastNotify) setNotify(res.lastNotify);
+        }
       } catch {
         // ignore — initial load reports its own errors
       }
@@ -138,6 +163,7 @@ export function CurationPanel({
       .then((res) => {
         if (!alive) return;
         setView(res);
+        if (res.lastNotify) setNotify(res.lastNotify);
         setReady(true);
       })
       .catch((err) => {
@@ -310,7 +336,73 @@ export function CurationPanel({
   const currentPane =
     pane === "results"
       ? { label: t("curation.results"), lead: t("curation.resultsLead") }
-      : { label: t("curation.apps"), lead: t("curation.appsLead") };
+      : pane === "apps"
+        ? { label: t("curation.apps"), lead: t("curation.appsLead") }
+        : { label: t("curation.settings"), lead: t("curation.settingsLead") };
+  const schedule = parseCronSchedule(cronSpec);
+  function scheduleHint(next: CronSchedule): string {
+    if (next.kind === "hourly") return t("curation.cronSummaryHourly");
+    if (next.kind === "daily") {
+      return t("curation.cronSummaryDaily", { time: `${String(next.hour).padStart(2, "0")}:00` });
+    }
+    if (next.kind === "weekly") {
+      return t("curation.cronSummaryWeekly", {
+        time: `${String(next.hour).padStart(2, "0")}:00`,
+        day: t(`curation.dow${next.dow}`),
+      });
+    }
+    if (next.kind === "custom") return t("curation.cronCustomHint");
+    return t("curation.cronSummaryOff");
+  }
+  function persist(patch: { cron?: string; url?: string }, revert: () => void) {
+    const gen = ++saveGen.current;
+    saveChain.current = saveChain.current.catch(() => undefined).then(async () => {
+      if (saveGen.current !== gen) return;
+      try {
+        const res = await updateCurationWebhook({ data: { token, ...patch } });
+        noteDocRev(res);
+        onSaved?.(res);
+        if (saveGen.current === gen) toast.success(t("toast.saved"));
+      } catch (err) {
+        if (saveGen.current !== gen) return;
+        revert();
+        if (!sessionGone(err)) toast.error(te(err));
+      }
+    });
+  }
+  function saveCron(next: CronSchedule) {
+    if (cronFromEnv) return;
+    const spec = cronScheduleSpec(next);
+    if (spec === cronSpec.trim()) return;
+    const prev = cronSpec;
+    setCronSpec(spec);
+    persist({ cron: spec }, () => setCronSpec(prev));
+  }
+  function notifyLine(row: CurationNotify): string {
+    const when = formatWhen(row.at);
+    const host = row.host || "—";
+    if (row.ok) {
+      if (row.status) return t("curation.webhookLastOk", { when, host, status: row.status });
+      return t("curation.webhookLastOkSimple", { when, host });
+    }
+    return t("curation.webhookLastFail", { when, host, detail: td(row.detail) });
+  }
+  function sendTest() {
+    if (testBusy) return;
+    const href = webhookFromEnv ? "" : hook.trim();
+    if (!webhookFromEnv && !href) return;
+    setTestBusy(true);
+    testCurationWebhook({ data: { token, url: href || undefined } })
+      .then((res) => {
+        setNotify(res);
+        if (res.ok) toast.success(t("curation.webhookTestOk"));
+        else toast.error(td(res.detail));
+      })
+      .catch((err) => {
+        if (!sessionGone(err)) toast.error(te(err));
+      })
+      .finally(() => setTestBusy(false));
+  }
   function statusCell(check: CurationCheck | undefined, pending = false) {
     if (!check) {
       return (
@@ -348,7 +440,10 @@ export function CurationPanel({
           <button
             type="button"
             className={`settings-nav-item ${pane === "results" ? "is-on" : ""}`}
-            onClick={() => setPane("results")}
+            onClick={(e) => {
+              setPane("results");
+              e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest" });
+            }}
           >
             <ListChecks className="size-4 shrink-0" />
             {t("curation.results")}
@@ -356,10 +451,24 @@ export function CurationPanel({
           <button
             type="button"
             className={`settings-nav-item ${pane === "apps" ? "is-on" : ""}`}
-            onClick={() => setPane("apps")}
+            onClick={(e) => {
+              setPane("apps");
+              e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest" });
+            }}
           >
             <LayoutGrid className="size-4 shrink-0" />
             {t("curation.apps")}
+          </button>
+          <button
+            type="button"
+            className={`settings-nav-item ${pane === "settings" ? "is-on" : ""}`}
+            onClick={(e) => {
+              setPane("settings");
+              e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest" });
+            }}
+          >
+            <Settings2 className="size-4 shrink-0" />
+            {t("curation.settings")}
           </button>
         </nav>
       <div className="settings-body">
@@ -480,25 +589,9 @@ export function CurationPanel({
                   </Button>
                 )}
               </div>
-              <Field label={t("curation.webhook")} hint={t("curation.webhookHint")}>
-                <Input
-                  value={hook}
-                  onChange={(e) => setHook(e.target.value)}
-                  onBlur={() => {
-                    if (hook.trim() === (webhook || "").trim()) return;
-                    updateCurationWebhook({ data: { token, url: hook.trim() } })
-                      .then(() => toast.success(t("toast.saved")))
-                      .catch((err) => {
-                        if (!sessionGone(err)) toast.error(te(err));
-                      });
-                  }}
-                  placeholder="https://"
-                  autoComplete="off"
-                />
-              </Field>
             </div>
           </div>
-        ) : (
+        ) : pane === "apps" ? (
           <div className="settings-pane is-access">
             <div className="am-work">
               <div className="am-toolbar">
@@ -705,6 +798,131 @@ export function CurationPanel({
                   </div>
                 )}
               </EdgeFade>
+            </div>
+          </div>
+        ) : (
+          <div className="settings-pane">
+            <div className="settings-stack">
+              <div className="settings-card">
+                <p className="settings-kicker">{t("curation.cron")}</p>
+                <Field className={cronFromEnv ? "is-disabled" : ""} label={t("curation.cronFreq")}>
+                  <Select
+                    value={schedule.kind}
+                    disabled={cronFromEnv}
+                    onChange={(e) => {
+                      const kind = e.target.value;
+                      if (kind === "off") saveCron({ kind: "off" });
+                      else if (kind === "hourly") saveCron({ kind: "hourly" });
+                      else if (kind === "daily") {
+                        const hour = schedule.kind === "weekly" || schedule.kind === "daily" ? schedule.hour : 3;
+                        saveCron({ kind: "daily", hour });
+                      } else if (kind === "weekly") {
+                        const hour = schedule.kind === "weekly" || schedule.kind === "daily" ? schedule.hour : 3;
+                        saveCron({ kind: "weekly", hour, dow: schedule.kind === "weekly" ? schedule.dow : 1 });
+                      }
+                    }}
+                  >
+                    <option value="off">{t("curation.cronOff")}</option>
+                    <option value="hourly">{t("curation.cronHourly")}</option>
+                    <option value="daily">{t("curation.cronDaily")}</option>
+                    <option value="weekly">{t("curation.cronWeekly")}</option>
+                    {schedule.kind === "custom" ? (
+                      <option value="custom">{t("curation.cronCustom", { spec: schedule.spec })}</option>
+                    ) : null}
+                  </Select>
+                </Field>
+                {schedule.kind === "daily" ? (
+                  <Field className={`is-child${cronFromEnv ? " is-disabled" : ""}`} label={t("curation.cronHour")}>
+                    <Select
+                      value={String(schedule.hour)}
+                      disabled={cronFromEnv}
+                      onChange={(e) => saveCron({ kind: "daily", hour: Number(e.target.value) })}
+                    >
+                      {HOURS.map((h) => (
+                        <option key={h} value={h}>
+                          {`${String(h).padStart(2, "0")}:00`}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                ) : null}
+                {schedule.kind === "weekly" ? (
+                  <div className="settings-fields-row is-child">
+                    <Field className={cronFromEnv ? "is-disabled" : ""} label={t("curation.cronHour")}>
+                      <Select
+                        value={String(schedule.hour)}
+                        disabled={cronFromEnv}
+                        onChange={(e) =>
+                          saveCron({ kind: "weekly", hour: Number(e.target.value), dow: schedule.dow })
+                        }
+                      >
+                        {HOURS.map((h) => (
+                          <option key={h} value={h}>
+                            {`${String(h).padStart(2, "0")}:00`}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field className={cronFromEnv ? "is-disabled" : ""} label={t("curation.cronDow")}>
+                      <Select
+                        value={String(schedule.dow)}
+                        disabled={cronFromEnv}
+                        onChange={(e) =>
+                          saveCron({ kind: "weekly", hour: schedule.hour, dow: Number(e.target.value) })
+                        }
+                      >
+                        {WEEKDAYS.map((d) => (
+                          <option key={d} value={d}>
+                            {t(`curation.dow${d}`)}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
+                ) : null}
+                <p className="settings-hint">{scheduleHint(schedule)}</p>
+                {cronFromEnv ? <p className="settings-hint">{t("curation.cronEnv")}</p> : null}
+              </div>
+              <div className="settings-card">
+                <p className="settings-kicker">{t("curation.webhook")}</p>
+                <Field className={webhookFromEnv ? "is-disabled" : ""} label={t("curation.webhookUrl")}>
+                  <div className="flex gap-2">
+                    <span className="min-w-0 flex-1">
+                      <Input
+                        value={webhookFromEnv ? "" : hook}
+                        onChange={(e) => setHook(e.target.value)}
+                        onBlur={() => {
+                          if (webhookFromEnv) return;
+                          const next = hook.trim();
+                          if (next === savedHook.current) return;
+                          const prev = savedHook.current;
+                          savedHook.current = next;
+                          persist({ url: next }, () => {
+                            savedHook.current = prev;
+                            setHook(prev);
+                          });
+                        }}
+                        placeholder="https://"
+                        autoComplete="off"
+                        disabled={webhookFromEnv}
+                      />
+                    </span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="shrink-0"
+                      disabled={testBusy || (!webhookFromEnv && !hook.trim())}
+                      onClick={() => sendTest()}
+                    >
+                      {t("curation.webhookTest")}
+                    </Button>
+                  </div>
+                  <p className="settings-hint">{webhookFromEnv ? t("curation.webhookEnv") : t("curation.webhookHint")}</p>
+                  {notify ? (
+                    <p className={`settings-hint${notify.ok ? "" : " is-warn"}`}>{notifyLine(notify)}</p>
+                  ) : null}
+                </Field>
+              </div>
             </div>
           </div>
         )}

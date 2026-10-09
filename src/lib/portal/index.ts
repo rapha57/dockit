@@ -16,7 +16,7 @@ export type {
 	SpacePerm,
 	UserRole,
 } from "./core";
-export type { CurationCheck, CurationJobView } from "./core";
+export type { CurationCheck, CurationJobView, CurationNotify } from "./core";
 export {
 	applyOidcGroups,
 	authExternalId,

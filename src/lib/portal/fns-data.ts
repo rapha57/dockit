@@ -4,11 +4,12 @@ import { asHistory, pruneHistory, appendHistory, snapshotSpace, publicAudit } fr
 import { asGrants, can, isOwnerUser, mergeGrant, type User } from "../acl";
 import { attachDocRev } from "../doc-rev";
 import { createServerFn } from "@tanstack/react-start";
-import { curationJobRunning, curationJobSnapshot, curationJobStop, curationScanAllowed, pruneCurationChecks, readCurationStore, startCurationJob, writeCurationStore, type CurationCheck, type CurationJobTarget } from "../curation-runtime";
+import { curationJobRunning, curationJobSnapshot, curationJobStop, curationScanAllowed, notifyCurationDown, pruneCurationChecks, readCurationStore, startCurationJob, webhookUrlOk, writeCurationStore, type CurationCheck, type CurationJobTarget, type CurationNotify } from "../curation-runtime";
 import { newId } from "../id";
 import { safeAppHref, safeEmbedHref } from "../safe-href";
 import { z } from "zod";
 import { parseNetscapeBookmarks } from "../bookmarks-html";
+import { cronSpecOk } from "../curation-cron";
 import { CustomIcon, Doc, DocSpace, HydratedUser, ItemKind, PortalCard, asCheck, asCheckHost, asStore, cardOf, cardUrl, catCanSee, emit, ensureRoles, ensureUsers, historyVisible, mutate, normalizeItem, readDoc, readDocUnlocked, requireAdmin, requireCreateSpace, requireEdit, requireUser, spaceCanSee, toDisk, tok, unwrapBackup, tokenField, tt, withLock, writeDocUnlocked } from "./core";
 
 export const exportPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
@@ -346,6 +347,7 @@ export type CurationView = {
 	queue: CurationScanRef[];
 	checks: Record<string, Record<string, CurationCheck>>;
 	lastRunAt: number;
+	lastNotify: CurationNotify | null;
 };
 
 const CURATION_MAX_LINKS = 400;
@@ -430,7 +432,7 @@ export const getCuration = createServerFn({ method: "POST" }).middleware([attach
 	for (const [cardId, links] of Object.entries(store.checks)) {
 		if (visible.has(cardId)) checks[cardId] = links;
 	}
-	return { items, queue: curationQueueOf(items), checks, lastRunAt: store.updatedAt };
+	return { items, queue: curationQueueOf(items), checks, lastRunAt: store.updatedAt, lastNotify: store.notify || null };
 }));
 
 export const curationStatus = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
@@ -497,15 +499,43 @@ export const curationStart = createServerFn({ method: "POST" }).middleware([atta
 
 export const updateCurationWebhook = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
-	url: z.string().max(2000)
+	url: z.string().max(2000).optional(),
+	cron: z.string().max(80).optional()
 })).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
-	const raw = String(data.url || "").trim();
-	if (raw && !/^https?:\/\//i.test(raw)) throw new Error("errors.httpRequired");
-	doc.settings.curationWebhook = raw.slice(0, 2000);
+	if (typeof data.url === "string") {
+		if (String(process.env.PORTAL_CURATION_WEBHOOK || "").trim()) throw new Error("errors.envWebhook");
+		const raw = data.url.trim();
+		if (raw && !/^https?:\/\//i.test(raw)) throw new Error("errors.httpRequired");
+		doc.settings.curationWebhook = raw.slice(0, 2000);
+	}
+	if (typeof data.cron === "string") {
+		if (String(process.env.PORTAL_CURATION_CRON || "").trim()) throw new Error("errors.envCron");
+		const spec = data.cron.trim();
+		if (!cronSpecOk(spec)) throw new Error("errors.cronInvalid");
+		doc.settings.curationCron = spec;
+	}
 	return emit(doc, user);
 }));
+
+export const testCurationWebhook = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
+	token: tokenField,
+	url: z.string().max(2000).optional()
+})).handler(async ({ data, request }: any) => {
+	if (!curationScanAllowed(request)) throw new Error("errors.tooManyProbes");
+	const doc = await readDoc();
+	const user = requireUser(doc, tok(data, request));
+	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
+	const fromEnv = String(process.env.PORTAL_CURATION_WEBHOOK || "").trim();
+	const href = fromEnv || String(data.url || doc.settings.curationWebhook || "").trim();
+	if (!webhookUrlOk(href)) throw new Error("errors.httpRequired");
+	const result = await notifyCurationDown(href, [], "curation.test");
+	const store = await readCurationStore();
+	store.notify = result;
+	await writeCurationStore(store);
+	return result;
+});
 
 export const probeTargets = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: z.string().optional(),

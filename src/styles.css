@@ -2456,6 +2456,15 @@ button.user-row-main:hover .user-row-name {
 .settings-field.is-child {
   margin-left: 1.6rem;
 }
+.settings-fields-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.8rem;
+  min-width: 0;
+}
+.settings-fields-row.is-child {
+  margin-left: 1.6rem;
+}
 .id-head {
   display: flex;
   align-items: flex-start;
@@ -2588,6 +2597,20 @@ html.dark .btn-debug:hover {
   background: var(--color-surface);
   padding: 0.5rem;
 }
+.settings-nav-item {
+  display: flex;
+  width: auto;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.7rem;
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
 @media (min-width: 40rem) {
   .settings-nav {
     width: 13.5rem;
@@ -2599,20 +2622,9 @@ html.dark .btn-debug:hover {
     border-right: 1px solid var(--color-border);
     padding: 0.85rem 0.7rem;
   }
-}
-.settings-nav-item {
-  display: flex;
-  width: 100%;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 0.7rem;
-  border-radius: var(--radius-md);
-  padding: 0.55rem 0.7rem;
-  text-align: left;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--color-muted);
-  white-space: nowrap;
+  .settings-nav-item {
+    width: 100%;
+  }
 }
 .settings-nav-item:hover {
   background: var(--color-elevated);

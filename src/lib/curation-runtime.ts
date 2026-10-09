@@ -5,10 +5,9 @@
  * curation.json only stores the outcome of the last check per card link.
  */
 
-import { dirname } from "node:path";
 import { newId } from "./id";
 import { t, withLocale } from "./i18n";
-import { clientIp, isDevRuntime } from "./security-runtime";
+import { clientIp } from "./security-runtime";
 
 export type CurationStatus = "valid" | "redirect" | "error" | "timeout" | "unknown";
 
@@ -22,11 +21,58 @@ export type CurationCheck = {
 	detail?: string;
 };
 
+export type CurationNotifyEvent = "curation.down" | "curation.test";
+
+export type CurationNotify = {
+	at: number;
+	ok: boolean;
+	event: CurationNotifyEvent;
+	status?: number;
+	detail?: string;
+	host?: string;
+};
+
 export type CurationStore = {
 	version: 1;
 	updatedAt: number;
 	checks: Record<string, Record<string, CurationCheck>>;
+	notify?: CurationNotify;
 };
+
+export type CurationDownItem = { title: string; url: string; status: string; cardId: string };
+
+export function webhookHost(raw: string): string {
+	try {
+		return new URL(String(raw || "").trim()).hostname.replace(/^\[/, "").replace(/\]$/, "").slice(0, 253);
+	} catch {
+		return "";
+	}
+}
+
+export function webhookUrlOk(raw: string): boolean {
+	const href = String(raw || "").trim();
+	if (!href || href.length > 2000) return false;
+	try {
+		const parsed = new URL(href);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+		const host = parsed.hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
+		if (host === "metadata.google.internal" || host.endsWith(".metadata.google.internal")) return false;
+		if (host === "169.254.169.254" || host === "169.254.170.2") return false;
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export function notifyText(event: CurationNotifyEvent, items: CurationDownItem[]): string {
+	if (event === "curation.test") return "Dockit webhook test.";
+	const n = items.length;
+	if (!n) return "";
+	const first = items[0];
+	const line = `${first.title} (${first.status}) — ${first.url}`;
+	if (n === 1) return `Dockit: ${line}`.slice(0, 1500);
+	return `Dockit: ${n} unreachable links. First: ${line}`.slice(0, 1500);
+}
 
 export const CURATION_MAX_CARDS = 4000;
 
@@ -160,25 +206,37 @@ export function curationJobSnapshot(): CurationJobView {
  * Runs the whole analysis inside the server process: survives panel close
  * and page refresh. Results merge into curation.json after every batch.
  */
-export async function notifyCurationDown(webhook: string, items: { title: string; url: string; status: string; cardId: string }[]) {
+export async function notifyCurationDown(
+	webhook: string,
+	items: CurationDownItem[],
+	event: CurationNotifyEvent = "curation.down",
+): Promise<CurationNotify> {
 	const href = String(webhook || "").trim();
-	if (!items.length || !/^https?:\/\//i.test(href) || /^(javascript|data|vbscript|file|about):/i.test(href)) return;
+	const at = Date.now();
+	const host = webhookHost(href);
+	if (!webhookUrlOk(href)) return { at, ok: false, event, host, detail: "errors.httpRequired" };
+	if (event !== "curation.test" && !items.length) return { at, ok: true, event, host, detail: "skip" };
 	const ctrl = new AbortController();
 	const timer = setTimeout(() => ctrl.abort(), 8000);
 	try {
-		await fetch(href, {
+		const res = await fetch(href, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({
+				text: notifyText(event, items),
 				source: "dockit",
-				event: "curation.down",
-				at: new Date().toISOString(),
+				event,
+				at: new Date(at).toISOString(),
 				items,
 			}),
 			signal: ctrl.signal,
 		});
-	} catch {
-		// ignore webhook failures
+		if (res.ok) return { at, ok: true, event, host, status: res.status };
+		return { at, ok: false, event, host, status: res.status, detail: `HTTP ${res.status}` };
+	} catch (err) {
+		const name = err && typeof err === "object" && "name" in err ? String((err as { name?: string }).name) : "";
+		const aborted = name === "AbortError";
+		return { at, ok: false, event, host, detail: aborted ? "probe.timeout" : "probe.unreachable" };
 	} finally {
 		clearTimeout(timer);
 	}
@@ -208,20 +266,12 @@ export async function startCurationJob(opts: {
 	const store = await readCurationStore();
 	const { probeHttpTrace, probeIcmp } = await import("./probe-runtime");
 	const dnsCache = new Map<string, string>();
-	if (isDevRuntime()) {
-		const { appendFileSync } = await import("node:fs");
-		appendFileSync("/tmp/dockit-curation.log", `\n=== job ${new Date().toISOString()} · ${opts.targets.length} liens ===\n`);
-	}
 	for (let i = 0; i < opts.targets.length; i += JOB_BATCH) {
 		if (curationJobRun !== run) break;
 		if (Date.now() - curationJob.startedAt > JOB_MAX_MS) break;
 		const slice = opts.targets.slice(i, i + JOB_BATCH);
 		const first = slice[0];
 		curationJob.current = jobWhere(first);
-		if (isDevRuntime()) {
-			const { appendFileSync } = await import("node:fs");
-			appendFileSync("/tmp/dockit-curation.log", `batch ${i}..${i + slice.length} · ${slice.map((t) => t.url).join(" | ")}\n`);
-		}
 		const results = await Promise.all(
 			slice.map(async (target) => {
 				if (target.mode === "icmp") {
@@ -239,13 +289,6 @@ export async function startCurationJob(opts: {
 			card[target.key] = check;
 			if (check.status !== "unknown") job.counts[check.status] += 1;
 			job.log.push(jobLine(target, check, opts.locale));
-			if (isDevRuntime()) {
-				const { appendFileSync } = await import("node:fs");
-				appendFileSync(
-					"/tmp/dockit-curation.log",
-					`${check.status} · ${check.responseTimeMs ?? 0} ms · ${target.url}${check.detail ? ` · ${check.detail}` : ""}\n`,
-				);
-			}
 		}
 		if (job.log.length > JOB_LOG_MAX) job.log = job.log.slice(-JOB_LOG_MAX);
 		job.done = Math.min(i + slice.length, opts.targets.length);
@@ -258,7 +301,7 @@ export async function startCurationJob(opts: {
 		curationJob.running = false;
 		curationJob.current = "";
 		curationJob.finishedAt = Date.now();
-		const down: { title: string; url: string; status: string; cardId: string }[] = [];
+		const down: CurationDownItem[] = [];
 		for (const [cardId, links] of Object.entries(store.checks)) {
 			for (const check of Object.values(links)) {
 				if (check.status === "error" || check.status === "timeout") {
@@ -272,13 +315,9 @@ export async function startCurationJob(opts: {
 				}
 			}
 		}
-		if (opts.webhook) void notifyCurationDown(opts.webhook, down);
-		if (isDevRuntime()) {
-			const { appendFileSync } = await import("node:fs");
-			appendFileSync(
-				"/tmp/dockit-curation.log",
-				`fin job: done=${curationJob.done}/${curationJob.total} en ${Math.round((curationJob.finishedAt - curationJob.startedAt) / 1000)}s\n`,
-			);
+		if (opts.webhook && down.length) {
+			store.notify = await notifyCurationDown(opts.webhook, down);
+			await writeCurationStore(store);
 		}
 	}
 	return true;
@@ -307,11 +346,31 @@ function asCheck(raw: unknown): CurationCheck | null {
 	return out;
 }
 
+function asNotify(raw: unknown): CurationNotify | undefined {
+	if (!raw || typeof raw !== "object") return;
+	const row = raw as Record<string, unknown>;
+	const event: CurationNotifyEvent = row.event === "curation.test" ? "curation.test" : "curation.down";
+	const status = Number(row.status);
+	const detail = String(row.detail || "").slice(0, 120);
+	const host = String(row.host || "").slice(0, 253);
+	const out: CurationNotify = {
+		at: Number(row.at) || 0,
+		ok: Boolean(row.ok),
+		event,
+	};
+	if (Number.isInteger(status) && status > 0 && status < 1000) out.status = status;
+	if (detail) out.detail = detail;
+	if (host) out.host = host;
+	return out;
+}
+
 export function asCurationStore(raw: unknown): CurationStore {
 	const out: CurationStore = { version: 1, updatedAt: 0, checks: {} };
 	if (!raw || typeof raw !== "object") return out;
 	const row = raw as Record<string, unknown>;
 	out.updatedAt = Number(row.updatedAt) || 0;
+	const notify = asNotify(row.notify);
+	if (notify) out.notify = notify;
 	if (row.checks && typeof row.checks === "object") {
 		const source = row.checks as Record<string, unknown>;
 		for (const cardId of Object.keys(source).slice(0, CURATION_MAX_CARDS)) {
@@ -339,9 +398,14 @@ export function pruneCurationChecks(store: CurationStore, knownCardIds: Set<stri
 	return changed;
 }
 
+function dirOf(file: string) {
+	const i = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+	return i >= 0 ? file.slice(0, i) || "/" : ".";
+}
+
 export function curationPath(join: (dir: string, ...parts: string[]) => string): string {
 	const custom = process.env.PORTAL_DATA_FILE?.trim();
-	if (custom) return join(dirname(custom), "curation.json");
+	if (custom) return join(dirOf(custom), "curation.json");
 	return join(process.cwd(), "data", "curation.json");
 }
 

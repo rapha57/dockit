@@ -341,6 +341,9 @@ export function PortalOverlays({
           catalog={data.catalog}
           probes={data.settings.healthChecks !== false}
           webhook={data.settings.curationWebhook}
+          cron={data.settings.curationCron}
+          cronFromEnv={Boolean(data.settings.curationCronFromEnv)}
+          webhookFromEnv={Boolean(data.settings.curationWebhookFromEnv)}
           knownTags={allTags}
           tagColors={data.settings.tagColors}
           editContext={(cardId) => {
@@ -364,6 +367,13 @@ export function PortalOverlays({
               onDone,
             })
           }
+          onSaved={(next) => {
+            setData(next);
+            if (next.session) {
+              setSession(next.session);
+              writeSessionInfo(next.session);
+            }
+          }}
           onClose={close}
         />
       )}

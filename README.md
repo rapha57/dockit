@@ -211,6 +211,8 @@ The curation view provides:
 - Unreachable hosts
 - Per-card results to quickly identify broken entries
 - A direct **Edit** action to fix a card
+- A schedule (off / hourly / daily / weekly) under **Curation → Settings**
+- An optional webhook when a link is unreachable
 
 Checks run server-side, so they are not affected by browser CORS restrictions.
 
@@ -223,6 +225,37 @@ data/curation.json
 ```
 
 Curation is available to administrators and editors.
+
+### Scheduled checks
+
+Empty schedule means off. Otherwise Dockit uses a five-field cron (`min hour dom mon dow`), with `*` or a single integer per field. The UI only offers hourly (`0 * * * *`), daily (`0 H * * *`) and weekly (`0 H * * D`).
+
+`PORTAL_CURATION_CRON` overrides the value saved in Settings and locks the picker.
+
+### Down webhook
+
+After a scan, if at least one link is in error or timeout, Dockit POSTs JSON to the URL in Settings (or `PORTAL_CURATION_WEBHOOK`, which wins and is not shown in the UI — the path often holds a secret).
+
+The body is readable on Slack incoming webhooks and Office 365 incoming webhooks (`text`), and still structured for a script or n8n:
+
+```json
+{
+  "text": "Dockit: GitLab (error) — https://gitlab.example/…",
+  "source": "dockit",
+  "event": "curation.down",
+  "at": "2026-10-09T03:00:00.000Z",
+  "items": [
+    {
+      "title": "GitLab",
+      "url": "https://gitlab.example/",
+      "status": "error",
+      "cardId": "…"
+    }
+  ]
+}
+```
+
+A **Test** button sends `event: "curation.test"` with an empty `items` array. Last delivery status is stored in `data/curation.json`.
 
 ## Access control
 
@@ -323,6 +356,8 @@ You can override its location with:
 ```bash
 PORTAL_DATA_FILE=/path/to/portal.json
 ```
+
+Optional: `PORTAL_CURATION_CRON` and `PORTAL_CURATION_WEBHOOK` override the schedule and alert URL from Settings.
 
 Treat the file as sensitive data. It contains password hashes and access-control information.
 
