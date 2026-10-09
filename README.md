@@ -123,7 +123,7 @@ admin / admin
 
 > The default credentials are for development only.
 
-The pre-commit hook runs `typecheck` and `lint` with zero warnings. CI on `main` runs those plus unit tests, a Playwright smoke (login, catalog, one pane) and Trivy for secrets / misconfig.
+The pre-commit hook runs `typecheck` and `lint` with zero warnings. CI on `main` runs those plus unit tests and Trivy for secrets / misconfig.
 
 ### Docker
 
