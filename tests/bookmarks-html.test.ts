@@ -279,6 +279,22 @@ describe("parseNetscapeBookmarks", () => {
 </DL><p>`);
     expect(parsed?.categories[0].cards).toEqual([{ title: "Ok", url: "https://ok.example" }]);
   });
+
+  it("does not leave script tags after nested markup in titles", () => {
+    const parsed = parseNetscapeBookmarks(`<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<H1>Bookmarks</H1>
+<DL><p>
+<DT><H3>Misc</H3>
+<DL><p>
+<DT><A HREF="https://ok.example">&lt;scr&lt;script&gt;ipt&gt;xss&lt;/script&gt;</A>
+<DT><A HREF="https://ok2.example"><scr<script>ipt>alert</script></A>
+</DL><p>
+</DL><p>`);
+    const titles = parsed?.categories[0].cards.map((card) => card.title) ?? [];
+    expect(titles.length).toBe(2);
+    expect(titles.join("\n")).not.toMatch(/<[a-z/]/i);
+    expect(titles).toEqual(["xss", "alert"]);
+  });
 });
 
 describe("escapeHtml", () => {

@@ -190,14 +190,24 @@ function linkLine(link: BookmarkLink, depth: number): string {
   return `${pad(depth)}<DT><A HREF="${escapeHtml(link.url)}">${escapeHtml(link.title)}</A>\n`;
 }
 
+function stripMarkup(value: string): string {
+  let previous = "";
+  let out = value;
+  while (out !== previous) {
+    previous = out;
+    out = out.replace(/<[^<>]*>/g, "");
+  }
+  return out.replace(/[<>]/g, "");
+}
+
 function decodeEntities(value: string): string {
-  return value
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/<\/?[^>]+>/g, "")
-    .trim();
+  return stripMarkup(
+    value
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&"),
+  ).trim();
 }
 
 export type ParsedBookmarkCard = { title: string; url: string };
