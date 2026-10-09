@@ -1389,6 +1389,7 @@ export function SecurityForm({
 }) {
   const {
     probeTlsVerify,
+    probeCaPem,
     probeAuthOnly,
     requireLogin,
     sessionHttpOnly,
@@ -1422,6 +1423,17 @@ export function SecurityForm({
             {t("sec.tls")}
           </label>
           <p className="settings-hint">{t("sec.tlsHint")}</p>
+          <Field label={t("sec.ca")} hint={t("sec.caHint")}>
+            <textarea
+              className="field-input theme-extra-css w-full resize-y rounded-lg border border-border bg-transparent p-2.5 font-mono leading-relaxed text-fg outline-none placeholder:text-subtle"
+              value={probeCaPem || ""}
+              spellCheck={false}
+              rows={6}
+              maxLength={20000}
+              placeholder="-----BEGIN CERTIFICATE-----"
+              onChange={(e) => onChange({ probeCaPem: e.target.value })}
+            />
+          </Field>
           <label className={requireLogin ? "is-disabled" : ""}>
             <input
               type="checkbox"

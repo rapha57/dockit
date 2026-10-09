@@ -7,6 +7,7 @@ import { pruneHistory, appendHistory, publicAudit, publicTrash, emptyTrash } fro
 import { attachDocRev } from "../doc-rev";
 import { can, defaultRoles, isOwnerUser } from "../acl";
 import { cleanProxyHost, cleanProxyPort, setOutboundProxy } from "../outbound-proxy";
+import { parseCaPem } from "../tls-ca";
 import { createServerFn } from "@tanstack/react-start";
 import { envLdapBindPassword, envOidcClientSecret, isDevRuntime, trustProxy } from "../security-runtime";
 import { newId } from "../id";
@@ -204,6 +205,7 @@ export const updateSettings = createServerFn({ method: "POST" }).middleware([att
 	infoStats: z.boolean().optional(),
 	infoLegend: z.boolean().optional(),
 	probeTlsVerify: z.boolean().optional(),
+	probeCaPem: z.string().max(2e4).optional(),
 	probeAuthOnly: z.boolean().optional(),
 	requireLogin: z.boolean().optional(),
 	sessionHttpOnly: z.boolean().optional(),
@@ -251,6 +253,7 @@ export const updateSettings = createServerFn({ method: "POST" }).middleware([att
 		infoStats: typeof data.infoStats === "boolean" ? data.infoStats : doc.settings.infoStats !== false,
 		infoLegend: typeof data.infoLegend === "boolean" ? data.infoLegend : doc.settings.infoLegend !== false,
 		probeTlsVerify: typeof data.probeTlsVerify === "boolean" ? data.probeTlsVerify : Boolean(doc.settings.probeTlsVerify),
+		probeCaPem: typeof data.probeCaPem === "string" ? parseCaPem(data.probeCaPem) : String(doc.settings.probeCaPem || ""),
 		probeAuthOnly: typeof data.probeAuthOnly === "boolean" ? data.probeAuthOnly : Boolean(doc.settings.probeAuthOnly),
 		requireLogin: typeof data.requireLogin === "boolean" ? data.requireLogin : Boolean(doc.settings.requireLogin),
 		sessionHttpOnly: typeof data.sessionHttpOnly === "boolean" ? data.sessionHttpOnly : Boolean(doc.settings.sessionHttpOnly),

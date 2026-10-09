@@ -1,6 +1,6 @@
 import { asDocRev, assertWritableRev, bumpDocRev, takeExpectedRev } from "../doc-rev";
+import { setExtraCaPem } from "../tls-ca";
 import { z } from "zod";
-import { randomBytes, scryptSync } from "node:crypto";
 import { newId } from "../id";
 import { safeAppHref, safeEmbedHref } from "../safe-href";
 import { MAX_CUSTOM_ICONS, toClientAsset } from "../assets-url";
@@ -15,7 +15,7 @@ import { parseSessCookie } from "../session-cookie";
 import { asHistory, appendHistory, snapshotSpace, snapshotCat, snapshotToDisk } from "../history";
 import { t, withLocale, asNumberFormat, asTimeFormat, asTimeZone, DATE_FORMATS } from "../i18n";
 
-export type { CurationCheck } from "../curation-runtime";
+export type { CurationCheck, CurationNotify } from "../curation-runtime";
 export type { CurationJobView } from "../curation-runtime";
 import { asDirectories, asLoginOrder, directoryReady, rdnValue, syncLegacyLdap } from "../ldap-runtime";
 import { remapTagHex } from "../tag-colors";
@@ -161,6 +161,8 @@ export type PortalSettings = {
   infoLegend: boolean;
   probeTlsVerify: boolean;
   curationWebhook?: string;
+  curationCron?: string;
+  probeCaPem?: string;
   probeAuthOnly: boolean;
   requireLogin: boolean;
   sessionHttpOnly: boolean;
@@ -202,6 +204,10 @@ export type PortalSettings = {
   ldapHasBindPassword?: boolean;
   /** Present on client payloads only (see clientSettings). */
   ldapBindFromEnv?: boolean;
+  /** Present on client payloads only (see clientSettings). */
+  curationCronFromEnv?: boolean;
+  /** Present on client payloads only (see clientSettings). */
+  curationWebhookFromEnv?: boolean;
 };
 
 export type CustomIcon = {
@@ -247,7 +253,22 @@ export function envUser() {
 export function envPassword() {
 	return (process.env.PORTAL_EDIT_PASSWORD || "admin").trim() || "admin";
 }
+function nodeCrypto() {
+	const proc = globalThis.process as { getBuiltinModule?: (id: string) => unknown } | undefined;
+	if (typeof proc?.getBuiltinModule === "function") {
+		return proc.getBuiltinModule("crypto") as typeof import("node:crypto");
+	}
+	throw new Error("errors.generic");
+}
+
+function randomHex(bytes: number) {
+	const buf = new Uint8Array(bytes);
+	globalThis.crypto.getRandomValues(buf);
+	return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function hashPasswordSync(password: string) {
+	const { randomBytes, scryptSync } = nodeCrypto();
 	const salt = randomBytes(16).toString("hex");
 	return `${salt}:${scryptSync(password, salt, 32).toString("hex")}`;
 }
@@ -324,7 +345,7 @@ export function loginOk(key: string) {
 	loginFails.delete(key);
 }
 export function issueToken(userId: string) {
-	const token = randomBytes(24).toString("hex");
+	const token = randomHex(24);
 	sessions.set(token, {
 		userId,
 		exp: Date.now() + SESSION_MS
@@ -487,6 +508,8 @@ export function defaultSettings(): PortalSettings {
 		infoLegend: true,
 		probeTlsVerify: false,
 		curationWebhook: "",
+		curationCron: "",
+		probeCaPem: "",
 		probeAuthOnly: false,
 		requireLogin: false,
 		sessionHttpOnly: false,
@@ -1316,6 +1339,8 @@ export function asStore(raw: any): Doc | null {
 			infoLegend: doc.settings.infoLegend !== false,
 			probeTlsVerify: Boolean(doc.settings.probeTlsVerify),
 			curationWebhook: String(doc.settings.curationWebhook || "").trim().slice(0, 2000),
+			curationCron: String(doc.settings.curationCron || "").trim().slice(0, 80),
+			probeCaPem: String(doc.settings.probeCaPem || "").slice(0, 2e4),
 			probeAuthOnly: Boolean(doc.settings.probeAuthOnly),
 			requireLogin: Boolean(doc.settings.requireLogin),
 			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly),
@@ -1474,6 +1499,7 @@ export async function readDocUnlocked(): Promise<Doc> {
 		ensureGroups(parsed);
 		applyEnvSecrets(parsed);
 		liveDoc = parsed;
+		setExtraCaPem(parsed.settings.probeCaPem);
 		void import("../curation-schedule").then((m) => m.ensureCurationSchedule()).catch(() => void 0);
 		return parsed;
 	} catch (err) {
@@ -1488,6 +1514,7 @@ async function persistDoc(doc: Doc) {
 	await persistDocMedia(doc);
 	const disk = toDisk(doc);
 	applyEnvSecrets(doc);
+	setExtraCaPem(doc.settings.probeCaPem);
 	liveDoc = doc;
 	const { mkdir, rename, writeFile, unlink } = await import("node:fs/promises");
 	const { dirname: dirn, join } = await import("node:path");
@@ -1539,6 +1566,9 @@ export function mutate<T>(
 		const result = await fn(doc);
 		if (bump) bumpDocRev(doc);
 		await writeDocUnlocked(doc);
+		if (bump && result && typeof result === "object" && "rev" in result) {
+			(result as { rev: number }).rev = asDocRev(doc.rev);
+		}
 		return result;
 	});
 }
@@ -1588,6 +1618,8 @@ function manageSpaces(doc: Doc) {
 }
 function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 	const s = doc.settings;
+	const cronEnv = String(process.env.PORTAL_CURATION_CRON || "").trim();
+	const hookEnv = String(process.env.PORTAL_CURATION_WEBHOOK || "").trim();
 	const dirs = asDirectories(s);
 	const realms = dirs.filter(directoryReady).map((d) => ({ id: d.id, label: d.domain }));
 	const out: any = {
@@ -1619,7 +1651,11 @@ function clientSettings(doc: Doc, user: HydratedUser | null | undefined) {
 		ldapRealms: realms,
 		loginOrder: asLoginOrder(s.loginOrder, dirs),
 		devAdminNoPassword: isDevRuntime() && Boolean(s.devAdminNoPassword),
-		curationWebhook: user && (isOwnerUser(user) || user.canCuration) ? String(s.curationWebhook || "") : "",
+		curationWebhook: user && (isOwnerUser(user) || user.canCuration) ? (hookEnv ? "" : String(s.curationWebhook || "")) : "",
+		curationCron: user && (isOwnerUser(user) || user.canCuration) ? (cronEnv || String(s.curationCron || "")) : "",
+		curationCronFromEnv: Boolean(cronEnv) && Boolean(user && (isOwnerUser(user) || user.canCuration)),
+		curationWebhookFromEnv: Boolean(hookEnv) && Boolean(user && (isOwnerUser(user) || user.canCuration)),
+		probeCaPem: user && (isOwnerUser(user) || user.canManageSettings) ? String(s.probeCaPem || "") : "",
 	};
 	delete out.oidcClientSecret;
 	delete out.ldapBindPassword;

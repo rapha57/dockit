@@ -1,5 +1,6 @@
 import type { Client } from "ldapts";
 import { newId } from "./id";
+import { extraCaPem } from "./tls-ca";
 
 const TIMEOUT_MS = 8000;
 export const LDAP_FILTER_DEFAULT =
@@ -220,7 +221,7 @@ function escapeFilter(value: unknown): string {
 	});
 }
 
-function ldapUrl(d: any): { url: string; tlsOptions?: { rejectUnauthorized: boolean } } {
+function ldapUrl(d: any): { url: string; tls: boolean; rejectUnauthorized: boolean } {
 	const host = String(d.host || d.ldapHost || "").trim();
 	if (!host) throw new Error("errors.ldapHost");
 	if (/[\s/]/.test(host) || host.includes(":")) throw new Error("errors.ldapHost");
@@ -228,18 +229,33 @@ function ldapUrl(d: any): { url: string; tlsOptions?: { rejectUnauthorized: bool
 	const port = Math.max(1, Math.min(65535, Number(d.port || d.ldapPort) || (tls ? 636 : 389)));
 	return {
 		url: `${tls ? "ldaps" : "ldap"}://${host}:${port}`,
-		tlsOptions: tls ? { rejectUnauthorized: d.tlsVerify !== false && d.ldapTlsVerify !== false } : undefined
+		tls,
+		rejectUnauthorized: d.tlsVerify !== false && d.ldapTlsVerify !== false,
+	};
+}
+
+async function ldapTlsOptions(d: { tls: boolean; rejectUnauthorized: boolean }) {
+	if (!d.tls) return undefined;
+	const extra = extraCaPem();
+	if (!extra) return { rejectUnauthorized: d.rejectUnauthorized };
+	const proc = globalThis.process as { getBuiltinModule?: (id: string) => unknown } | undefined;
+	const tls = typeof proc?.getBuiltinModule === "function"
+		? (proc.getBuiltinModule("tls") as typeof import("node:tls"))
+		: await import("node:tls");
+	return {
+		rejectUnauthorized: d.rejectUnauthorized,
+		ca: [...tls.rootCertificates, extra],
 	};
 }
 
 async function withClient<T>(d: any, fn: (client: Client) => Promise<T>): Promise<T> {
 	const { Client } = await import("ldapts");
-	const { url, tlsOptions } = ldapUrl(d);
+	const { url, tls, rejectUnauthorized } = ldapUrl(d);
 	const client = new Client({
 		url,
 		timeout: TIMEOUT_MS,
 		connectTimeout: TIMEOUT_MS,
-		tlsOptions
+		tlsOptions: await ldapTlsOptions({ tls, rejectUnauthorized }),
 	});
 	try {
 		return await fn(client);

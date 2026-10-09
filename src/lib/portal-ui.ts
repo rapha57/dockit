@@ -79,6 +79,7 @@ export type SettingsPayload = {
   infoStats: boolean;
   infoLegend: boolean;
   probeTlsVerify: boolean;
+  probeCaPem?: string;
   probeAuthOnly: boolean;
   requireLogin: boolean;
   sessionHttpOnly: boolean;
@@ -147,6 +148,7 @@ export function settingsBase(initial: PortalSettings): SettingsPayload {
     infoStats: initial.infoStats !== false,
     infoLegend: initial.infoLegend !== false,
     probeTlsVerify: Boolean(initial.probeTlsVerify),
+    probeCaPem: String(initial.probeCaPem || ""),
     probeAuthOnly: Boolean(initial.probeAuthOnly),
     requireLogin: Boolean(initial.requireLogin),
     outboundProxyEnabled: Boolean(initial.outboundProxyEnabled),

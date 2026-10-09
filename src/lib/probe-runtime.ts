@@ -5,6 +5,8 @@ import http from "node:http";
 import https from "node:https";
 import { lookup } from "node:dns/promises";
 import { clientIp, isDevRuntime } from "./security-runtime";
+import { extraCaPem } from "./tls-ca";
+import { rootCertificates } from "node:tls";
 
 export type ProbeMode = "http" | "icmp";
 
@@ -23,6 +25,12 @@ export type ProbeResult = {
   detail: string;
   at: number;
 };
+
+function tlsCaOption(): { ca: string[] } | Record<string, never> {
+  const extra = extraCaPem();
+  if (!extra) return {};
+  return { ca: [...rootCertificates, extra] };
+}
 
 const TIMEOUT_MS = 4000;
 const HOST_RE = /^[A-Za-z0-9._:\]-]+$/;
@@ -128,6 +136,7 @@ function requestOnce(
         method,
         timeout: TIMEOUT_MS,
         rejectUnauthorized: Boolean(tlsVerify),
+        ...(tlsVerify ? tlsCaOption() : {}),
         servername: useIp && url.protocol === "https:" ? url.hostname : undefined,
         headers: {
           Accept: "*/*",
