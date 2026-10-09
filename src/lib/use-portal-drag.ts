@@ -45,10 +45,8 @@ import {
   reorderCategories,
   reorderSpaces,
   updateCard,
-  type PortalCard,
-  type PortalCategory,
-  type SessionInfo,
 } from "@/lib/portal";
+import type { PortalCard, PortalCategory, SessionInfo } from "@/lib/portal/types";
 import type { CategoryMoveImpact } from "@/lib/acl";
 import type { MenuSpace, PortalData } from "@/lib/portal-ui";
 

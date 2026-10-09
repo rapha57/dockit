@@ -1,4 +1,4 @@
-import type { PortalCard, PortalCategory } from "@/lib/portal";
+import type { PortalCard, PortalCategory } from "@/lib/portal/types";
 
 export function reindexCards(cards: PortalCard[], categoryId: string) {
 	return cards.map((a, i) => ({

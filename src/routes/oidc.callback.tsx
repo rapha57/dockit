@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { finishOidc } from "@/lib/portal";
+import { applySessionToken } from "@/lib/portal-client-session";
 import { t, te } from "@/lib/i18n";
 
-const TOKEN_KEY = "portal-edit-token";
 const SESSION_KEY = "portal-session";
 
 type Search = {
@@ -41,17 +41,7 @@ function OidcCallback() {
 				if (!live) return;
 				try {
 					sessionStorage.setItem(SESSION_KEY, JSON.stringify(res.session));
-					if (res.sessionHttpOnly) {
-						await fetch("/__dockit/session", {
-							method: "POST",
-							headers: { "content-type": "application/json" },
-							credentials: "include",
-							body: JSON.stringify({ token: res.token }),
-						});
-						sessionStorage.removeItem(TOKEN_KEY);
-					} else {
-						sessionStorage.setItem(TOKEN_KEY, res.token);
-					}
+					await applySessionToken(res.token, Boolean(res.sessionHttpOnly));
 				} catch {
 					// ignore
 				}

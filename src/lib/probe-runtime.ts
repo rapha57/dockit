@@ -4,7 +4,7 @@ import { access } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import { lookup } from "node:dns/promises";
-import { clientIp, isDevRuntime } from "./security-runtime";
+import { clientIp } from "./security-runtime";
 import { extraCaPem } from "./tls-ca";
 import { rootCertificates } from "node:tls";
 
@@ -93,7 +93,7 @@ function httpUrl(raw: string): URL {
   return parsed;
 }
 
-function isBlockedProbeHost(host: string, ip = ""): boolean {
+export function isBlockedProbeHost(host: string, ip = ""): boolean {
   const h = host.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
   const addr = ip.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
   if (h === "metadata.google.internal" || h.endsWith(".metadata.google.internal")) return true;
@@ -104,7 +104,7 @@ function isBlockedProbeHost(host: string, ip = ""): boolean {
   return false;
 }
 
-async function assertProbeTarget(hostname: string, dnsCache?: Map<string, string>): Promise<string> {
+export async function assertProbeTarget(hostname: string, dnsCache?: Map<string, string>): Promise<string> {
   const host = hostname.replace(/^\[/, "").replace(/\]$/, "");
   const hit = dnsCache?.get(host);
   if (hit !== undefined) {
@@ -161,6 +161,51 @@ function requestOnce(
   });
 }
 
+/** POST JSON to a resolved IP (Host + SNI). No redirects. Same SSRF pin as probes. */
+export async function pinnedJsonPost(
+  href: string,
+  json: unknown,
+  timeoutMs = 8000,
+): Promise<{ status: number }> {
+  const url = httpUrl(href);
+  const ip = await assertProbeTarget(url.hostname);
+  const body = Buffer.from(JSON.stringify(json), "utf8");
+  return new Promise((resolve, reject) => {
+    const lib = url.protocol === "https:" ? https : http;
+    const req = lib.request(
+      {
+        protocol: url.protocol,
+        hostname: ip,
+        port: url.port || undefined,
+        path: `${url.pathname}${url.search}`,
+        method: "POST",
+        timeout: timeoutMs,
+        rejectUnauthorized: true,
+        ...tlsCaOption(),
+        servername: url.protocol === "https:" ? url.hostname : undefined,
+        headers: {
+          "content-type": "application/json",
+          "content-length": body.length,
+          Accept: "application/json, */*",
+          "User-Agent": "Dockit-Webhook/1.0",
+          Host: url.host,
+        },
+      },
+      (res) => {
+        res.resume();
+        resolve({ status: res.statusCode ?? 0 });
+      },
+    );
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("probe.timeout"));
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
 export type HttpTraceHop = { status: number; location: string };
 
 export type HttpTrace = {
@@ -179,9 +224,8 @@ export type HttpTrace = {
 export async function probeHttpTrace(rawUrl: string, tlsVerify = false, dnsCache?: Map<string, string>): Promise<HttpTrace> {
 	try {
 		let url = httpUrl(rawUrl);
-		const tDns = Date.now();
 		let ip = await assertProbeTarget(url.hostname, dnsCache);
-		if (isDevRuntime()) console.log(`[curation] dns ${url.hostname} ${Date.now() - tDns} ms`);
+
 		const redirects: HttpTraceHop[] = [];
 		const tReq = Date.now();
 		let method: "HEAD" | "GET" = "HEAD";
@@ -189,7 +233,7 @@ export async function probeHttpTrace(rawUrl: string, tlsVerify = false, dnsCache
 		let detail = "";
 		for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
 			const res = await requestOnce(url, method, tlsVerify, ip);
-			if (isDevRuntime()) console.log(`[curation] http ${url.hostname} ${res.status} ${Date.now() - tDns} ms`);
+
 			if (res.status === 405 || res.status === 501) {
 				method = "GET";
 				continue;

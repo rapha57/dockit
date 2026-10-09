@@ -1,4 +1,4 @@
-import type { PortalCard, PortalSettings } from "@/lib/portal";
+import type { PortalCard, PortalSettings } from "@/lib/portal/types";
 
 export type DragKind = "space" | "cat" | "card";
 export type DragState = { kind: DragKind; id: string } | null;

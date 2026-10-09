@@ -10,9 +10,9 @@ import { safeAppHref, safeEmbedHref } from "../safe-href";
 import { z } from "zod";
 import { parseNetscapeBookmarks } from "../bookmarks-html";
 import { cronSpecOk } from "../curation-cron";
-import { CustomIcon, Doc, DocSpace, HydratedUser, ItemKind, PortalCard, asCheck, asCheckHost, asStore, cardOf, cardUrl, catCanSee, emit, ensureRoles, ensureUsers, historyVisible, mutate, normalizeItem, readDoc, readDocUnlocked, requireAdmin, requireCreateSpace, requireEdit, requireUser, spaceCanSee, toDisk, tok, unwrapBackup, tokenField, tt, withLock, writeDocUnlocked } from "./core";
+import { CustomIcon, Doc, DocSpace, HydratedUser, ItemKind, PortalCard, asCheck, asCheckHost, asStore, assertReadyPassword, cardOf, cardUrl, catCanSee, emit, ensureRoles, ensureUsers, historyVisible, mutate, normalizeItem, readDoc, readDocUnlocked, requireAdmin, requireCreateSpace, requireEdit, requireUser, spaceCanSee, toDisk, tok, unwrapBackup, tokenField, tt, withLock, writeDocUnlocked } from "./core";
 
-export const exportPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
+export const exportPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
 	const { assetToDataUrl } = await import("../assets");
 	const doc = await readDocUnlocked();
 	requireAdmin(doc, tok(data, request));
@@ -35,9 +35,10 @@ export const exportPortal = createServerFn({ method: "POST" }).middleware([attac
 		})
 	};
 }));
-export const exportAudit = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
+export const exportAudit = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
+	assertReadyPassword(doc, user);
 	if (!user.canAudit) throw new Error("errors.insufficient");
 	const before = (doc.history || []).length;
 	pruneHistory(doc);
@@ -88,7 +89,7 @@ function catalogOfSpace(space: DocSpace) {
 export const exportSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => withLock(async () => {
+})).handler(async ({ data, request }) => withLock(async () => {
 	const { assetToDataUrl } = await import("../assets");
 	const doc = await readDocUnlocked();
 	requireEdit(doc, tok(data, request), data.id);
@@ -125,7 +126,7 @@ export const importSpace = createServerFn({ method: "POST" }).middleware([attach
 	token: tokenField,
 	payload: z.unknown(),
 	afterId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	const parsed = parseSpaceXfer(data.payload);
 	if (!parsed) throw new Error("errors.badSpaceFile");
@@ -202,7 +203,7 @@ export const importSpace = createServerFn({ method: "POST" }).middleware([attach
 export const importBookmarks = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	html: z.string().min(20).max(2e6)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	const parsed = parseNetscapeBookmarks(data.html);
 	if (!parsed) throw new Error("errors.badBackup");
@@ -259,7 +260,7 @@ export const importBookmarks = createServerFn({ method: "POST" }).middleware([at
 export const importPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	payload: z.unknown()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const actor = requireAdmin(doc, tok(data, request));
 	const parsed = asStore(unwrapBackup(data.payload));
 	if (!parsed || !parsed.spaces.length) throw new Error("errors.badBackup");
@@ -420,9 +421,10 @@ function allCardIds(doc: Doc): Set<string> {
 
 export const getCuration = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
-})).handler(async ({ data, request }: any) => withLock(async () => {
+})).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
+	assertReadyPassword(doc, user);
 	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
 	const store = await readCurationStore();
 	if (pruneCurationChecks(store, allCardIds(doc))) await writeCurationStore(store);
@@ -437,18 +439,20 @@ export const getCuration = createServerFn({ method: "POST" }).middleware([attach
 
 export const curationStatus = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
-})).handler(async ({ data, request }: any) => {
+})).handler(async ({ data, request }) => {
 	const doc = await readDoc();
 	const user = requireUser(doc, tok(data, request));
+	assertReadyPassword(doc, user);
 	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
 	return curationJobSnapshot();
 });
 
 export const curationStop = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
-})).handler(async ({ data, request }: any) => {
+})).handler(async ({ data, request }) => {
 	const doc = await readDoc();
 	const user = requireUser(doc, tok(data, request));
+	assertReadyPassword(doc, user);
 	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
 	return { stopped: curationJobStop() };
 });
@@ -489,10 +493,11 @@ export async function launchCurationScan(doc: Doc, user: HydratedUser | User | n
 
 export const curationStart = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
-})).handler(async ({ data, request }: any) => withLock(async () => {
+})).handler(async ({ data, request }) => withLock(async () => {
 	if (!curationScanAllowed(request)) throw new Error("errors.tooManyProbes");
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
+	assertReadyPassword(doc, user);
 	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
 	return launchCurationScan(doc, user);
 }));
@@ -501,7 +506,7 @@ export const updateCurationWebhook = createServerFn({ method: "POST" }).middlewa
 	token: tokenField,
 	url: z.string().max(2000).optional(),
 	cron: z.string().max(80).optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
 	if (typeof data.url === "string") {
@@ -522,10 +527,11 @@ export const updateCurationWebhook = createServerFn({ method: "POST" }).middlewa
 export const testCurationWebhook = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	url: z.string().max(2000).optional()
-})).handler(async ({ data, request }: any) => {
+})).handler(async ({ data, request }) => {
 	if (!curationScanAllowed(request)) throw new Error("errors.tooManyProbes");
 	const doc = await readDoc();
 	const user = requireUser(doc, tok(data, request));
+	assertReadyPassword(doc, user);
 	if (!user.canCuration && !isOwnerUser(user)) throw new Error("errors.insufficient");
 	const fromEnv = String(process.env.PORTAL_CURATION_WEBHOOK || "").trim();
 	const href = fromEnv || String(data.url || doc.settings.curationWebhook || "").trim();

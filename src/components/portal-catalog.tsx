@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { PortalIcon } from "@/lib/icons";
 import { allowsFavorite, ITEM_GRID, itemSpanClass } from "@/lib/portal-dnd";
-import { cardsAlphaDir, type PortalCard, type PortalCategory, type PortalSettings } from "@/lib/portal";
+import { cardsAlphaDir, type PortalCard, type PortalCategory, type PortalSettings } from "@/lib/portal/types";
 import type { ProbeResult } from "@/lib/probe";
 import type { CatalogSpace } from "@/lib/portal-ui";
 import { t, tp } from "@/lib/i18n";

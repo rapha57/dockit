@@ -9,22 +9,23 @@ import { can, defaultRoles, isOwnerUser } from "../acl";
 import { cleanProxyHost, cleanProxyPort, setOutboundProxy } from "../outbound-proxy";
 import { parseCaPem } from "../tls-ca";
 import { createServerFn } from "@tanstack/react-start";
-import { envLdapBindPassword, envOidcClientSecret, isDevRuntime, trustProxy } from "../security-runtime";
+import { envLdapBindPassword, envOidcClientSecret, isDevRuntime, isLocalHttp, effectiveSessionHttpOnly, trustProxy } from "../security-runtime";
 import { newId } from "../id";
 import { randomBytes } from "node:crypto";
 import { withLocale, asTimeFormat, asTimeZone, DATE_FORMATS, NUMBER_FORMATS } from "../i18n";
 import { z } from "zod";
-import { Doc, OIDC_PENDING_MS, applyAdMembership, applyOidcGroups, asCheck, asIdList, authExternalId, blankSpaces, bumpClickDay, cardOf, clickStatsFor, clientKey, defaultSettings, directoryPayload, emit, ensureGroups, ensureUsers, envPassword, envUser, findUserForAuth, hashPassword, historyVisible, inLinkedAdGroups, inLinkedOidcGroups, issueToken, loadPortal, loginBlocked, loginFail, loginOk, mutate, oidcPending, pruneUnusedTags, readDoc, readDocUnlocked, requireAccountManager, requireAdmin, requireStrongPassword, requireUser, setLiveDoc, restoreHistoryItem, scheduleClickFlush, sessionFor, sessions, spaceCanSee, tok, tokenField, tt, upsertAdGroups, verifyPassword, withLock, writeDocUnlocked } from "./core";
+import { Doc, OIDC_PENDING_MS, applyAdMembership, applyOidcGroups, asCheck, asIdList, assertReadyPassword, authExternalId, blankSpaces, bumpClickDay, cardOf, clickStatsFor, clientKey, defaultSettings, directoryPayload, emit, ensureGroups, ensureUsers, envPassword, envUser, findUserForAuth, hashPassword, historyVisible, inLinkedAdGroups, inLinkedOidcGroups, issueToken, loadPortal, loginBlocked, loginFail, loginOk, mutate, oidcPending, pruneUnusedTags, readDoc, readDocUnlocked, requireAccountManager, requireAdmin, requireStrongPassword, requireUser, setLiveDoc, restoreHistoryItem, scheduleClickFlush, sessionFor, sessions, spaceCanSee, tok, tokenField, tt, upsertAdGroups, verifyPassword, withLock, writeDocUnlocked } from "./core";
 
 export const getPortal = createServerFn({ method: "GET" }).validator(z.object({
 	spaceId: z.string().optional(),
 	token: z.string().optional()
-})).handler(async ({ data, request }: any) => loadPortal(data.spaceId, tok(data, request)));
+})).handler(async ({ data, request }) => loadPortal(data.spaceId, tok(data, request), request));
 export const listHistory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
-})).handler(async ({ data, request }: any) => withLock(async () => {
+})).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
+	assertReadyPassword(doc, user);
 	if (!user.canAudit && !user.canRestore) throw new Error("errors.insufficient");
 	const before = (doc.history || []).length;
 	pruneHistory(doc);
@@ -43,7 +44,7 @@ export const restoreHistory = createServerFn({ method: "POST" }).middleware([att
 	id: z.string().min(1),
 	scope: z.enum(["card", "category", "space"]),
 	targetId: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canRestore) throw new Error("errors.insufficient");
 	const ev = (doc.history || []).find((row) => row.id === data.id);
@@ -54,7 +55,7 @@ export const restoreHistory = createServerFn({ method: "POST" }).middleware([att
 }));
 export const purgeTrash = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField
-})).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, async (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!user.canPurge) throw new Error("errors.insufficient");
 	emptyTrash(doc);
@@ -69,7 +70,7 @@ export const purgeTrash = createServerFn({ method: "POST" }).middleware([attachD
 export const rememberSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	spaceId: z.string().min(1),
 	token: z.string().optional()
-})).handler(async ({ data, request }: any) => withLock(async () => {
+})).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	if (doc.lastSpaceId === data.spaceId) return;
 	const space = doc.spaces.find((t) => t.id === data.spaceId);
@@ -88,7 +89,7 @@ export const rememberSpace = createServerFn({ method: "POST" }).middleware([atta
 export const recordClick = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	id: z.string().min(1),
 	token: z.string().optional()
-})).handler(async ({ data, request }: any) => withLock(async () => {
+})).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	let user = null;
 	const token = tok(data, request);
@@ -119,7 +120,7 @@ export const recordClick = createServerFn({ method: "POST" }).middleware([attach
 export const resetClicks = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	for (const space of doc.spaces) for (const cat of space.categories) for (const app of cat.cards) if (app.kind === "app") app.clicks = 0;
 	doc.clickDays = {};
@@ -128,7 +129,7 @@ export const resetClicks = createServerFn({ method: "POST" }).middleware([attach
 export const resetProbes = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	for (const space of doc.spaces)
 		for (const cat of space.categories)
@@ -144,7 +145,7 @@ export const resetProbes = createServerFn({ method: "POST" }).middleware([attach
 	});
 	return emit(doc, user, data.spaceId);
 }));
-export const resetPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
+export const resetPortal = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => mutate(data, request, async (doc) => {
 	requireAdmin(doc, tok(data, request));
 	const fresh = blankSpaces("en");
 	doc.settings = defaultSettings();
@@ -187,6 +188,7 @@ export const updateSettings = createServerFn({ method: "POST" }).middleware([att
 	documentTitle: z.string().max(60).optional(),
 	favicon: z.string().max(4e5).optional(),
 	favWidgets: z.boolean().optional(),
+	restoreLastSpace: z.boolean().optional(),
 	favNotes: z.boolean().optional(),
 	favEmbeds: z.boolean().optional(),
 	onlineIcons: z.boolean().optional(),
@@ -223,7 +225,7 @@ export const updateSettings = createServerFn({ method: "POST" }).middleware([att
 	timezone: z.string().max(80).optional(),
 	numberFormat: z.enum(["auto", "space-comma", "comma-dot", "dot-comma", "apostrophe-comma"]).optional(),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
@@ -235,6 +237,7 @@ export const updateSettings = createServerFn({ method: "POST" }).middleware([att
 		infoBar: data.infoBar ?? doc.settings.infoBar !== false,
 		documentTitle: String((data.documentTitle ?? doc.settings.documentTitle) || "Dockit").slice(0, 60),
 		favicon: typeof data.favicon === "string" ? data.favicon.slice(0, 4e5) : doc.settings.favicon,
+		restoreLastSpace: typeof data.restoreLastSpace === "boolean" ? data.restoreLastSpace : Boolean(doc.settings.restoreLastSpace),
 		favNotes: typeof data.favNotes === "boolean" ? data.favNotes : typeof data.favWidgets === "boolean" ? data.favWidgets : Boolean(doc.settings.favNotes),
 		favEmbeds: typeof data.favEmbeds === "boolean" ? data.favEmbeds : typeof data.favWidgets === "boolean" ? data.favWidgets : Boolean(doc.settings.favEmbeds),
 		onlineIcons: typeof data.onlineIcons === "boolean" ? data.onlineIcons : Boolean(doc.settings.onlineIcons),
@@ -256,7 +259,9 @@ export const updateSettings = createServerFn({ method: "POST" }).middleware([att
 		probeCaPem: typeof data.probeCaPem === "string" ? parseCaPem(data.probeCaPem) : String(doc.settings.probeCaPem || ""),
 		probeAuthOnly: typeof data.probeAuthOnly === "boolean" ? data.probeAuthOnly : Boolean(doc.settings.probeAuthOnly),
 		requireLogin: typeof data.requireLogin === "boolean" ? data.requireLogin : Boolean(doc.settings.requireLogin),
-		sessionHttpOnly: typeof data.sessionHttpOnly === "boolean" ? data.sessionHttpOnly : Boolean(doc.settings.sessionHttpOnly),
+		sessionHttpOnly: !isLocalHttp(request)
+			? true
+			: typeof data.sessionHttpOnly === "boolean" ? data.sessionHttpOnly : Boolean(doc.settings.sessionHttpOnly),
 		devAdminNoPassword: typeof data.devAdminNoPassword === "boolean" ? data.devAdminNoPassword : Boolean(doc.settings.devAdminNoPassword),
 		proxyAuthEnabled: typeof data.proxyAuthEnabled === "boolean" ? data.proxyAuthEnabled : Boolean(doc.settings.proxyAuthEnabled),
 		proxyAuthHeader: /^[A-Za-z0-9-]+$/.test(String(data.proxyAuthHeader || "").trim())
@@ -271,11 +276,11 @@ export const updateSettings = createServerFn({ method: "POST" }).middleware([att
 			if (!next || next === "********") return String(doc.settings.outboundProxyPassword || "");
 			return next.slice(0, 200);
 		})(),
-		dateFormat: DATE_FORMATS.includes(data.dateFormat) ? data.dateFormat : DATE_FORMATS.includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd",
+		dateFormat: data.dateFormat && DATE_FORMATS.includes(data.dateFormat) ? data.dateFormat : DATE_FORMATS.includes(doc.settings.dateFormat) ? doc.settings.dateFormat : "ymd",
 		timeFormat: data.timeFormat === "12h" || data.timeFormat === "24h" ? data.timeFormat : asTimeFormat(doc.settings.timeFormat),
 		timezone: typeof data.timezone === "string" ? asTimeZone(data.timezone) : asTimeZone(doc.settings.timezone),
 		locale: data.locale === "fr" || data.locale === "en" ? data.locale : doc.settings.locale === "fr" ? "fr" : "en",
-		numberFormat: NUMBER_FORMATS.includes(data.numberFormat) ? data.numberFormat : NUMBER_FORMATS.includes(doc.settings.numberFormat as import("../i18n").NumberFormat) ? doc.settings.numberFormat : "auto"
+		numberFormat: data.numberFormat && NUMBER_FORMATS.includes(data.numberFormat) ? data.numberFormat : NUMBER_FORMATS.includes(doc.settings.numberFormat as import("../i18n").NumberFormat) ? doc.settings.numberFormat : "auto"
 	};
 	setOutboundProxy({
 		enabled: Boolean(doc.settings.outboundProxyEnabled),
@@ -296,7 +301,7 @@ export const updateThemeCss = createServerFn({ method: "POST" }).middleware([att
 	cssLight: z.string().max(CSS_MAX),
 	cssDark: z.string().max(CSS_MAX),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
@@ -378,9 +383,9 @@ export const unlockEdit = createServerFn({ method: "POST" }).middleware([attachD
 			return {
 				token: issueToken(user.id),
 				session: await sessionFor(user, doc),
-				sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly)
+				sessionHttpOnly: effectiveSessionHttpOnly((ctx as any).request, Boolean(doc.settings.sessionHttpOnly))
 			};
-		});
+		}, { allowWeakAdmin: true });
 	}
 	return mutate(data, (ctx as any).request, async (doc) => {
 		ensureUsers(doc);
@@ -404,9 +409,9 @@ export const unlockEdit = createServerFn({ method: "POST" }).middleware([attachD
 		return {
 			token: issueToken(user.id),
 			session: await sessionFor(user, doc),
-			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly)
+			sessionHttpOnly: effectiveSessionHttpOnly((ctx as any).request, Boolean(doc.settings.sessionHttpOnly))
 		};
-	});
+	}, { allowWeakAdmin: true });
 });
 function pruneOidcPending() {
 	const now = Date.now();
@@ -433,7 +438,7 @@ export const updateOidcSettings = createServerFn({ method: "POST" }).middleware(
 	oidcAutoCreate: z.boolean().optional(),
 	oidcAutoRedirect: z.boolean().optional(),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, async (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	const issuer = data.oidcIssuer.trim();
 	const clientId = data.oidcClientId.trim();
@@ -482,7 +487,7 @@ export const updateLdapSettings = createServerFn({ method: "POST" }).middleware(
 		autoCreate: z.boolean().optional()
 	})).max(8),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, async (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	const prev = asDirectories(doc.settings);
 	const prevById = new Map(prev.map((d) => [d.id, d]));
@@ -539,7 +544,7 @@ export const searchLdapGroups = createServerFn({ method: "POST" }).middleware([a
 	token: tokenField,
 	directoryId: z.string().min(1).max(80),
 	query: z.string().max(80)
-})).handler(async ({ data, request }: any) => {
+})).handler(async ({ data, request }) => {
 	const doc = await readDoc();
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
@@ -577,7 +582,7 @@ export const linkLdapGroups = createServerFn({ method: "POST" }).middleware([att
 		dn: z.string().min(1).max(400),
 		name: z.string().min(1).max(60)
 	})).min(1).max(20)
-})).handler(async ({ data, request }: any) => {
+})).handler(async ({ data, request }) => {
 	const snap = await readDoc();
 	const pre = requireAccountManager(snap, tok(data, request));
 	if (!isOwnerUser(pre) && !pre.canManageGroups) throw new Error("errors.insufficient");
@@ -618,7 +623,7 @@ export const linkLdapGroups = createServerFn({ method: "POST" }).middleware([att
 export const syncLdapGroup = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	groupId: z.string().min(1)
-})).handler(async ({ data, request }: any) => {
+})).handler(async ({ data, request }) => {
 	const snap = await readDoc();
 	const pre = requireAccountManager(snap, tok(data, request));
 	if (!isOwnerUser(pre) && !pre.canManageGroups) throw new Error("errors.insufficient");
@@ -649,7 +654,7 @@ export const updateLoginOrder = createServerFn({ method: "POST" }).middleware([a
 	token: tokenField,
 	loginOrder: z.array(z.string().min(1).max(80)).min(1).max(16),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	doc.settings = {
 		...doc.settings,
@@ -772,9 +777,9 @@ export const finishOidc = createServerFn({ method: "POST" }).middleware([attachD
 		return {
 			token: issueToken(user.id),
 			session: await sessionFor(user, doc),
-			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly)
+			sessionHttpOnly: effectiveSessionHttpOnly((ctx as any).request, Boolean(doc.settings.sessionHttpOnly))
 		};
-	});
+	}, { allowWeakAdmin: true });
 });
 export const proxyLogin = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({})).handler(async (ctx) => {
 	const doc = await readDoc();
@@ -842,7 +847,7 @@ export const proxyLogin = createServerFn({ method: "POST" }).middleware([attachD
 		return {
 			token: issueToken(user.id),
 			session: await sessionFor(user, doc),
-			sessionHttpOnly: Boolean(doc.settings.sessionHttpOnly)
+			sessionHttpOnly: effectiveSessionHttpOnly((ctx as any).request, Boolean(doc.settings.sessionHttpOnly))
 		};
-	});
+	}, { allowWeakAdmin: true });
 });

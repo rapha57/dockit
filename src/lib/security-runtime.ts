@@ -39,16 +39,92 @@ export function assertProductionSecrets(): void {
 	}
 }
 
-export function clientIp(request: { headers?: { get?: (k: string) => string | null } | Record<string, string> } | undefined): string {
-	if (!trustProxy()) return "local";
+type HeaderBag = { get?: (k: string) => string | null } | Record<string, string> | undefined;
+
+export type RequestLike = {
+	url?: string;
+	headers?: HeaderBag;
+} | null | undefined;
+
+function headerOf(request: RequestLike, name: string): string {
 	try {
 		const headers = request?.headers;
-		const xf =
-			typeof headers?.get === "function"
-				? headers.get("x-forwarded-for")
-				: (headers as Record<string, string> | undefined)?.["x-forwarded-for"];
+		if (!headers) return "";
+		if (typeof headers.get === "function") return String(headers.get(name) || "");
+		const rec = headers as Record<string, string>;
+		const direct = rec[name] ?? rec[name.toLowerCase()];
+		return String(direct || "");
+	} catch {
+		return "";
+	}
+}
+
+function firstForwarded(raw: string): string {
+	return raw.split(",")[0]?.trim() || "";
+}
+
+/** Host without port. `[::1]:8080` → `::1`. */
+export function hostnameOf(host: string): string {
+	const raw = String(host || "").trim().toLowerCase();
+	if (!raw) return "";
+	if (raw.startsWith("[")) {
+		const end = raw.indexOf("]");
+		return end > 1 ? raw.slice(1, end) : raw.replace(/^\[/, "").replace(/\]$/, "");
+	}
+	if (raw.includes(".") && raw.includes(":")) return raw.replace(/:\d+$/, "");
+	if (/^localhost:\d+$/i.test(raw)) return "localhost";
+	if (/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(raw)) return raw.replace(/:\d+$/, "");
+	return raw;
+}
+
+export function isLoopbackHost(host: string): boolean {
+	const h = hostnameOf(host).replace(/^::ffff:/, "");
+	return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "0:0:0:0:0:0:0:1";
+}
+
+export function requestProtoHost(request: RequestLike): { proto: "http" | "https"; host: string } {
+	let proto = "";
+	let host = "";
+	if (request?.url) {
+		try {
+			const u = new URL(request.url);
+			proto = u.protocol.replace(":", "");
+			host = u.host;
+		} catch {
+			/* ignore */
+		}
+	}
+	if (!host) host = headerOf(request, "host");
+	if (trustProxy()) {
+		const xfProto = firstForwarded(headerOf(request, "x-forwarded-proto"));
+		const xfHost = firstForwarded(headerOf(request, "x-forwarded-host")) || headerOf(request, "host");
+		if (xfProto) proto = xfProto;
+		if (xfHost) host = xfHost;
+	}
+	return {
+		proto: proto.toLowerCase() === "https" ? "https" : "http",
+		host,
+	};
+}
+
+/** Loopback HTTP only. Unknown request → not local (fail closed, force HttpOnly). */
+export function isLocalHttp(request: RequestLike): boolean {
+	if (!request) return false;
+	const { proto, host } = requestProtoHost(request);
+	return proto === "http" && isLoopbackHost(host);
+}
+
+export function effectiveSessionHttpOnly(request: RequestLike, setting: boolean): boolean {
+	if (!isLocalHttp(request)) return true;
+	return Boolean(setting);
+}
+
+export function clientIp(request: { headers?: HeaderBag } | undefined): string {
+	if (!trustProxy()) return "local";
+	try {
+		const xf = headerOf(request, "x-forwarded-for");
 		if (xf) {
-			const ip = String(xf).split(",")[0].trim();
+			const ip = firstForwarded(xf);
 			if (ip) return ip;
 		}
 	} catch {

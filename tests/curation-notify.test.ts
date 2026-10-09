@@ -5,6 +5,7 @@ import {
 	notifyText,
 	webhookUrlOk,
 } from "@/lib/curation-runtime";
+import * as probe from "@/lib/probe-runtime";
 
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -38,18 +39,16 @@ describe("notifyText", () => {
 });
 
 describe("notifyCurationDown", () => {
-	it("POSTs text plus structured fields", async () => {
-		const fetchMock = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>(
-			async () => new Response("ok", { status: 200 }),
-		);
-		vi.stubGlobal("fetch", fetchMock);
+	it("POSTs text plus structured fields through the DNS pin", async () => {
+		const post = vi.spyOn(probe, "pinnedJsonPost").mockResolvedValue({ status: 200 });
 		const items = [{ title: "GitLab", url: "https://gitlab.example/", status: "error", cardId: "c1" }];
 		const result = await notifyCurationDown("https://hooks.example/dockit", items);
 		expect(result.ok).toBe(true);
 		expect(result.status).toBe(200);
 		expect(result.host).toBe("hooks.example");
-		expect(fetchMock).toHaveBeenCalledOnce();
-		const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body || "{}"));
+		expect(post).toHaveBeenCalledOnce();
+		expect(post.mock.calls[0]?.[0]).toBe("https://hooks.example/dockit");
+		const body = post.mock.calls[0]?.[1] as { text?: string; source?: string; event?: string; items?: unknown };
 		expect(body.text).toBe("Dockit: GitLab (error) — https://gitlab.example/");
 		expect(body.source).toBe("dockit");
 		expect(body.event).toBe("curation.down");
@@ -57,24 +56,27 @@ describe("notifyCurationDown", () => {
 	});
 
 	it("skips the POST when nothing is down", async () => {
-		const fetchMock = vi.fn();
-		vi.stubGlobal("fetch", fetchMock);
+		const post = vi.spyOn(probe, "pinnedJsonPost");
 		const result = await notifyCurationDown("https://hooks.example/dockit", []);
 		expect(result.ok).toBe(true);
 		expect(result.detail).toBe("skip");
-		expect(fetchMock).not.toHaveBeenCalled();
+		expect(post).not.toHaveBeenCalled();
 	});
 
 	it("records HTTP failure", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response("nope", { status: 500 })),
-		);
+		vi.spyOn(probe, "pinnedJsonPost").mockResolvedValue({ status: 500 });
 		const result = await notifyCurationDown("https://hooks.example/dockit", [], "curation.test");
 		expect(result.ok).toBe(false);
 		expect(result.status).toBe(500);
 		expect(result.detail).toBe("HTTP 500");
 		expect(result.event).toBe("curation.test");
+	});
+
+	it("records a forbidden pin as a failed delivery", async () => {
+		vi.spyOn(probe, "pinnedJsonPost").mockRejectedValue(new Error("errors.probeForbidden"));
+		const result = await notifyCurationDown("https://hooks.example/dockit", [], "curation.test");
+		expect(result.ok).toBe(false);
+		expect(result.detail).toBe("errors.probeForbidden");
 	});
 });
 

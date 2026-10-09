@@ -54,6 +54,7 @@ export function AccountMenu({
   role,
   username,
   openFavs,
+  hideOpenFavs,
   onLogin,
   onEdit,
   onSettings,
@@ -77,6 +78,7 @@ export function AccountMenu({
   username?: string;
   isOwner?: boolean;
   openFavs: boolean;
+  hideOpenFavs?: boolean;
   onLogin: () => void;
   onEdit: () => void;
   onSettings: () => void;
@@ -109,14 +111,16 @@ export function AccountMenu({
     <>
       <div className="menu-sep" />
       <p className="menu-kicker">{t("account.browser")}</p>
-      <label className="account-check is-local">
-        <input
-          type="checkbox"
-          checked={Boolean(openFavs)}
-          onChange={(e) => onOpenFavs(e.target.checked)}
-        />
-        {t("account.openFavs")}
-      </label>
+      {hideOpenFavs ? null : (
+        <label className="account-check is-local">
+          <input
+            type="checkbox"
+            checked={Boolean(openFavs)}
+            onChange={(e) => onOpenFavs(e.target.checked)}
+          />
+          {t("account.openFavs")}
+        </label>
+      )}
       <button
         type="button"
         role="menuitem"

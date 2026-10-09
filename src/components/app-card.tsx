@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { NoteBody } from "@/components/note-editor";
 import { t, td, tp } from "@/lib/i18n";
 import { PortalIcon } from "@/lib/icons";
-import { cardUrl, type PortalCard } from "@/lib/portal";
+import { cardUrl, type PortalCard } from "@/lib/portal/types";
 import { safeAppHref, safeEmbedHref } from "@/lib/safe-href";
 import { orderedTags, tagPaint } from "@/lib/tag-ui";
 import { clearResizeCursor, finePointer, hoverResizeCursor } from "@/lib/card-resize";

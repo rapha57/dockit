@@ -5,7 +5,7 @@ import { attachDocRev } from "../doc-rev";
 import { createServerFn } from "@tanstack/react-start";
 import { newId } from "../id";
 import { z } from "zod";
-import { Doc, asIdList, directoryPayload, ensureGroups, ensureRoles, ensureUsers, hashPassword, mutate, readDocUnlocked, requireAccountManager, requireStrongPassword, stripUserAccess, syncGroupMembers, syncUserGroups, tok, tokenField, withLock } from "./core";
+import { Doc, adminMustChangePassword, asIdList, directoryPayload, ensureGroups, ensureRoles, ensureUsers, hashPassword, hydrateUser, mutate, readDocUnlocked, requireAccountManager, requireStrongPassword, stripUserAccess, syncGroupMembers, syncUserGroups, tok, tokenField, view, withLock } from "./core";
 
 const grantField = z.object({
 	res: z.enum(["portal", "space", "cat", "card"]),
@@ -25,10 +25,33 @@ function cleanRoleIds(doc: Doc, ids: unknown, { allowOwner = false, allowEmpty =
 	if (out.length) return out;
 	return allowEmpty ? [] : ["lecteur"];
 }
-export const listUsers = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }: any) => withLock(async () => {
+export const listUsers = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({ token: tokenField })).handler(async ({ data, request }) => withLock(async () => {
+	const doc = await readDocUnlocked();
+	const actor = requireAccountManager(doc, tok(data, request), { allowWeakAdmin: true });
+	return directoryPayload(doc, actor);
+}));
+export const previewAsUser = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
+	token: tokenField,
+	userId: z.string().min(1).max(80)
+})).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const actor = requireAccountManager(doc, tok(data, request));
-	return directoryPayload(doc, actor);
+	if (!isOwnerUser(actor) && !actor.canManageUsers) throw new Error("errors.insufficient");
+	const target = doc.users.find((u) => u.id === data.userId);
+	if (!target) throw new Error("errors.userNotFound");
+	const user = hydrateUser(target, doc);
+	if (!user) throw new Error("errors.userNotFound");
+	const portal = view(doc, undefined, user);
+	return {
+		asUser: {
+			id: target.id,
+			username: String(target.username || ""),
+			role: portal.session?.role || target.role,
+			disabled: Boolean(target.disabled)
+		},
+		spaces: portal.spaces,
+		catalog: portal.catalog
+	};
 }));
 export const saveUser = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
@@ -40,12 +63,15 @@ export const saveUser = createServerFn({ method: "POST" }).middleware([attachDoc
 	grants: z.array(grantField).optional(),
 	disabled: z.boolean().optional(),
 	groupIds: z.array(z.string()).optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, async (doc) => {
-	const actor = requireAccountManager(doc, tok(data, request));
+})).handler(async ({ data, request }) => mutate(data, request, async (doc) => {
+	const actor = requireAccountManager(doc, tok(data, request), { allowWeakAdmin: true });
 	if (!isOwnerUser(actor) && !actor.canManageUsers) throw new Error("errors.insufficient");
+	if (adminMustChangePassword(doc) && (data.id !== "admin" || !data.password)) {
+		throw new Error("errors.mustChangePassword");
+	}
 	ensureRoles(doc);
 	const username = data.username.trim().toLowerCase();
-	if (data.id === "admin" || isOwnerUser({ id: data.id, roleIds: data.roleIds })) {
+	if (data.id === "admin" || isOwnerUser({ id: data.id || "", roleIds: data.roleIds })) {
 		if (!isOwnerUser(actor)) throw new Error("errors.adminOnly");
 		const admin = ensureUsers(doc).find((u) => u.id === "admin");
 		if (!admin) throw new Error("errors.adminNotFound");
@@ -82,7 +108,7 @@ export const saveUser = createServerFn({ method: "POST" }).middleware([attachDoc
 		target = {
 			id: newId(),
 			username,
-			passHash: await hashPassword(data.password),
+			passHash: await hashPassword(data.password || ""),
 			role: roleIds[0],
 			roleIds,
 			grants: asGrants(data.grants),
@@ -97,11 +123,11 @@ export const saveUser = createServerFn({ method: "POST" }).middleware([attachDoc
 		label: username
 	});
 	return directoryPayload(doc, actor);
-}));
+}, { allowWeakAdmin: true }));
 export const deleteUser = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	const target = doc.users.find((u) => u.id === data.id);
 	if (!target) throw new Error("errors.userNotFound");
@@ -124,7 +150,7 @@ export const saveGroup = createServerFn({ method: "POST" }).middleware([attachDo
 	roleIds: z.array(z.string()).optional(),
 	members: z.array(z.string()).optional(),
 	grants: z.array(grantField).optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageGroups) throw new Error("errors.insufficient");
 	ensureGroups(doc);
@@ -168,7 +194,7 @@ export const saveGroup = createServerFn({ method: "POST" }).middleware([attachDo
 export const deleteGroup = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	ensureGroups(doc);
 	const target = doc.groups.find((g) => g.id === data.id);
@@ -190,7 +216,7 @@ export const saveRole = createServerFn({ method: "POST" }).middleware([attachDoc
 	grants: z.array(grantField).optional(),
 	userIds: z.array(z.string()).optional(),
 	groupIds: z.array(z.string()).optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageRoles) throw new Error("errors.insufficient");
 	ensureRoles(doc);
@@ -236,7 +262,7 @@ export const saveRole = createServerFn({ method: "POST" }).middleware([attachDoc
 export const deleteRole = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const actor = requireAccountManager(doc, tok(data, request));
 	if (!isOwnerUser(actor) && !actor.canManageRoles) throw new Error("errors.insufficient");
 	ensureRoles(doc);

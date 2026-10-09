@@ -1,5 +1,5 @@
 import type { getCuration, getPortal } from "@/lib/portal";
-import type { CheckMode, ItemKind, PortalSettings } from "@/lib/portal";
+import type { CheckMode, ItemKind, PortalSettings } from "@/lib/portal/types";
 import { asDateFormat, asLocale, asNumberFormat, asTimeFormat, asTimeZone } from "@/lib/i18n";
 
 export type PortalData = Awaited<ReturnType<typeof getPortal>>;
@@ -48,6 +48,7 @@ export type SettingsPayload = {
   healthChecks: boolean;
   usageStats: boolean;
   infoBar: boolean;
+  restoreLastSpace: boolean;
   favNotes: boolean;
   favEmbeds: boolean;
   onlineIcons: boolean;
@@ -125,6 +126,7 @@ export function settingsBase(initial: PortalSettings): SettingsPayload {
     healthChecks: initial.healthChecks !== false,
     usageStats: initial.usageStats !== false,
     infoBar: initial.infoBar !== false,
+    restoreLastSpace: Boolean(initial.restoreLastSpace),
     favNotes: Boolean(initial.favNotes),
     favEmbeds: Boolean(initial.favEmbeds),
     onlineIcons: Boolean(initial.onlineIcons),

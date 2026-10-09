@@ -13,13 +13,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111" alt="React 19" />
-  <img src="https://img.shields.io/badge/TanStack_Start-FF4154?style=flat-square&logo=reactquery&logoColor=white" alt="TanStack Start" />
-  <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite 8" />
-  <img src="https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4" />
-  <img src="https://img.shields.io/badge/license-MIT-2EA043?style=flat-square" alt="MIT" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=plastic&logo=react&logoColor=white&labelColor=24292E" alt="React 19" />
+  <img src="https://img.shields.io/badge/TanStack-Start-FF4154?style=plastic&logo=reactquery&logoColor=white&labelColor=24292E" alt="TanStack Start" />
+  <img src="https://img.shields.io/badge/Vite-8-646CFF?style=plastic&logo=vite&logoColor=white&labelColor=24292E" alt="Vite 8" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=plastic&logo=tailwindcss&logoColor=white&labelColor=24292E" alt="Tailwind CSS 4" />
+  <img src="https://img.shields.io/badge/license-MIT-2EA043?style=plastic&labelColor=24292E" alt="MIT" />
   <a href="https://github.com/rapha57/dockit/actions/workflows/ci.yml">
-    <img src="https://github.com/rapha57/dockit/actions/workflows/ci.yml/badge.svg" alt="CI" />
+    <img src="https://img.shields.io/github/actions/workflow/status/rapha57/dockit/ci.yml?style=plastic&logo=github&logoColor=white&label=CI&labelColor=24292E" alt="CI" />
   </a>
 </p>
 
@@ -83,21 +83,24 @@ Dockit doesn't replace your existing tools. It sits in front of them:
 
 ## Features
 
-| Feature | Description |
-| --- | --- |
-| **Spaces / categories / cards** | Organise your portal with drag and drop |
-| **Link hub** | Put multiple URLs on a single card (`https://`, `ssh://`, `ftp://`, …) |
-| **Probes** | Check HTTP and ICMP availability from the server |
-| **Curation** | Periodically verify that card links still work |
-| **Access control** | Users, groups, roles and grants |
-| **History** | Audit changes and restore previous versions |
-| **Reports** | Export audit and inventory data as CSV / PDF |
-| **Bookmarks** | Export the links you can see as HTML, then import them in Chrome, Edge or Firefox |
-| **Authentication** | Local accounts, LDAP / Active Directory and OIDC |
-| **Customisation** | Light / dark mode, logo, favicon and tags |
-| **Import / export** | Export or restore the whole portal, or a single space |
-| **Icons** | Built-in and custom icons |
-| **Single-file storage** | No database — the portal lives in `portal.json` |
+| Feature                         | Description                                                                                               |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Spaces / categories / cards** | Organise your portal with drag and drop                                                                   |
+| **Link hub**                    | Put multiple URLs on a single card (`https://`, `ssh://`, `ftp://`, …)                                    |
+| **Probes**                      | Check HTTP and ICMP availability from the server                                                          |
+| **Curation**                    | Periodically verify that card links still work                                                            |
+| **Access control**              | Users, groups, roles and grants. **View as** previews the portal as another user.                         |
+| **History**                     | Audit changes and restore previous versions                                                               |
+| **Reports**                     | Export audit and inventory data as CSV / PDF                                                              |
+| **Bookmarks**                   | Export the links you can see as HTML, then import them in Chrome, Edge or Firefox                         |
+| **Last tab**                    | Settings → Presentation: each browser can reopen its last space (or Favorites)                            |
+| **Authentication**              | Local accounts, LDAP / Active Directory and OIDC                                                          |
+| **Customisation**               | Light / dark mode, logo, favicon and tags                                                                 |
+| **Import / export**             | Export or restore the whole portal, or a single space                                                     |
+| **Icons**                       | Built-in and custom icons                                                                                 |
+| **Health**                      | `GET /health` for reverse proxies and orchestrators                                                       |
+| **Single-file storage**         | No database — the portal lives in `portal.json`                                                           |
+| **Single process**              | Sessions and the curation schedule live in memory. A restart signs everyone out and the cron starts over. |
 
 ## Quick start
 
@@ -120,7 +123,7 @@ admin / admin
 
 > The default credentials are for development only.
 
-The pre-commit hook runs `typecheck` and `lint` with zero warnings.
+The pre-commit hook runs `typecheck` and `lint` with zero warnings. CI on `main` runs those plus unit tests, a Playwright smoke (login, catalog, one pane) and Trivy for secrets / misconfig.
 
 ### Docker
 
@@ -351,6 +354,10 @@ data/portal.json
 
 Backup, migration and restore are therefore straightforward: copy the file.
 
+Signed-in sessions and the in-process curation schedule are **not** in that file. They live in the portal process memory. Restarting the container or `npm run dev` signs everyone out; the next curation tick follows the saved cron (or `PORTAL_CURATION_CRON`) from a fresh clock. Run one process per data directory — there is no shared session store.
+
+`GET /health` returns `{ "ok": true }` when the process is up. A missing `portal.json` is still live — Dockit creates it on first read. Unreadable or corrupt JSON returns 503. Reverse proxies and orchestrators can use it as a liveness check.
+
 You can override its location with:
 
 ```bash
@@ -370,12 +377,12 @@ If the secrets were entered through Settings, they are already stored in the JSO
 
 ### Data layout
 
-| Path | Contents |
-| --- | --- |
-| `data/portal.json` | Portal configuration and content |
-| `data/curation.json` | Curation / link-check results |
-| `data/assets/` | Uploaded portal assets |
-| `public/icons/` | Built-in icons |
+| Path                 | Contents                         |
+| -------------------- | -------------------------------- |
+| `data/portal.json`   | Portal configuration and content |
+| `data/curation.json` | Curation / link-check results    |
+| `data/assets/`       | Uploaded portal assets           |
+| `public/icons/`      | Built-in icons                   |
 
 ## Security
 
@@ -398,6 +405,7 @@ The server-side probe system is deliberately restricted:
 - Probes are rate-limited
 - Probes can be restricted to signed-in sessions
 - ICMP probing is optional and requires `NET_RAW`
+- An extra CA PEM in Settings trusts intranet TLS for probes, LDAP and curation (Dockit itself is not an HTTPS terminator)
 - Production requires `PORTAL_EDIT_PASSWORD` with at least 12 characters
 - There is no default production edit password
 
@@ -412,8 +420,11 @@ Dockit also uses:
 - Security headers
 - Restricted iframe permissions
 - Theme CSS filtering against `url(` and `@import`
-- HttpOnly session cookies when enabled
-- TLS certificate verification controls for probes
+- HttpOnly session cookies (forced except on local HTTP)
+- Administrator API blocked until the default/weak admin password is changed
+- Curation webhooks DNS-pinned like probes
+- `GET /health` (process up; missing `portal.json` is live, corrupt JSON is 503)
+- TLS certificate verification controls for probes, including an optional extra CA
 - A non-root Docker container running as the `node` user
 
 For the full configuration, see **Settings → Security**.

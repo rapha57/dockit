@@ -68,7 +68,7 @@
     "exportBookmarksDone": "Bookmarks downloaded",
     "openFavs": "Open favorites on load",
     "resetPrefs": "Reset preferences",
-    "resetPrefsConfirm": "Reset preferences? Favorites, open-on-load, collapsed categories and theme are stored in this browser’s local storage and will be cleared. Portal content is not changed."
+    "resetPrefsConfirm": "Reset preferences? Favorites, last space, open-on-load, collapsed categories and theme are stored in this browser’s local storage and will be cleared. Portal content is not changed."
   },
   "lock": {
     "username": "Username",
@@ -658,6 +658,7 @@
     "storeUnreadable": "Portal data file is unreadable. Fix or restore it; Dockit will not overwrite it.",
     "tooManyProbes": "Too many probes, try again shortly",
     "httpRequired": "HTTP/HTTPS URL required",
+    "mustChangePassword": "Change the administrator password before using the portal.",
     "sessionCookieDenied": "Session cookie refused",
     "fileTooHeavy": "File too large (max 200 KB)",
     "iconFormats": "Formats: PNG, SVG, WebP, JPEG, ICO",
@@ -904,6 +905,9 @@
   },
   "pres": {
     "cards": "Cards",
+    "load": "On load",
+    "restoreLastSpace": "Reopen last space",
+    "restoreLastSpaceHint": "Each browser reopens its last tab. Hides “Open favorites on load” in the Account menu.",
     "icons": "Icons",
     "header": "Header",
     "headerGlass": "Frosted glass on the top bar",
@@ -959,7 +963,8 @@
     "requireLogin": "Require sign-in to open the portal",
     "requireLoginHint": "Visitors see the sign-in screen instead of the catalog.",
     "httpOnly": "HttpOnly cookie (not sessionStorage)",
-    "httpOnlyHint": "The token is no longer readable from JavaScript. Takes effect at the next sign-in.",
+    "httpOnlyHint": "The token is no longer readable from JavaScript. Takes effect at the next sign-in. Off is only available on local HTTP.",
+    "httpOnlyHintForced": "Required off local HTTP (HTTPS or a non-loopback host). The token is not stored in JavaScript.",
     "noPassword": "Passwordless admin sign-in",
     "noPasswordHintDev": "The sign-in button is highlighted and opens an owner session (empty or admin, any password). Ignored outside npm run dev.",
     "noPasswordHintProd": "Available only in development mode (npm run dev).",
@@ -1259,7 +1264,15 @@
     "secPermissions": "Permissions",
     "secDefinition": "Definition",
     "secHolders": "Assigned",
-    "typeRemote": "Directory"
+    "typeRemote": "Directory",
+    "seeAs": "View as",
+    "seeAsPick": "View as…",
+    "seeAsTitle": "Catalog as {name}",
+    "seeAsLead": "What this account can see. Your session stays unchanged.",
+    "seeAsDisabled": "This account is disabled. Catalog as it would see it if enabled.",
+    "seeAsBusy": "Loading catalog…",
+    "seeAsEmpty": "This account cannot see any space.",
+    "seeAsEmptySpace": "No visible card in this space."
   },
   "users": {
     "noSpaces": "No space to edit",

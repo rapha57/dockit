@@ -18,7 +18,7 @@ export const createSpace = createServerFn({ method: "POST" }).middleware([attach
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional(),
 	hideLabel: z.boolean().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	const id = newId();
 	const next = Math.max(0, ...doc.spaces.map((t) => t.sortOrder)) + 1;
@@ -47,7 +47,7 @@ export const createSpace = createServerFn({ method: "POST" }).middleware([attach
 export const duplicateSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	const src = doc.spaces.find((t) => t.id === data.id);
 	if (!src) throw new Error("errors.spaceNotFound");
@@ -104,7 +104,7 @@ export const updateSpace = createServerFn({ method: "POST" }).middleware([attach
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional(),
 	hideLabel: z.boolean().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.id);
 	const space = doc.spaces.find((t) => t.id === data.id);
 	if (!space) throw new Error("errors.portalNotFound");
@@ -123,7 +123,7 @@ export const updateFavsOptions = createServerFn({ method: "POST" }).middleware([
 	token: tokenField,
 	hideLabel: z.boolean(),
 	spaceId: z.string().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	doc.settings.favsHideLabel = data.hideLabel;
 	return emit(doc, user, data.spaceId);
@@ -131,7 +131,7 @@ export const updateFavsOptions = createServerFn({ method: "POST" }).middleware([
 export const deleteSpace = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.id);
 	if (doc.spaces.length <= 1) throw new Error("errors.lastSpace");
 	const space = doc.spaces.find((t) => t.id === data.id);
@@ -158,7 +158,7 @@ export const createCategory = createServerFn({ method: "POST" }).middleware([att
 	restricted: z.boolean().optional(),
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.spaceId);
 	const space = doc.spaces.find((t) => t.id === data.spaceId);
 	if (!space) throw new Error("errors.portalNotFound");
@@ -198,7 +198,7 @@ export const updateCategory = createServerFn({ method: "POST" }).middleware([att
 	restricted: z.boolean().optional(),
 	viewers: z.array(z.string()).optional(),
 	editors: z.array(z.string()).optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	const { space, cat } = categoryOf(doc, data.id);
 	requireEdit(doc, tok(data, request), space.id);
@@ -218,7 +218,7 @@ export const updateCategory = createServerFn({ method: "POST" }).middleware([att
 export const deleteCategory = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	const space = spaceOfCategory(doc, data.id);
 	requireEdit(doc, tok(data, request), space.id);
@@ -274,7 +274,7 @@ const itemPayload = {
 	embedBg: z.string().max(7).optional(),
 	tagColors: z.record(z.string().min(1).max(32), z.string().max(7)).optional()
 };
-function requireUrl(kind: unknown, url: string) {
+function requireUrl(kind: unknown, url: string | undefined) {
 	if (kind === "note") return;
 	if (kind === "embed") {
 		if (!safeEmbedHref(url)) throw new Error("errors.embedUrlRequired");
@@ -282,9 +282,9 @@ function requireUrl(kind: unknown, url: string) {
 	}
 	if (!safeAppHref(url)) throw new Error("errors.urlRequired");
 }
-function requireTitle(kind: unknown, title: string) {
+function requireTitle(kind: unknown, title: string | undefined) {
 	if (kind === "note" || kind === "embed") return;
-	if (!title.trim()) throw new Error("errors.nameRequired");
+	if (!String(title || "").trim()) throw new Error("errors.nameRequired");
 }
 function requireBody(kind: unknown, description: unknown) {
 	if (kind !== "note") return;
@@ -293,7 +293,7 @@ function requireBody(kind: unknown, description: unknown) {
 export const createCard = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	...itemPayload
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	requireUrl(data.kind, data.links?.[0]?.url || data.url);
 	requireTitle(data.kind, data.title);
@@ -334,7 +334,7 @@ export const updateCard = createServerFn({ method: "POST" }).middleware([attachD
 	token: tokenField,
 	id: z.string().min(1),
 	...itemPayload
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	requireUrl(data.kind, data.links?.[0]?.url || data.url);
 	requireTitle(data.kind, data.title);
@@ -384,7 +384,7 @@ export const updateCard = createServerFn({ method: "POST" }).middleware([attachD
 export const deleteCard = createServerFn({ method: "POST" }).middleware([attachDocRev]).validator(z.object({
 	token: tokenField,
 	id: z.string().min(1)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request));
 	const { space, cat, app } = cardOf(doc, data.id);
 	requireEdit(doc, tok(data, request), space.id);
@@ -409,7 +409,7 @@ export const reorderCards = createServerFn({ method: "POST" }).middleware([attac
 		categoryId: z.string().min(1),
 		sortOrder: z.number().int().min(0).max(9999)
 	})).min(1).max(400)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.spaceId);
 	const space = doc.spaces.find((t) => t.id === data.spaceId);
 	if (!space) throw new Error("errors.portalNotFound");
@@ -436,7 +436,7 @@ export const arrangeCategory = createServerFn({ method: "POST" }).middleware([at
 	categoryId: z.string().min(1),
 	sort: z.enum(["alpha", "za"]).optional(),
 	resetSpans: z.boolean().optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const { space, cat } = categoryOf(doc, data.categoryId);
 	const user = requireEdit(doc, tok(data, request), space.id);
 	let changed = false;
@@ -474,7 +474,7 @@ export const moveCard = createServerFn({ method: "POST" }).middleware([attachDoc
 	destSpaceId: z.string().min(1),
 	destCategoryId: z.string().min(1),
 	sortOrder: z.number().int().min(0).max(9999)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	const found = cardOf(doc, data.id);
 	if (!isOwnerUser(user) && !can(user, "move", { res: "card", id: found.app.id }, doc)) throw new Error("errors.noMove");
@@ -509,7 +509,7 @@ export const reorderCategories = createServerFn({ method: "POST" }).middleware([
 	token: tokenField,
 	spaceId: z.string().min(1),
 	order: z.array(z.string().min(1)).min(1).max(80)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireEdit(doc, tok(data, request), data.spaceId);
 	const space = doc.spaces.find((t) => t.id === data.spaceId);
 	if (!space) throw new Error("errors.portalNotFound");
@@ -524,7 +524,7 @@ export const previewMoveCategory = createServerFn({ method: "POST" }).middleware
 	token: tokenField,
 	categoryId: z.string().min(1),
 	destSpaceId: z.string().min(1)
-})).handler(async ({ data, request }: any) => withLock(async () => {
+})).handler(async ({ data, request }) => withLock(async () => {
 	const doc = await readDocUnlocked();
 	const user = requireUser(doc, tok(data, request));
 	if (!isOwnerUser(user) && !can(user, "move", { res: "cat", id: data.categoryId }, doc)) throw new Error("errors.noMove");
@@ -537,7 +537,7 @@ export const moveCategory = createServerFn({ method: "POST" }).middleware([attac
 	categoryId: z.string().min(1),
 	destSpaceId: z.string().min(1),
 	insertAt: z.number().int().min(0).max(80).optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireUser(doc, tok(data, request));
 	if (!isOwnerUser(user) && !can(user, "move", { res: "cat", id: data.categoryId }, doc)) throw new Error("errors.noMove");
 	if (!isOwnerUser(user) && !can(user, "move", { res: "space", id: data.destSpaceId }, doc) && !can(user, "edit", { res: "space", id: data.destSpaceId }, doc)) throw new Error("errors.noMove");
@@ -557,7 +557,7 @@ export const reorderSpaces = createServerFn({ method: "POST" }).middleware([atta
 	token: tokenField,
 	spaceId: z.string().optional(),
 	order: z.array(z.string().min(1)).min(1).max(40)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireCreateSpace(doc, tok(data, request));
 	data.order.forEach((id: string, i: number) => {
 		const space = doc.spaces.find((t) => t.id === id);
@@ -579,7 +579,7 @@ export const manageTags = createServerFn({ method: "POST" }).middleware([attachD
 	})).max(80).optional(),
 	remove: z.array(z.string().min(1).max(32)).max(80).optional(),
 	colors: z.record(z.string().min(1).max(32), z.string().max(7)).optional()
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	const user = requireAdmin(doc, tok(data, request));
 	const removeKeys = new Set((data.remove ?? []).map((t: string) => t.trim().toLowerCase()).filter(Boolean));
 	const renameMap = /* @__PURE__ */ new Map();
@@ -635,7 +635,7 @@ export const saveCustomIcon = createServerFn({ method: "POST" }).middleware([att
 	token: tokenField,
 	name: z.string().min(1).max(80),
 	dataUrl: z.string().min(20).max(4e5).regex(/^data:image\//)
-})).handler(async ({ data, request }: any) => mutate(data, request, (doc) => {
+})).handler(async ({ data, request }) => mutate(data, request, (doc) => {
 	requireEdit(doc, tok(data, request));
 	if ((doc.customIcons || []).length >= MAX_CUSTOM_ICONS) throw new Error("errors.tooManyIcons");
 	doc.customIcons.push({

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { PortalIcon } from "@/lib/icons";
 import { tagPaint } from "@/lib/tag-ui";
 import type { CatalogSpace } from "@/lib/portal-ui";
-import type { ClickStats } from "@/lib/portal";
+import type { ClickStats } from "@/lib/portal/types";
 
 function fmtCount(n: number) {
   return formatNumber(n);

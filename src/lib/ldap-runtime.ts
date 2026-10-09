@@ -76,28 +76,30 @@ export function adGroupKey(dirId: unknown, dn: unknown): string {
 	return `${String(dirId || "").slice(0, 80)}:${normDn(dn)}`.slice(0, 400);
 }
 
-export function asDirectory(row: any): Directory | null {
+export function asDirectory(row: unknown): Directory | null {
 	if (!row || typeof row !== "object") return null;
-	const tls = row.tls !== false && row.ldapTls !== false;
-	const id = String(row.id || "").trim().slice(0, 80) || newId();
+	const r = row as Record<string, unknown>;
+	const tls = r.tls !== false && r.ldapTls !== false;
+	const id = String(r.id || "").trim().slice(0, 80) || newId();
 	return {
 		id,
-		enabled: Boolean(row.enabled ?? row.ldapEnabled),
-		host: String(row.host || row.ldapHost || "").trim().slice(0, 253),
-		port: Math.max(1, Math.min(65535, Number(row.port || row.ldapPort) || 0)) || (tls ? 636 : 389),
+		enabled: Boolean(r.enabled ?? r.ldapEnabled),
+		host: String(r.host || r.ldapHost || "").trim().slice(0, 253),
+		port: Math.max(1, Math.min(65535, Number(r.port || r.ldapPort) || 0)) || (tls ? 636 : 389),
 		tls,
-		tlsVerify: row.tlsVerify !== false && row.ldapTlsVerify !== false,
-		bindDn: String(row.bindDn || row.ldapBindDn || "").trim().slice(0, 300),
-		bindPassword: String(row.bindPassword || row.ldapBindPassword || "").slice(0, 200),
-		baseDn: String(row.baseDn || row.ldapBaseDn || "").trim().slice(0, 300),
-		userFilter: String(row.userFilter || row.ldapUserFilter || "").trim().slice(0, 300),
-		domain: String(row.domain || row.ldapDomain || "").trim().slice(0, 60),
-		autoCreate: Boolean(row.autoCreate ?? row.ldapAutoCreate)
+		tlsVerify: r.tlsVerify !== false && r.ldapTlsVerify !== false,
+		bindDn: String(r.bindDn || r.ldapBindDn || "").trim().slice(0, 300),
+		bindPassword: String(r.bindPassword || r.ldapBindPassword || "").slice(0, 200),
+		baseDn: String(r.baseDn || r.ldapBaseDn || "").trim().slice(0, 300),
+		userFilter: String(r.userFilter || r.ldapUserFilter || "").trim().slice(0, 300),
+		domain: String(r.domain || r.ldapDomain || "").trim().slice(0, 60),
+		autoCreate: Boolean(r.autoCreate ?? r.ldapAutoCreate)
 	};
 }
 
-export function asDirectories(s: any): Directory[] {
-	const raw = s?.ldapDirectories;
+export function asDirectories(s: unknown): Directory[] {
+	const rec = s && typeof s === "object" ? (s as Record<string, unknown>) : null;
+	const raw = rec?.ldapDirectories;
 	if (Array.isArray(raw) && raw.length) {
 		const out: Directory[] = [];
 		const seen = new Set<string>();
@@ -109,20 +111,20 @@ export function asDirectories(s: any): Directory[] {
 		}
 		return out;
 	}
-	if (s && (s.ldapEnabled || s.ldapHost || s.ldapDomain)) {
+	if (rec && (rec.ldapEnabled || rec.ldapHost || rec.ldapDomain)) {
 		const d = asDirectory({
 			id: "ad",
-			enabled: s.ldapEnabled,
-			host: s.ldapHost,
-			port: s.ldapPort,
-			tls: s.ldapTls,
-			tlsVerify: s.ldapTlsVerify,
-			bindDn: s.ldapBindDn,
-			bindPassword: s.ldapBindPassword,
-			baseDn: s.ldapBaseDn,
-			userFilter: s.ldapUserFilter,
-			domain: s.ldapDomain,
-			autoCreate: s.ldapAutoCreate
+			enabled: rec.ldapEnabled,
+			host: rec.ldapHost,
+			port: rec.ldapPort,
+			tls: rec.ldapTls,
+			tlsVerify: rec.ldapTlsVerify,
+			bindDn: rec.ldapBindDn,
+			bindPassword: rec.ldapBindPassword,
+			baseDn: rec.ldapBaseDn,
+			userFilter: rec.ldapUserFilter,
+			domain: rec.ldapDomain,
+			autoCreate: rec.ldapAutoCreate
 		});
 		return d ? [d] : [];
 	}
@@ -201,7 +203,7 @@ export function asLoginOrder(raw: unknown, dirs: Directory[]): string[] {
 	return out;
 }
 
-export function pickDirectory(s: any, id?: unknown): Directory | null {
+export function pickDirectory(s: unknown, id?: unknown): Directory | null {
 	const dirs = asDirectories(s);
 	if (id && id !== "ad" && id !== "local") return dirs.find((d) => d.id === id) || null;
 	return dirs.find(directoryReady) || dirs[0] || null;
@@ -268,8 +270,8 @@ async function withClient<T>(d: any, fn: (client: Client) => Promise<T>): Promis
 	}
 }
 
-function bindIdentity(d: any, sam: string): string {
-	const domain = String(d.domain || d.ldapDomain || "").trim();
+export function bindIdentity(d: { domain?: string; ldapDomain?: string } | null | undefined, sam: string): string {
+	const domain = String(d?.domain || d?.ldapDomain || "").trim();
 	if (domain.includes(".")) return `${sam}@${domain}`;
 	if (domain) return `${domain}\\${sam}`;
 	return sam;

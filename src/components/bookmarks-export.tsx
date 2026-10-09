@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -111,6 +111,9 @@ export function BookmarksExport({
   const tree = useMemo(() => bookmarkTree(catalog), [catalog]);
   const ids = useMemo(() => allLinkIds(tree), [tree]);
   const [selected, setSelected] = useState(() => new Set(ids));
+  useEffect(() => {
+    setSelected(new Set(ids));
+  }, [ids]);
   const count = selected.size;
   function onToggle(nextIds: readonly string[]) {
     setSelected((prev) => toggleIds(prev, nextIds));

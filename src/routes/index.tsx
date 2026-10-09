@@ -1,19 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  AlertTriangle,
-  Bug,
-  Check,
-  Search,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Bug, Check, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { askConfirm } from "@/components/confirm-dialog";
@@ -23,7 +11,13 @@ import { PortalOverlays, type PortalModal } from "@/components/portal-overlays";
 import { SpaceStrip, pickVisibleSpaceIds, type SpaceStripHandlers } from "@/components/space-strip";
 import { StatsBar } from "@/components/stats";
 import { itemKind } from "@/lib/item-kind";
-import { placeCard, placeCarriedCard, placeCarriedCategory, placeCategory, placeSpaces } from "@/lib/layout-place";
+import {
+  placeCard,
+  placeCarriedCard,
+  placeCarriedCategory,
+  placeCategory,
+  placeSpaces,
+} from "@/lib/layout-place";
 import {
   allowsFavorite,
   catIsFolded,
@@ -48,25 +42,50 @@ import {
   createCategory,
   duplicateSpace,
   getPortal,
-  rememberSpace,
   proxyLogin,
-  startOidc,
   recordClick,
   arrangeCategory,
-  cardsAlphaDir,
 } from "@/lib/portal";
 import { usePortalProbes } from "@/lib/use-portal-probes";
 import { safeAppHref } from "@/lib/safe-href";
 import { probeTargets } from "@/lib/probe";
-import { DEFAULT_UI_PREFS, clearUiPrefs, readUiPrefs, writeUiPrefs } from "@/lib/ui-prefs";
+import {
+  FAVS_TAB,
+  applyRememberedSpace,
+  bootUiPrefs,
+  clearUiPrefs,
+  readUiPrefs,
+  writeUiPrefs,
+} from "@/lib/ui-prefs";
 import { t, te, asLocale, applyDisplayPrefs, modKeyLabel } from "@/lib/i18n";
-import type {
-  ClickStats,
-  CustomIcon,
-  PortalCard,
-  PortalCategory,
-  SessionInfo,
-} from "@/lib/portal";
+import {
+  cardsAlphaDir,
+  type ClickStats,
+  type CustomIcon,
+  type PortalCard,
+  type PortalCategory,
+  type SessionInfo,
+} from "@/lib/portal/types";
+import {
+  TOKEN_KEY,
+  OIDC_NEXT_KEY,
+  EDIT_MODE_KEY,
+  copyLabel,
+  typingTarget,
+  readToken,
+  canKickOidc,
+  kickOidcRedirect,
+  markOidcAuto,
+  readSessionInfo,
+  applySessionToken,
+  clearSessCookie,
+  writeSessionInfo,
+  sessionCanEditSpace,
+  sessionCanMoveSpace,
+  sessionCanArrange,
+  sessionCanManageAcl,
+  sessionCanCreateSpaces,
+} from "@/lib/portal-client-session";
 
 export const Route = createFileRoute("/")({
   loader: async () => {
@@ -78,12 +97,6 @@ export const Route = createFileRoute("/")({
   },
   component: Home,
 });
-const TOKEN_KEY = "portal-edit-token";
-const SESSION_KEY = "portal-session";
-const EDIT_MODE_KEY = "portal-edit-mode";
-const OIDC_AUTO_KEY = "oidc-auto";
-const OIDC_AUTO_MS = 30_000;
-const OIDC_NEXT_KEY = "portal-oidc-next";
 function HeaderBrand({ src }: { src?: string }) {
   const [ready, setReady] = useState(false);
   useLayoutEffect(() => {
@@ -107,123 +120,6 @@ function HeaderBrand({ src }: { src?: string }) {
       )}
     </div>
   );
-}
-function copyLabel(raw: unknown, fallback?: string) {
-  const text = String(raw || "").trim();
-  const fb = fallback || t("copy.fallback");
-  const base = (text || fb).replace(/\s*\((copie|copy)\)\s*$/i, "");
-  return `${base} (${t("copy.suffix")})`.slice(0, 80);
-}
-function typingTarget(el: EventTarget | null) {
-  if (!el || !(el instanceof Element)) return false;
-  const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  if ((el as HTMLElement).isContentEditable) return true;
-  return Boolean(el.closest("input, textarea, select, [contenteditable='true']"));
-}
-function readToken() {
-  if (typeof window === "undefined") return "";
-  try {
-    return sessionStorage.getItem(TOKEN_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-function oidcAutoFresh() {
-  if (typeof window === "undefined") return false;
-  try {
-    const last = Number(sessionStorage.getItem(OIDC_AUTO_KEY) || 0);
-    return Date.now() - last < OIDC_AUTO_MS;
-  } catch {
-    return false;
-  }
-}
-function markOidcAuto() {
-  try {
-    sessionStorage.setItem(OIDC_AUTO_KEY, String(Date.now()));
-  } catch {
-    // ignore
-  }
-}
-function canKickOidc(settings: { oidcEnabled?: boolean; oidcAutoRedirect?: boolean }) {
-  return Boolean(settings.oidcEnabled && settings.oidcAutoRedirect) && !oidcAutoFresh();
-}
-async function kickOidcRedirect(next: string) {
-  markOidcAuto();
-  try {
-    sessionStorage.setItem(OIDC_NEXT_KEY, next);
-  } catch {
-    // ignore
-  }
-  const res = await startOidc({
-    data: {},
-  });
-  if (!res?.url) throw new Error("errors.oidcFail");
-  window.location.assign(res.url);
-}
-function readSessionInfo() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-async function pinSessCookie(token: string | null | undefined) {
-  if (!token || typeof fetch === "undefined") return;
-  const res = await fetch("/__dockit/session", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify({
-      token,
-    }),
-  });
-  if (!res.ok) throw new Error("errors.sessionCookieDenied");
-}
-async function clearSessCookie() {
-  if (typeof fetch === "undefined") return;
-  try {
-    await fetch("/__dockit/session", {
-      method: "DELETE",
-      credentials: "include",
-    });
-  } catch {
-    // ignore
-  }
-}
-function writeSessionInfo(session: SessionInfo | null | undefined) {
-  try {
-    if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    else sessionStorage.removeItem(SESSION_KEY);
-  } catch {
-    // ignore
-  }
-}
-function sessionCanEditSpace(session: SessionInfo | null | undefined, spaceId: string | undefined): boolean {
-  if (!session || !spaceId) return false;
-  if (session.isOwner) return true;
-  return session.spacePerms?.[spaceId] === "edit";
-}
-function sessionCanMoveSpace(session: SessionInfo | null | undefined, spaceId: string | undefined): boolean {
-  if (!session || !spaceId) return false;
-  if (session.isOwner) return true;
-  return Boolean(session.spaceMoves?.[spaceId]);
-}
-function sessionCanArrange(session: SessionInfo | null | undefined): boolean {
-  if (!session) return false;
-  return Boolean(session.isOwner || session.canEdit || session.canMove);
-}
-function sessionCanManageAcl(session: SessionInfo | null | undefined): boolean {
-  if (!session) return false;
-  return Boolean(session.isOwner || session.canManageUsers || session.canManageRoles);
-}
-function sessionCanCreateSpaces(session: SessionInfo | null | undefined): boolean {
-  if (!session) return false;
-  return Boolean(session.isOwner || session.canCreateSpaces);
 }
 
 function Home() {
@@ -269,8 +165,8 @@ function Home() {
       fullCatalog: true,
     },
   );
-  const [ui, setUi] = useState(DEFAULT_UI_PREFS);
-  const [page, setPage] = useState("space");
+  const [ui, setUi] = useState(() => bootUiPrefs(initial.runtime));
+  const [page, setPage] = useState(initial.runtime?.bootFavs ? "favs" : "space");
   const { health, setHealth } = usePortalProbes(data, token);
   const [spaceOverflow, setSpaceOverflow] = useState<string[]>([]);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -361,7 +257,7 @@ function Home() {
         : {},
     })
       .then((next) => {
-        setData(next);
+        setData(withLocalSpace(next));
         if (next.session) {
           setSession(next.session);
           writeSessionInfo(next.session);
@@ -416,13 +312,19 @@ function Home() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- boot-only session restore
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const prefs = readUiPrefs();
     setUi(prefs);
-    const hasCards = (initial.catalog ?? []).some((space) =>
-      (space.categories || []).some((cat) => (cat.cards || []).length > 0),
-    );
-    if (prefs.openFavs && hasCards) setPage("favs");
+    if (initial.settings.restoreLastSpace) {
+      setPage(prefs.lastSpaceId === FAVS_TAB ? "favs" : "space");
+      const restored = withLocalSpace(initial);
+      if (restored !== initial) setData(restored);
+    } else {
+      const hasCards = (initial.catalog ?? []).some((space) =>
+        (space.categories || []).some((cat) => (cat.cards || []).length > 0),
+      );
+      setPage(prefs.openFavs && hasCards ? "favs" : "space");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- boot-only prefs restore
   }, []);
   useEffect(() => {
@@ -447,6 +349,7 @@ function Home() {
     }
     try {
       const res = await proxyLogin({ data: {} });
+      await applySessionToken(res.token, Boolean(res.sessionHttpOnly));
       setToken(res.token);
       setSession(res.session);
       writeSessionInfo(res.session);
@@ -599,7 +502,7 @@ function Home() {
       data: {},
     })
       .then((next) => {
-        setData(next);
+        setData(withLocalSpace(next));
         if (next.settings.requireLogin) requestLogin();
       })
       .catch(() => void 0);
@@ -612,7 +515,7 @@ function Home() {
       data: {},
     })
       .then((next) => {
-        setData(next);
+        setData(withLocalSpace(next));
         if (next.settings.requireLogin) requestLogin();
       })
       .catch(() => void 0);
@@ -684,7 +587,10 @@ function Home() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- poller keyed on token/expiry on purpose; reads latest via refs
   }, [token, session?.exp]);
-  async function apply(fn: () => Promise<PortalData>, opts?: { close?: boolean; onDone?: () => void }) {
+  async function apply(
+    fn: () => Promise<PortalData>,
+    opts?: { close?: boolean; onDone?: () => void },
+  ) {
     setBusy(true);
     try {
       const next = await Promise.race([
@@ -842,19 +748,22 @@ function Home() {
   function sortCategoryCards(cat: PortalCategory) {
     if (!cat?.cards?.length) return;
     const nextDir = cardsAlphaDir(cat.cards, data.settings.locale) === "az" ? "za" : "alpha";
-    apply(async () => {
-      const next = await arrangeCategory({
-        data: {
-          token,
-          categoryId: cat.id,
-          sort: nextDir,
-        },
-      });
-      toast.success(t(nextDir === "za" ? "toast.cardsSortedZa" : "toast.cardsSorted"));
-      return next;
-    }, {
-      close: false,
-    });
+    apply(
+      async () => {
+        const next = await arrangeCategory({
+          data: {
+            token,
+            categoryId: cat.id,
+            sort: nextDir,
+          },
+        });
+        toast.success(t(nextDir === "za" ? "toast.cardsSortedZa" : "toast.cardsSorted"));
+        return next;
+      },
+      {
+        close: false,
+      },
+    );
   }
   async function resetCategoryCards(cat: PortalCategory) {
     if (!cat?.cards?.length) return;
@@ -866,19 +775,22 @@ function Home() {
       }))
     )
       return;
-    apply(async () => {
-      const next = await arrangeCategory({
-        data: {
-          token,
-          categoryId: cat.id,
-          resetSpans: true,
-        },
-      });
-      toast.success(t("toast.cardsReset"));
-      return next;
-    }, {
-      close: false,
-    });
+    apply(
+      async () => {
+        const next = await arrangeCategory({
+          data: {
+            token,
+            categoryId: cat.id,
+            resetSpans: true,
+          },
+        });
+        toast.success(t("toast.cardsReset"));
+        return next;
+      },
+      {
+        close: false,
+      },
+    );
   }
   function cloneSpace(space: MenuSpace) {
     apply(async () => {
@@ -987,12 +899,6 @@ function Home() {
         activeSpaceId: spaceId,
         categories: entry.categories,
       });
-      rememberSpace({
-        data: {
-          spaceId,
-          token: token || void 0,
-        },
-      }).catch(() => void 0);
       return;
     }
     try {
@@ -1009,6 +915,7 @@ function Home() {
     }
   }
   function goSpace(spaceId: string) {
+    persistLastSpace(spaceId);
     setPage("space");
     if (spaceId !== dataRef.current.activeSpaceId) switchSpace(spaceId);
   }
@@ -1028,12 +935,25 @@ function Home() {
       });
     });
   }
+  function persistLastSpace(spaceId: string) {
+    if (!spaceId) return;
+    setUi((cur) =>
+      cur.lastSpaceId === spaceId ? cur : writeUiPrefs({ ...cur, lastSpaceId: spaceId }),
+    );
+  }
   function setOpenFavs(openFavs: boolean) {
     setUi((cur) =>
       writeUiPrefs({
         ...cur,
         openFavs,
       }),
+    );
+  }
+  function withLocalSpace(data: PortalData) {
+    return applyRememberedSpace(
+      data,
+      readUiPrefs().lastSpaceId,
+      Boolean(data.settings.restoreLastSpace),
     );
   }
   function toggleCollapsed(id: string) {
@@ -1220,7 +1140,8 @@ function Home() {
     spaceOverMore,
   ]);
   const moreMenuSpaces = displaySpaces.filter(
-    (space) => spaceOverflow.includes(space.id) && !(drag?.kind === "space" && drag.id === space.id),
+    (space) =>
+      spaceOverflow.includes(space.id) && !(drag?.kind === "space" && drag.id === space.id),
   );
   const moreGapAt =
     drag?.kind === "space" && spaceOverMore && over?.kind === "space"
@@ -1233,7 +1154,9 @@ function Home() {
   useEffect(() => {
     if (editMode || searching || page !== "space") return;
     if (spaceHasCards(data.activeSpaceId)) return;
-    const next = (data.spaces || []).find((t) => t.id !== data.activeSpaceId && spaceHasCards(t.id));
+    const next = (data.spaces || []).find(
+      (t) => t.id !== data.activeSpaceId && spaceHasCards(t.id),
+    );
     if (next) goSpace(next.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- redirect-on-empty guard; helpers read refs, run on data change only
   }, [editMode, searching, page, data.activeSpaceId, data.catalog, data.spaces]);
@@ -1408,7 +1331,9 @@ function Home() {
     goSpace,
     toggleCollapsed,
     openCard: (cat, app) =>
-      setModal(app ? { kind: "card", categoryId: cat.id, app } : { kind: "card", categoryId: cat.id }),
+      setModal(
+        app ? { kind: "card", categoryId: cat.id, app } : { kind: "card", categoryId: cat.id },
+      ),
     moveCat: (cat, fromSpaceId) =>
       setModal({
         kind: "move-pick",
@@ -1461,7 +1386,9 @@ function Home() {
       };
       bindCatDrag(
         cat.id,
-        e.currentTarget.closest(".cat-head") || e.currentTarget.closest("[data-cat-id]") || e.currentTarget,
+        e.currentTarget.closest(".cat-head") ||
+          e.currentTarget.closest("[data-cat-id]") ||
+          e.currentTarget,
       );
       setDrag({
         kind: "cat",
@@ -1511,7 +1438,10 @@ function Home() {
     },
   };
   const spaceStripHandlers: SpaceStripHandlers = {
-    goFavs: () => setPage("favs"),
+    goFavs: () => {
+      persistLastSpace(FAVS_TAB);
+      setPage("favs");
+    },
     goSpace,
     editFavs: () =>
       setModal({
@@ -1642,7 +1572,7 @@ function Home() {
           </div>
           <div className="search-box relative flex min-h-10 min-w-0 flex-1 items-center gap-1 rounded-lg border border-border bg-surface pl-9">
             <Search className="pointer-events-none absolute left-3 size-4 text-muted" />
-            {(tagFilter.length || downFilter) ? (
+            {tagFilter.length || downFilter ? (
               <div className="search-tags">
                 {downFilter ? (
                   <button
@@ -1778,6 +1708,7 @@ function Home() {
               username={session?.username || ""}
               isOwner={session?.isOwner}
               openFavs={ui.openFavs}
+              hideOpenFavs={Boolean(data.settings.restoreLastSpace)}
               onLogin={() => requestLogin()}
               onEdit={() => requestEdit()}
               onSettings={() => requestAdmin("general")}
@@ -1790,7 +1721,22 @@ function Home() {
               onOpenFavs={setOpenFavs}
               onResetLocal={resetLocalPrefs}
               onLogout={logoutEdit}
-              onExportBookmarks={() => setModal({ kind: "bookmarks" })}
+              onExportBookmarks={() => {
+                void getPortal({
+                  data: {
+                    token: token || void 0,
+                    spaceId: data.activeSpaceId,
+                  },
+                })
+                  .then((next) => {
+                    setData(next);
+                    setModal({ kind: "bookmarks" });
+                  })
+                  .catch((err) => {
+                    if (sessionGone(err)) return;
+                    setModal({ kind: "bookmarks" });
+                  });
+              }}
             />
             {editMode ? (
               <Button
@@ -1912,9 +1858,7 @@ function Home() {
         clickStats={clickStats}
         setClickStats={setClickStats}
         adminTabRef={adminTabRef}
-        pinSessCookie={pinSessCookie}
         writeSessionInfo={writeSessionInfo}
-        tokenKey={TOKEN_KEY}
         oidcNextKey={OIDC_NEXT_KEY}
         sessionCanArrange={sessionCanArrange}
         sessionCanManageAcl={sessionCanManageAcl}

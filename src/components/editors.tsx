@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { createPortal } from "react-dom";
-import type { LucideIcon } from "lucide-react";
-import { Globe, Plus, Search, Upload, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,362 +14,46 @@ import { Select } from "@/components/ui/select";
 import { Field } from "@/components/field";
 import { Label } from "@/components/ui/label";
 import { EdgeFade } from "@/components/edge-fade";
-import { ModalShell } from "@/components/modal-shell";
 import { FormActions } from "@/components/form-actions";
 import { NoteEditor } from "@/components/note-editor";
 import { ExpandRow } from "@/components/expand-row";
 import { askConfirm } from "@/components/confirm-dialog";
 import { t, te, td } from "@/lib/i18n";
-import { ICON_OPTIONS, PRODUCT_ICONS, PortalIcon, fileToDataUrl, iconifySrc, urlToDataUrl } from "@/lib/icons";
-import { exportSpace, grabSiteFavicon, probePreview, saveCustomIcon, type CustomIcon, type ItemKind, type PortalCard, type PortalCategory, type CheckMode } from "@/lib/portal";
-import { canClearUrl, clampHubInsert, hasSiblingUrlDupes, hubTurnsOffOnDelete, isPrimaryRow, linkRowRules, siblingUrlDupes } from "@/lib/card-links";
+import { exportSpace, probePreview } from "@/lib/portal";
+import type {
+  CustomIcon,
+  ItemKind,
+  PortalCard,
+  PortalCategory,
+  CheckMode,
+} from "@/lib/portal/types";
+import {
+  canClearUrl,
+  clampHubInsert,
+  hasSiblingUrlDupes,
+  hubTurnsOffOnDelete,
+  isPrimaryRow,
+  linkRowRules,
+  siblingUrlDupes,
+} from "@/lib/card-links";
 import { hasLinkScheme, safeAppHref, safeEmbedHref } from "@/lib/safe-href";
 import { findUrlDuplicates } from "@/lib/dup-url";
-import { FIELD_SM, type AccessPayload, type CardFormPayload, type CatalogSpace, type DirectoryEntry, type MenuSpace } from "@/lib/portal-ui";
+import {
+  FIELD_SM,
+  type AccessPayload,
+  type CardFormPayload,
+  type CatalogSpace,
+  type DirectoryEntry,
+  type MenuSpace,
+} from "@/lib/portal-ui";
 import { itemKind } from "@/lib/item-kind";
 import { fold, lookupTagColor, tagPaint } from "@/lib/tag-ui";
 import { randomTagHex } from "@/lib/tag-colors";
 import { sessionGone } from "@/lib/session-gone";
 import { newId } from "@/lib/id";
 
-export function IconPicker({
-  value,
-  onChange,
-  token,
-  library,
-  onLibrary,
-  online,
-  siteUrl,
-  pictosOnly,
-  header,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  token: string;
-  library: CustomIcon[];
-  onLibrary: (icons: CustomIcon[]) => void;
-  online: boolean;
-  siteUrl?: string;
-  pictosOnly?: boolean;
-  header?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const [remote, setRemote] = useState<{ id: string; src: string }[]>([]);
-  const [busyIcon, setBusyIcon] = useState(false);
-  const [tab, setTab] = useState<"all" | "icons" | "symbols">("all");
-  const query = q.trim().toLowerCase();
-  useEffect(() => {
-    if (!open || pictosOnly || !online || query.length < 2) {
-      if (!open || pictosOnly || query.length < 2) setRemote([]);
-      return;
-    }
-    const ctrl = new AbortController();
-    const t = setTimeout(() => {
-      fetch(`https://api.iconify.design/search?query=${encodeURIComponent(query)}&limit=48`, {
-        signal: ctrl.signal,
-      })
-        .then((r) => r.json())
-        .then((json) => {
-          const ids = ((json.icons ?? []) as string[]).slice(0, 48);
-          setRemote(
-            ids
-              .map((id) => ({ id, src: iconifySrc(id) }))
-              .filter((x) => x.src),
-          );
-        })
-        .catch(() => {});
-    }, 250);
-    return () => {
-      clearTimeout(t);
-      ctrl.abort();
-    };
-  }, [query, online, open, pictosOnly]);
-  function close() {
-    setOpen(false);
-    setQ("");
-    setTab("all");
-  }
-  function choose(next: string) {
-    onChange(next);
-    close();
-  }
-  async function pickRemote(src: string) {
-    setBusyIcon(true);
-    try {
-      choose(await urlToDataUrl(src));
-    } catch (err) {
-      toast.error(te(err));
-    } finally {
-      setBusyIcon(false);
-    }
-  }
-  async function importFile(file: File) {
-    if (!file) return;
-    setBusyIcon(true);
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      const name = file.name.replace(/\.[^.]+$/, "").slice(0, 80) || "icone";
-      if (token)
-        onLibrary(
-          await saveCustomIcon({
-            data: {
-              token,
-              name,
-              dataUrl,
-            },
-          }),
-        );
-      choose(dataUrl);
-    } catch (err) {
-      if (sessionGone(err)) return;
-      toast.error(te(err));
-    } finally {
-      setBusyIcon(false);
-    }
-  }
-  async function grabFavicon() {
-    const href = safeEmbedHref(siteUrl);
-    if (!href) {
-      toast.error(t("icons.needUrl"));
-      return;
-    }
-    if (!token) {
-      toast.error(t("icons.needSession"));
-      return;
-    }
-    const current = (value || "").trim();
-    if (
-      current &&
-      current !== "Link" &&
-      current !== "AppWindow" &&
-      !(await askConfirm({
-        title: t("icons.choose"),
-        body: t("icons.replaceConfirm"),
-        okLabel: t("actions.save"),
-      }))
-    )
-      return;
-    setBusyIcon(true);
-    try {
-      const row = await grabSiteFavicon({
-        data: {
-          token,
-          url: href,
-        },
-      });
-      if (!row?.dataUrl) throw new Error("errors.noFavicon");
-      choose(row.dataUrl);
-      toast.success(t("toast.faviconApplied"));
-    } catch (err) {
-      if (sessionGone(err)) return;
-      toast.error(te(err));
-    } finally {
-      setBusyIcon(false);
-    }
-  }
-  const searching = q.trim().length >= 2 && online && !pictosOnly;
-  const gridItems: {
-    key: string;
-    title: string;
-    value: string;
-    src?: string;
-    Icon?: LucideIcon;
-    remote?: boolean;
-    code?: string;
-  }[] = (() => {
-    const needle = q.trim().toLowerCase();
-    const customs = library.map((p) => ({
-      key: `c-${p.id}`,
-      title: p.name || p.id,
-      value: p.dataUrl,
-      src: p.dataUrl,
-      code: p.name || p.id,
-    }));
-    const prods = PRODUCT_ICONS.map((p) => ({
-      key: `p-${p.slug}`,
-      title: p.label,
-      value: p.slug,
-      src: p.src,
-      code: p.slug,
-    }));
-    const syms = ICON_OPTIONS.map((o) => ({
-      key: `s-${o.name}`,
-      title: t(`iconLabel.${o.name}`),
-      value: o.name,
-      Icon: o.Icon,
-      code: o.name,
-    }));
-    const base = pictosOnly
-      ? syms
-      : tab === "symbols"
-        ? syms
-        : tab === "icons"
-          ? [...customs, ...prods]
-          : [...customs, ...prods, ...syms];
-    const remoteHits = searching
-      ? remote.map((p) => ({
-          key: `r-${p.id}`,
-          title: p.id,
-          value: p.src,
-          src: p.src,
-          remote: true,
-          code: p.id,
-        }))
-      : [];
-    return [...remoteHits, ...base].filter(
-      (item) =>
-        !needle ||
-        item.title.toLowerCase().includes(needle) ||
-        item.value.toLowerCase().includes(needle),
-    );
-  })();
-  return (
-    <>
-      <button
-        type="button"
-        className={`brand-preview icon-trigger${header ? " is-header" : ""}`}
-        title={t("icons.choose")}
-        aria-label={t("icons.choose")}
-        onClick={() => setOpen(true)}
-      >
-        <PortalIcon name={value} className={header ? "size-7" : "size-6"} />
-      </button>
-      {open ? (
-        <ModalShell onClose={close} padded={false} label={t("icons.choose")}>
-          <div className="icon-pick-frame">
-          <div className="icon-pick-head">
-            <h3 className="dialog-title">{t("item.icon")}</h3>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={close}
-              aria-label={t("actions.close")}
-              title={t("actions.close")}
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-          <EdgeFade className="icon-pick-body">
-            <div className="icon-pick-tool">
-              <div className="am-search">
-                <Search className="size-3.5" aria-hidden />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder={
-                    pictosOnly
-                      ? t("icons.filterLib")
-                      : !online
-                        ? `${t("icons.filterLib")} (${t("icons.onlineOff")})`
-                        : t("icons.filterOnline")
-                  }
-                  aria-label={t("icons.filterOnline")}
-                  autoFocus
-                />
-              </div>
-            </div>
-            {!pictosOnly ? (
-              <div className="icon-pick-tabsrow">
-                <div className="am-filters" role="tablist" aria-label={t("item.icon")}>
-                  {(
-                    [
-                      ["all", t("icons.tabAll")],
-                      ["icons", t("icons.tabIcons")],
-                      ["symbols", t("icons.tabSymbols")],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      role="tab"
-                      aria-selected={tab === id}
-                      className={tab === id ? "is-on" : ""}
-                      onClick={() => setTab(id)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="icon-pick-actions">
-                  {siteUrl != null ? (
-                    <button
-                      type="button"
-                      className="am-create shrink-0"
-                      disabled={busyIcon || !token}
-                      title={t("icons.faviconHint")}
-                      onClick={() => void grabFavicon()}
-                    >
-                      <Globe className="size-3.5" />
-                      {busyIcon ? t("icons.fetching") : t("icons.siteFavicon")}
-                    </button>
-                  ) : null}
-                  <label className="am-create shrink-0 cursor-pointer">
-                    <Upload className="size-3.5" />
-                    {t("icons.importPng")}
-                    <input
-                      type="file"
-                      accept="image/png,image/svg+xml,image/webp,image/jpeg,image/gif,image/x-icon,.png,.svg,.webp,.jpg,.jpeg,.ico"
-                      className="hidden"
-                      disabled={busyIcon}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        if (file) void importFile(file);
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-            ) : null}
-            {gridItems.length ? (
-            <div className="icon-pick-grid">
-              {gridItems.map((item) =>
-                  item.src ? (
-                    <button
-                      key={item.key}
-                      type="button"
-                      title={item.code || item.title}
-                      onClick={() => {
-                        if (item.remote && item.src) void pickRemote(item.src);
-                        else choose(item.value);
-                      }}
-                      className={`flex size-11 items-center justify-center rounded-lg border ${
-                        value === item.value
-                          ? "border-transparent bg-elevated ring-1 ring-border"
-                          : "border-transparent hover:bg-elevated"
-                      }`}
-                    >
-                      <img src={item.src} alt="" className="size-6 object-contain" />
-                    </button>
-                  ) : (
-                    <button
-                      key={item.key}
-                      type="button"
-                      title={item.code || item.title}
-                      onClick={() => choose(item.value)}
-                      className={`flex size-11 items-center justify-center rounded-lg border ${
-                        value === item.value
-                          ? "border-transparent bg-elevated text-fg ring-1 ring-border"
-                          : "border-transparent text-muted hover:bg-elevated hover:text-fg"
-                      }`}
-                    >
-                      {item.Icon ? <item.Icon className="size-6" /> : null}
-                    </button>
-                  ),
-              )}
-            </div>
-            ) : (
-              <p className="am-note">{t("empty.noResults")}</p>
-            )}
-          </EdgeFade>
-          </div>
-        </ModalShell>
-      ) : null}
-    </>
-  );
-}
+import { IconPicker } from "./editors-icon";
+export { IconPicker };
 export function AclFields({
   restricted,
   setRestricted,
@@ -436,7 +125,11 @@ export function ItemForm({
   const nameRef = useRef<HTMLInputElement>(null);
   const [icon, setIcon] = useState(initial?.icon ?? (isSpace ? "Layers" : "Folder"));
   const [restricted, setRestricted] = useState(Boolean(initial?.restricted));
-  const [hideLabel, setHideLabel] = useState(Boolean(isSpace && initial && "hideLabel" in initial ? (initial as MenuSpace).hideLabel : false));
+  const [hideLabel, setHideLabel] = useState(
+    Boolean(
+      isSpace && initial && "hideLabel" in initial ? (initial as MenuSpace).hideLabel : false,
+    ),
+  );
   const [viewers, setViewers] = useState(initial?.viewers ?? []);
   const [editors, setEditors] = useState(initial?.editors ?? []);
   const [xferBusy, setXferBusy] = useState(false);
@@ -461,11 +154,12 @@ export function ItemForm({
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      const slug = String(initial.name || "space")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, 40) || "space";
+      const slug =
+        String(initial.name || "space")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "")
+          .slice(0, 40) || "space";
       a.href = url;
       a.download = `dockit-space-${slug}-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
@@ -525,8 +219,18 @@ export function ItemForm({
       <div className="settings-body">
         <div className="settings-head">
           <div className="settings-head-copy">
-            <h3 className="dialog-title">{initial ? (isSpace ? t("aria.editSpace") : t("aria.editCategory")) : (isSpace ? t("space.create") : t("category.create"))}</h3>
-            <p className="settings-lead">{isSpace ? t("item.spaceLead") : t("item.categoryLead")}</p>
+            <h3 className="dialog-title">
+              {initial
+                ? isSpace
+                  ? t("aria.editSpace")
+                  : t("aria.editCategory")
+                : isSpace
+                  ? t("space.create")
+                  : t("category.create")}
+            </h3>
+            <p className="settings-lead">
+              {isSpace ? t("item.spaceLead") : t("item.categoryLead")}
+            </p>
           </div>
           <Button
             type="button"
@@ -672,7 +376,7 @@ export function FavsForm({
           size="icon"
           onClick={onCancel}
           aria-label={t("actions.close")}
-            title={t("actions.close")}
+          title={t("actions.close")}
         >
           <X className="size-4" />
         </Button>
@@ -700,7 +404,9 @@ export function ExtraLinksField({
   cardTitle,
 }: {
   links: { key: string; title: string; url: string; openIn: "_blank" | "_self" }[];
-  setLinks: React.Dispatch<React.SetStateAction<{ key: string; title: string; url: string; openIn: "_blank" | "_self" }[]>>;
+  setLinks: React.Dispatch<
+    React.SetStateAction<{ key: string; title: string; url: string; openIn: "_blank" | "_self" }[]>
+  >;
   linkMenu?: boolean;
   setLinkMenu?: React.Dispatch<React.SetStateAction<boolean>>;
   onHubEnable?: () => void;
@@ -735,7 +441,10 @@ export function ExtraLinksField({
       return [{ ...head, title: cardName }, ...cur.slice(1)];
     });
   }, [cardName, links, setLinks]);
-  function patch(key: string, next: Partial<{ title: string; url: string; openIn: "_blank" | "_self" }>) {
+  function patch(
+    key: string,
+    next: Partial<{ title: string; url: string; openIn: "_blank" | "_self" }>,
+  ) {
     const index = links.findIndex((r) => r.key === key);
     if (next.title !== undefined && index === 0) {
       const typed = String(next.title || "").trim();
@@ -861,7 +570,9 @@ export function ExtraLinksField({
               onGripUp={onGripUp}
               cells={[
                 <span key="n" className="am-row-title">
-                  {row.title.trim() || (row.key === links[0]?.key ? cardName : "") || t("item.name")}
+                  {row.title.trim() ||
+                    (row.key === links[0]?.key ? cardName : "") ||
+                    t("item.name")}
                   {isPrimaryRow(Boolean(linkMenu), index) ? (
                     <span className="am-dim"> · {t("item.primaryLink")}</span>
                   ) : null}
@@ -905,7 +616,9 @@ export function ExtraLinksField({
                     <input
                       type="checkbox"
                       checked={row.openIn === "_self"}
-                      onChange={(e) => patch(row.key, { openIn: e.target.checked ? "_self" : "_blank" })}
+                      onChange={(e) =>
+                        patch(row.key, { openIn: e.target.checked ? "_self" : "_blank" })
+                      }
                     />
                     {t("item.sameWindow")}
                   </label>
@@ -1032,7 +745,9 @@ export function CardForm({
   const [rowSpan, setRowSpan] = useState<1 | 2 | 3>(initial?.rowSpan ?? 1);
   const [check, setCheck] = useState<CheckMode>(initial?.check ?? "off");
   const [checkHost, setCheckHost] = useState(initial?.checkHost ?? "");
-  const [links, setLinks] = useState<{ key: string; title: string; url: string; openIn: "_blank" | "_self" }[]>(() => {
+  const [links, setLinks] = useState<
+    { key: string; title: string; url: string; openIn: "_blank" | "_self" }[]
+  >(() => {
     const rows = (Array.isArray(initial?.links) ? initial.links : [])
       .map((r) => ({
         key: newId(),
@@ -1070,8 +785,7 @@ export function CardForm({
     return (knownTags ?? [])
       .filter(
         (t) =>
-          fold(t.name).includes(s) &&
-          !tags.some((x) => x.toLowerCase() === t.name.toLowerCase()),
+          fold(t.name).includes(s) && !tags.some((x) => x.toLowerCase() === t.name.toLowerCase()),
       )
       .slice(0, 8);
   }, [tagDraft, knownTags, tags]);
@@ -1167,7 +881,9 @@ export function CardForm({
     kind !== "app" || links.every((row) => !row.url.trim() || Boolean(safeAppHref(row.url)));
   const canSave =
     kind === "app"
-      ? Boolean(title.trim() && safeAppHref(mainLink) && linksSchemeOk && !hasSiblingUrlDupes(links))
+      ? Boolean(
+          title.trim() && safeAppHref(mainLink) && linksSchemeOk && !hasSiblingUrlDupes(links),
+        )
       : kind === "note"
         ? Boolean(description.trim())
         : Boolean(safeEmbedHref(mainLink));
@@ -1204,7 +920,10 @@ export function CardForm({
           toast.error(t("errors.urlRequired"));
           return;
         }
-        if (kind === "app" && !links.every((row) => !row.url.trim() || Boolean(safeAppHref(row.url)))) {
+        if (
+          kind === "app" &&
+          !links.every((row) => !row.url.trim() || Boolean(safeAppHref(row.url)))
+        ) {
           toast.error(t("item.urlNeedScheme"));
           return;
         }
@@ -1224,7 +943,12 @@ export function CardForm({
           categoryId: catId,
           kind,
           title: title.trim(),
-          description: kind === "embed" ? "" : kind === "app" ? description.trim().slice(0, 40) : description.trim(),
+          description:
+            kind === "embed"
+              ? ""
+              : kind === "app"
+                ? description.trim().slice(0, 40)
+                : description.trim(),
           url: url.trim(),
           icon:
             icon.trim() || (kind === "note" ? "FileText" : kind === "embed" ? "AppWindow" : "Link"),
@@ -1255,7 +979,13 @@ export function CardForm({
         <div className="settings-head">
           <div className="settings-head-copy">
             <h3 className="dialog-title">{heading}</h3>
-            {kind === "app" ? <p className="settings-lead">{t("item.appLead")}</p> : kind === "note" ? <p className="settings-lead">{t("item.noteLead")}</p> : <p className="settings-lead">{t("item.embedLead")}</p>}
+            {kind === "app" ? (
+              <p className="settings-lead">{t("item.appLead")}</p>
+            ) : kind === "note" ? (
+              <p className="settings-lead">{t("item.noteLead")}</p>
+            ) : (
+              <p className="settings-lead">{t("item.embedLead")}</p>
+            )}
           </div>
           <div className="settings-head-actions">
             {kindSelect}
@@ -1344,43 +1074,41 @@ export function CardForm({
             {kind === "note" || kind === "embed" ? (
               <div className="settings-card">
                 <p className="settings-kicker">
-                  {kind === "note"
-                    ? t("item.content")
-                    : kindMeta.urlLabel}
+                  {kind === "note" ? t("item.content") : kindMeta.urlLabel}
                 </p>
-              {kind === "note" ? (
-                <Field>
-                  <NoteEditor value={description} onChange={setDescription} />
-                </Field>
-              ) : kind === "embed" ? (
-                <>
+                {kind === "note" ? (
                   <Field>
-                    <Input
-                      className={FIELD_SM}
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      placeholder="https://"
-                      required
-                    />
-                    {url.trim() && !hasLinkScheme(url) ? (
-                      <p className="settings-hint is-warn">{t("item.urlNeedScheme")}</p>
-                    ) : null}
-                    {urlDupHint}
+                    <NoteEditor value={description} onChange={setDescription} />
                   </Field>
-                  <div className="settings-toggles">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={embedBorder}
-                        onChange={(e) => setEmbedBorder(e.target.checked)}
+                ) : kind === "embed" ? (
+                  <>
+                    <Field>
+                      <Input
+                        className={FIELD_SM}
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        placeholder="https://"
+                        required
                       />
-                      {t("item.embedBorder")}
-                    </label>
-                    <p className="settings-hint">{t("item.embedBorderHint")}</p>
-                  </div>
-                </>
-              ) : null}
-            </div>
+                      {url.trim() && !hasLinkScheme(url) ? (
+                        <p className="settings-hint is-warn">{t("item.urlNeedScheme")}</p>
+                      ) : null}
+                      {urlDupHint}
+                    </Field>
+                    <div className="settings-toggles">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={embedBorder}
+                          onChange={(e) => setEmbedBorder(e.target.checked)}
+                        />
+                        {t("item.embedBorder")}
+                      </label>
+                      <p className="settings-hint">{t("item.embedBorderHint")}</p>
+                    </div>
+                  </>
+                ) : null}
+              </div>
             ) : null}
             {kind === "app" ? (
               <div className="settings-card">
@@ -1401,116 +1129,122 @@ export function CardForm({
                 <Field>
                   <div className="flex items-center gap-2">
                     <div className="tag-input-wrap relative flex min-h-9 flex-1 items-center gap-1 rounded-md border border-border bg-transparent px-3">
-                    {tags.map((tag) => {
-                      const paint = tagPaint(tag, {
-                        ...tagColors,
-                        ...draftColors,
-                      });
-                      return (
-                        <button
-                          key={tag}
-                          type="button"
-                          data-tone={paint.tone}
-                          style={paint.style}
-                          className="tag-chip shrink-0"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            removeTag(tag);
-                          }}
-                        >
-                          {tag}
-                          <X className="ml-0.5 size-2.5" />
-                        </button>
-                      );
-                    })}
-                    <input
-                      ref={tagInputRef}
-                      className="min-w-[4rem] flex-1 bg-transparent text-sm outline-none placeholder:text-subtle"
-                      value={tagDraft}
-                      placeholder={tags.length >= 3 ? t("item.maxTags") : t("item.addTag")}
-                      disabled={tags.length >= 3}
-                      onChange={(e) => {
-                        setTagDraft(e.target.value);
-                        setTagHi(0);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "ArrowDown" && tagMatches.length) {
-                          e.preventDefault();
-                          setTagHi((i) => (i + 1) % tagMatches.length);
-                          return;
-                        }
-                        if (e.key === "ArrowUp" && tagMatches.length) {
-                          e.preventDefault();
-                          setTagHi((i) => (i - 1 + tagMatches.length) % tagMatches.length);
-                          return;
-                        }
-                        if (e.key === "Enter" && tagMatches.length) {
-                          e.preventDefault();
-                          const m = tagMatches[tagHi % tagMatches.length];
-                          addTag(m.name);
+                      {tags.map((tag) => {
+                        const paint = tagPaint(tag, {
+                          ...tagColors,
+                          ...draftColors,
+                        });
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            data-tone={paint.tone}
+                            style={paint.style}
+                            className="tag-chip shrink-0"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              removeTag(tag);
+                            }}
+                          >
+                            {tag}
+                            <X className="ml-0.5 size-2.5" />
+                          </button>
+                        );
+                      })}
+                      <input
+                        ref={tagInputRef}
+                        className="min-w-[4rem] flex-1 bg-transparent text-sm outline-none placeholder:text-subtle"
+                        value={tagDraft}
+                        placeholder={tags.length >= 3 ? t("item.maxTags") : t("item.addTag")}
+                        disabled={tags.length >= 3}
+                        onChange={(e) => {
+                          setTagDraft(e.target.value);
                           setTagHi(0);
-                          return;
-                        }
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          setTagDraft("");
-                          setTagHi(0);
-                          return;
-                        }
-                        if (e.key === "Backspace" && !tagDraft && tags.length) {
-                          e.preventDefault();
-                          removeTag(tags[tags.length - 1]);
-                          setTagHi(0);
-                        }
-                        if (e.key === "Enter" || e.key === ",") {
-                          e.preventDefault();
-                          addTag(tagDraft.replace(/,/g, ""));
-                        }
-                      }}
-                      onBlur={() => addTag(tagDraft)}
-                    />
-                    {tagMatches.length > 0 ? createPortal(
-                      <div
-                        className="search-suggest"
-                        role="listbox"
-                        style={{
-                          position: "fixed",
-                          left: tagInputRef.current?.getBoundingClientRect().left ?? 0,
-                          top: (tagInputRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
-                          width: tagInputRef.current?.getBoundingClientRect().width ?? 200,
-                          zIndex: 9999,
                         }}
-                      >
-                        {tagMatches.map((t, i) => {
-                          const paint = tagPaint(t.name, tagColors);
-                          const hi = tagMatches.length ? tagHi % tagMatches.length : 0;
-                          return (
-                            <button
-                              key={t.name}
-                              type="button"
-                              role="option"
-                              aria-selected={i === hi}
-                              className={i === hi ? "is-hi" : ""}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                addTag(t.name);
-                                setTagDraft("");
-                                setTagHi(0);
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowDown" && tagMatches.length) {
+                            e.preventDefault();
+                            setTagHi((i) => (i + 1) % tagMatches.length);
+                            return;
+                          }
+                          if (e.key === "ArrowUp" && tagMatches.length) {
+                            e.preventDefault();
+                            setTagHi((i) => (i - 1 + tagMatches.length) % tagMatches.length);
+                            return;
+                          }
+                          if (e.key === "Enter" && tagMatches.length) {
+                            e.preventDefault();
+                            const m = tagMatches[tagHi % tagMatches.length];
+                            addTag(m.name);
+                            setTagHi(0);
+                            return;
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setTagDraft("");
+                            setTagHi(0);
+                            return;
+                          }
+                          if (e.key === "Backspace" && !tagDraft && tags.length) {
+                            e.preventDefault();
+                            removeTag(tags[tags.length - 1]);
+                            setTagHi(0);
+                          }
+                          if (e.key === "Enter" || e.key === ",") {
+                            e.preventDefault();
+                            addTag(tagDraft.replace(/,/g, ""));
+                          }
+                        }}
+                        onBlur={() => addTag(tagDraft)}
+                      />
+                      {tagMatches.length > 0
+                        ? createPortal(
+                            <div
+                              className="search-suggest"
+                              role="listbox"
+                              style={{
+                                position: "fixed",
+                                left: tagInputRef.current?.getBoundingClientRect().left ?? 0,
+                                top: (tagInputRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                                width: tagInputRef.current?.getBoundingClientRect().width ?? 200,
+                                zIndex: 9999,
                               }}
                             >
-                              <span data-tone={paint.tone} style={paint.style} className="tag-chip">
-                                {t.name}
-                              </span>
-                              <span className="text-xs text-muted">{t.count}</span>
-                            </button>
-                          );
-                        })}
-                      </div>,
-                      document.body,
-                    ) : null}
-                  </div>
+                              {tagMatches.map((t, i) => {
+                                const paint = tagPaint(t.name, tagColors);
+                                const hi = tagMatches.length ? tagHi % tagMatches.length : 0;
+                                return (
+                                  <button
+                                    key={t.name}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={i === hi}
+                                    className={i === hi ? "is-hi" : ""}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      addTag(t.name);
+                                      setTagDraft("");
+                                      setTagHi(0);
+                                    }}
+                                  >
+                                    <span
+                                      data-tone={paint.tone}
+                                      style={paint.style}
+                                      className="tag-chip"
+                                    >
+                                      {t.name}
+                                    </span>
+                                    <span className="text-xs text-muted">{t.count}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>,
+                            document.body,
+                          )
+                        : null}
+                    </div>
                     <p className="theme-css-meta shrink-0">{`${tags.length}/3`}</p>
                   </div>
                 </Field>
@@ -1523,7 +1257,9 @@ export function CardForm({
                   <div className="flex min-w-0 shrink-0 flex-col gap-1" style={{ flex: "0 0 33%" }}>
                     <Label>{t("item.preview")}</Label>
                     <SizePreview colSpan={colSpan} rowSpan={rowSpan} />
-                    <p className="settings-hint text-center tabular-nums">{colSpan} × {rowSpan}</p>
+                    <p className="settings-hint text-center tabular-nums">
+                      {colSpan} × {rowSpan}
+                    </p>
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col gap-3">
                     <div className="id-field">
@@ -1557,67 +1293,67 @@ export function CardForm({
             {kind === "app" ? (
               <div className="settings-card">
                 <p className="settings-kicker">{t("probe.control")}</p>
-              {probes === false ? (
-                <p className="settings-hint">{t("item.probeDisabled")}</p>
-              ) : linkMenu ? (
-                <p className="settings-hint">{t("item.probeHubHint")}</p>
-              ) : (
-                <p className="settings-hint">{t("item.probeFirstLinkHint")}</p>
-              )}
-              <Field>
-                <Select
-                  className={FIELD_SM}
-                  value={check}
-                  disabled={probes === false}
-                  onChange={(e) => setCheck(e.target.value as CheckMode)}
-                >
-                  <option value="off">{t("item.probeNone")}</option>
-                  <option value="http">{t("item.probeHttp")}</option>
-                  <option value="icmp">{t("item.probeIcmp")}</option>
-                </Select>
-                {check !== "off" && probes !== false ? (
-                  <button
-                    type="button"
-                    className="settings-link self-start"
-                    disabled={probeBusy || !picker.token}
-                    onClick={async () => {
-                      setProbeBusy(true);
-                      try {
-                        const row = await probePreview({
-                          data: {
-                            token: picker.token,
-                            mode: check === "icmp" ? "icmp" : "http",
-                            url: url.trim(),
-                            host: checkHost.trim(),
-                          },
-                        });
-                        if (!row) throw new Error("errors.noReply");
-                        if (row.ok) toast.success(td(row.detail));
-                        else toast.error(td(row.detail));
-                      } catch (err) {
-                        if (sessionGone(err)) return;
-                        toast.error(te(err));
-                      } finally {
-                        setProbeBusy(false);
-                      }
-                    }}
-                  >
-                    {probeBusy ? t("probe.testing") : t("probe.testNow")}
-                  </button>
-                ) : null}
-              </Field>
-              {check === "icmp" && probes !== false ? (
-                <Field label={t("probe.icmpHost")}>
-                  <Input
+                {probes === false ? (
+                  <p className="settings-hint">{t("item.probeDisabled")}</p>
+                ) : linkMenu ? (
+                  <p className="settings-hint">{t("item.probeHubHint")}</p>
+                ) : (
+                  <p className="settings-hint">{t("item.probeFirstLinkHint")}</p>
+                )}
+                <Field>
+                  <Select
                     className={FIELD_SM}
-                    value={checkHost}
-                    onChange={(e) => setCheckHost(e.target.value)}
-                    placeholder="10.12.4.20 or host.example"
-                    required
-                  />
+                    value={check}
+                    disabled={probes === false}
+                    onChange={(e) => setCheck(e.target.value as CheckMode)}
+                  >
+                    <option value="off">{t("item.probeNone")}</option>
+                    <option value="http">{t("item.probeHttp")}</option>
+                    <option value="icmp">{t("item.probeIcmp")}</option>
+                  </Select>
+                  {check !== "off" && probes !== false ? (
+                    <button
+                      type="button"
+                      className="settings-link self-start"
+                      disabled={probeBusy || !picker.token}
+                      onClick={async () => {
+                        setProbeBusy(true);
+                        try {
+                          const row = await probePreview({
+                            data: {
+                              token: picker.token,
+                              mode: check === "icmp" ? "icmp" : "http",
+                              url: url.trim(),
+                              host: checkHost.trim(),
+                            },
+                          });
+                          if (!row) throw new Error("errors.noReply");
+                          if (row.ok) toast.success(td(row.detail));
+                          else toast.error(td(row.detail));
+                        } catch (err) {
+                          if (sessionGone(err)) return;
+                          toast.error(te(err));
+                        } finally {
+                          setProbeBusy(false);
+                        }
+                      }}
+                    >
+                      {probeBusy ? t("probe.testing") : t("probe.testNow")}
+                    </button>
+                  ) : null}
                 </Field>
-              ) : null}
-            </div>
+                {check === "icmp" && probes !== false ? (
+                  <Field label={t("probe.icmpHost")}>
+                    <Input
+                      className={FIELD_SM}
+                      value={checkHost}
+                      onChange={(e) => setCheckHost(e.target.value)}
+                      placeholder="10.12.4.20 or host.example"
+                      required
+                    />
+                  </Field>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </EdgeFade>

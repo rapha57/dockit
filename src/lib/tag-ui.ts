@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { DocSpace, PortalCard } from "@/lib/portal";
+import type { DocSpace, PortalCard } from "@/lib/portal/types";
 import { localeTag } from "@/lib/i18n";
 import { defaultTagHex, remapTagHex, tagInk, tagTone } from "@/lib/tag-colors";
 

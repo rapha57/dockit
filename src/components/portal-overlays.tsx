@@ -13,9 +13,10 @@ import { ItemForm, CardForm, FavsForm } from "@/components/editors";
 import { MovePickDialog, MoveSectionDialog } from "@/components/access";
 import { itemKind } from "@/lib/item-kind";
 import { sessionGone } from "@/lib/session-gone";
+import { applySessionToken } from "@/lib/portal-client-session";
 import { t, te } from "@/lib/i18n";
 import type { Category, CategoryMoveImpact } from "@/lib/acl";
-import type { ClickStats, CustomIcon, PortalCard, PortalCategory, SessionInfo } from "@/lib/portal";
+import type { ClickStats, CustomIcon, PortalCard, PortalCategory, SessionInfo } from "@/lib/portal/types";
 import {
   createCard,
   createCategory,
@@ -80,9 +81,7 @@ export function PortalOverlays({
   clickStats,
   setClickStats,
   adminTabRef,
-  pinSessCookie,
   writeSessionInfo,
-  tokenKey,
   oidcNextKey,
   sessionCanArrange,
   sessionCanManageAcl,
@@ -111,9 +110,7 @@ export function PortalOverlays({
   clickStats: ClickStats;
   setClickStats: Dispatch<SetStateAction<ClickStats>>;
   adminTabRef: MutableRefObject<string>;
-  pinSessCookie: (token: string | null | undefined) => Promise<void>;
   writeSessionInfo: (session: SessionInfo | null | undefined) => void;
-  tokenKey: string;
   oidcNextKey: string;
   sessionCanArrange: (session: SessionInfo | null | undefined) => boolean;
   sessionCanManageAcl: (session: SessionInfo | null | undefined) => boolean;
@@ -196,20 +193,7 @@ export function PortalOverlays({
                   window.setTimeout(() => reject(new Error("errors.timeout")), 12e3);
                 }),
               ]);
-              if (res.sessionHttpOnly) {
-                await pinSessCookie(res.token);
-                try {
-                  sessionStorage.removeItem(tokenKey);
-                } catch {
-                  // ignore
-                }
-              } else {
-                try {
-                  sessionStorage.setItem(tokenKey, res.token);
-                } catch {
-                  // ignore
-                }
-              }
+              await applySessionToken(res.token, Boolean(res.sessionHttpOnly));
               setToken(res.token);
               setSession(res.session);
               writeSessionInfo(res.session);

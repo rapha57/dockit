@@ -5,7 +5,7 @@ import { AccessUsers, AccessGroups, AccessRoles } from "@/components/access";
 import { IdentitySourcesPanel, seedLdapDirs } from "@/components/auth-panel";
 import { t } from "@/lib/i18n";
 import type { MenuSpace, OidcPayload, LdapPayload } from "@/lib/portal-ui";
-import type { PortalSettings, SessionInfo } from "@/lib/portal";
+import type { PortalSettings, SessionInfo } from "@/lib/portal/types";
 
 export function AccessFrame({
   token,

@@ -3626,6 +3626,69 @@ html.dark .dockit-mark {
   width: min(72rem, calc(100vw - 2rem));
   height: min(90dvh, 780px);
 }
+.see-as {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  min-height: 0;
+}
+.see-as-spaces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.see-as-space {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  font-weight: 550;
+  cursor: pointer;
+}
+.see-as-space.is-on,
+.see-as-space:hover {
+  color: var(--color-fg);
+  border-color: color-mix(in oklab, var(--color-fg) 22%, var(--color-border));
+  background: color-mix(in oklab, var(--color-fg) 5%, transparent);
+}
+.see-as-cat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.see-as-cat-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.see-as-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.see-as-card {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in oklab, var(--color-border) 80%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--color-elevated) 70%, transparent);
+  font-size: 0.8125rem;
+}
 .am-work {
   display: flex;
   flex-direction: column;

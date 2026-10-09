@@ -216,29 +216,25 @@ export async function notifyCurationDown(
 	const host = webhookHost(href);
 	if (!webhookUrlOk(href)) return { at, ok: false, event, host, detail: "errors.httpRequired" };
 	if (event !== "curation.test" && !items.length) return { at, ok: true, event, host, detail: "skip" };
-	const ctrl = new AbortController();
-	const timer = setTimeout(() => ctrl.abort(), 8000);
 	try {
-		const res = await fetch(href, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				text: notifyText(event, items),
-				source: "dockit",
-				event,
-				at: new Date(at).toISOString(),
-				items,
-			}),
-			signal: ctrl.signal,
+		const { pinnedJsonPost } = await import("./probe-runtime");
+		const res = await pinnedJsonPost(href, {
+			text: notifyText(event, items),
+			source: "dockit",
+			event,
+			at: new Date(at).toISOString(),
+			items,
 		});
-		if (res.ok) return { at, ok: true, event, host, status: res.status };
+		if (res.status >= 200 && res.status < 300) return { at, ok: true, event, host, status: res.status };
 		return { at, ok: false, event, host, status: res.status, detail: `HTTP ${res.status}` };
 	} catch (err) {
+		const msg = err instanceof Error ? err.message : "";
+		if (msg === "errors.probeForbidden" || msg === "errors.httpRequired" || msg === "errors.invalidUrl") {
+			return { at, ok: false, event, host, detail: msg };
+		}
 		const name = err && typeof err === "object" && "name" in err ? String((err as { name?: string }).name) : "";
-		const aborted = name === "AbortError";
+		const aborted = name === "AbortError" || msg === "probe.timeout";
 		return { at, ok: false, event, host, detail: aborted ? "probe.timeout" : "probe.unreachable" };
-	} finally {
-		clearTimeout(timer);
 	}
 }
 

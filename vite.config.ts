@@ -5,13 +5,14 @@ import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { healthPayload } from "./src/lib/health-check.ts";
 const SECURITY_HEADERS: Record<string, string> = {
 	"X-Content-Type-Options": "nosniff",
 	"Referrer-Policy": "strict-origin-when-cross-origin",
 	"X-Frame-Options": "SAMEORIGIN",
 	"X-DNS-Prefetch-Control": "off",
 	"Content-Security-Policy":
-		"default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.iconify.design; frame-src https: http:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'",
+		"default-src 'self' blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.iconify.design; frame-src https: http:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'",
 };
 
 const ASSET_URL = "/__dockit/asset/";
@@ -85,6 +86,33 @@ function dockitAssets(): Plugin {
 	};
 }
 
+function dockitHealth(): Plugin {
+	const handle = (
+		req: { url?: string; method?: string },
+		res: { setHeader: (k: string, v: string) => void; statusCode: number; end: (b?: unknown) => void },
+		next: () => void,
+	) => {
+		const path = (req.url || "").split("?")[0];
+		if (path !== "/health") return next();
+		if (req.method && req.method !== "GET" && req.method !== "HEAD") return next();
+		healthPayload().then((body) => {
+			res.statusCode = body.ok ? 200 : 503;
+			res.setHeader("Content-Type", "application/json");
+			res.setHeader("Cache-Control", "no-store");
+			res.end(JSON.stringify(body));
+		});
+	};
+	return {
+		name: "dockit-health",
+		configureServer(server) {
+			server.middlewares.use(handle);
+		},
+		configurePreviewServer(server) {
+			server.middlewares.use(handle);
+		},
+	};
+}
+
 export default defineConfig(({ command, isPreview }) => ({
   server: {
     host: "0.0.0.0",
@@ -102,6 +130,7 @@ export default defineConfig(({ command, isPreview }) => ({
   optimizeDeps: { exclude: ["undici"] },
   plugins: [
     securityHeaders(),
+    dockitHealth(),
     dockitAssets(),
     tailwindcss(),
     tanstackStart(),

@@ -68,7 +68,7 @@
     "exportBookmarksDone": "Favoris téléchargés",
     "openFavs": "Ouvrir les favoris au chargement",
     "resetPrefs": "Réinitialiser les préférences",
-    "resetPrefsConfirm": "Réinitialiser les préférences ? Favoris, ouverture au chargement, catégories repliées et thème sont stockés dans le local storage du navigateur et seront effacés. Le contenu du portail n’est pas modifié."
+    "resetPrefsConfirm": "Réinitialiser les préférences ? Favoris, dernier espace, ouverture au chargement, catégories repliées et thème sont stockés dans le local storage du navigateur et seront effacés. Le contenu du portail n’est pas modifié."
   },
   "lock": {
     "username": "Identifiant",
@@ -658,6 +658,7 @@
     "storeUnreadable": "Fichier de données illisible. Corrige-le ou restaure-le ; Dockit ne l’écrasera pas.",
     "tooManyProbes": "Trop de sondes, réessayer dans un instant",
     "httpRequired": "Lien HTTP/HTTPS requis",
+    "mustChangePassword": "Changer le mot de passe administrateur avant d’utiliser le portail.",
     "sessionCookieDenied": "Cookie de session refusé",
     "fileTooHeavy": "Fichier trop lourd (max 200 Ko)",
     "iconFormats": "Formats : PNG, SVG, WebP, JPEG, ICO",
@@ -904,6 +905,9 @@
   },
   "pres": {
     "cards": "Cartes",
+    "load": "Au chargement",
+    "restoreLastSpace": "Rouvrir le dernier espace",
+    "restoreLastSpaceHint": "Chaque navigateur retrouve son dernier onglet. Masque « Ouvrir les favoris au chargement » dans le menu Compte.",
     "icons": "Icônes",
     "header": "En-tête",
     "headerGlass": "Verre dépoli sur la barre du haut",
@@ -959,7 +963,8 @@
     "requireLogin": "Exiger une connexion pour ouvrir le portail",
     "requireLoginHint": "Les visiteurs voient l’écran de connexion à la place du catalogue.",
     "httpOnly": "Cookie HttpOnly (hors sessionStorage)",
-    "httpOnlyHint": "Le jeton n’est plus lisible en JavaScript. Prend effet à la prochaine connexion.",
+    "httpOnlyHint": "Le jeton n’est plus lisible en JavaScript. Prend effet à la prochaine connexion. Off uniquement en HTTP local.",
+    "httpOnlyHintForced": "Obligatoire hors HTTP local (HTTPS ou hôte non loopback). Le jeton n’est pas stocké en JavaScript.",
     "noPassword": "Connexion admin sans mot de passe",
     "noPasswordHintDev": "Le bouton Connexion est mis en couleur et ouvre une session propriétaire (vide ou admin, n’importe quel mot de passe). Ignoré hors npm run dev.",
     "noPasswordHintProd": "Disponible uniquement en mode développement (npm run dev).",
@@ -1259,7 +1264,15 @@
     "secPermissions": "Permissions",
     "secDefinition": "Définition",
     "secHolders": "Attribution",
-    "typeRemote": "Annuaire"
+    "typeRemote": "Annuaire",
+    "seeAs": "Voir comme",
+    "seeAsPick": "Voir comme…",
+    "seeAsTitle": "Catalogue de {name}",
+    "seeAsLead": "Ce que ce compte voit. Ta session ne change pas.",
+    "seeAsDisabled": "Ce compte est désactivé. Catalogue tel qu’il le verrait s’il était actif.",
+    "seeAsBusy": "Chargement du catalogue…",
+    "seeAsEmpty": "Ce compte ne voit aucun espace.",
+    "seeAsEmptySpace": "Aucune carte visible dans cet espace."
   },
   "users": {
     "noSpaces": "Aucun espace à modifier",

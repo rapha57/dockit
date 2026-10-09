@@ -12,7 +12,7 @@ import { t } from "@/lib/i18n";
 import { newId } from "@/lib/id";
 import { DEFAULT_OIDC_SCOPE } from "@/lib/oidc-scope";
 import type { Directory } from "@/lib/ldap-runtime";
-import type { PortalSettings } from "@/lib/portal";
+import type { PortalSettings } from "@/lib/portal/types";
 import type { OidcPayload, LdapPayload } from "@/lib/portal-ui";
 
 export function OidcForm({
