@@ -16,7 +16,13 @@ import { sessionGone } from "@/lib/session-gone";
 import { applySessionToken } from "@/lib/portal-client-session";
 import { t, te } from "@/lib/i18n";
 import type { Category, CategoryMoveImpact } from "@/lib/acl";
-import type { ClickStats, CustomIcon, PortalCard, PortalCategory, SessionInfo } from "@/lib/portal/types";
+import type {
+  ClickStats,
+  CustomIcon,
+  PortalCard,
+  PortalCategory,
+  SessionInfo,
+} from "@/lib/portal/types";
 import {
   createCard,
   createCategory,
@@ -125,6 +131,7 @@ export function PortalOverlays({
     });
   return (
     <ModalShell
+      className={lockForced ? "portal-lock" : undefined}
       wide={
         modal.kind === "admin" ||
         modal.kind === "stats" ||
@@ -235,7 +242,11 @@ export function PortalOverlays({
         />
       )}
       {modal.kind === "stats" && (
-        <StatsPanel catalog={data.catalog} scoped={clickStats.fullCatalog === false} onClose={close} />
+        <StatsPanel
+          catalog={data.catalog}
+          scoped={clickStats.fullCatalog === false}
+          onClose={close}
+        />
       )}
       {modal.kind === "legend" && <LegendPanel onClose={close} />}
       {modal.kind === "users" && (
@@ -338,7 +349,9 @@ export function PortalOverlays({
                   return {
                     app,
                     categoryId: cat.id,
-                    categories: data.categories.some((c) => c.id === cat.id) ? data.categories : space.categories,
+                    categories: data.categories.some((c) => c.id === cat.id)
+                      ? data.categories
+                      : space.categories,
                   };
                 }
               }
@@ -444,7 +457,8 @@ export function PortalOverlays({
             }
           }}
           onApplyTags={async (payload) => {
-            const colorOnly = Boolean(payload.colors) && !payload.rename && !payload.remove && !payload.create;
+            const colorOnly =
+              Boolean(payload.colors) && !payload.rename && !payload.remove && !payload.create;
             if (!colorOnly) setBusy(true);
             try {
               const next = await manageTags({
@@ -464,20 +478,17 @@ export function PortalOverlays({
             }
           }}
           onSaveTheme={(payload, opts) =>
-            apply(
-              async () => {
-                const next = await updateThemeCss({
-                  data: {
-                    token,
-                    spaceId: data.activeSpaceId,
-                    ...payload,
-                  },
-                });
-                toast.success(t("toast.themesSaved"));
-                return next;
-              },
-              opts,
-            )
+            apply(async () => {
+              const next = await updateThemeCss({
+                data: {
+                  token,
+                  spaceId: data.activeSpaceId,
+                  ...payload,
+                },
+              });
+              toast.success(t("toast.themesSaved"));
+              return next;
+            }, opts)
           }
           onResetPortal={() =>
             apply(
@@ -570,11 +581,7 @@ export function PortalOverlays({
         />
       )}
       {modal.kind === "bookmarks" && (
-        <BookmarksExport
-          catalog={data.catalog}
-          title={data.settings.title}
-          onClose={close}
-        />
+        <BookmarksExport catalog={data.catalog} title={data.settings.title} onClose={close} />
       )}
       {modal.kind === "favs" && (
         <FavsForm

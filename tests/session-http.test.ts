@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { acceptSessionToken, SESSION_MAP_KEY, sessionAlive } from "@/lib/portal/session-mem";
+import { issueToken, sessions } from "@/lib/portal/session";
 import {
 	effectiveSessionHttpOnly,
 	hostnameOf,
@@ -16,6 +18,26 @@ function req(url: string, headers: Record<string, string> = {}) {
 		},
 	};
 }
+
+describe("session map shared with the cookie route", () => {
+	const issued: string[] = [];
+
+	afterEach(() => {
+		for (const token of issued) sessions.delete(token);
+		issued.length = 0;
+	});
+
+	it("keeps issued tokens on globalThis", () => {
+		const token = issueToken("admin");
+		issued.push(token);
+		const bag = (globalThis as typeof globalThis & { [SESSION_MAP_KEY]?: typeof sessions })[SESSION_MAP_KEY];
+		expect(bag).toBe(sessions);
+		expect(sessionAlive(token)).toBe(true);
+		expect(acceptSessionToken(token)).toBe(token);
+		expect(acceptSessionToken("nope")).toBe("");
+		expect(acceptSessionToken("ab".repeat(24))).toBe("");
+	});
+});
 
 describe("isLoopbackHost", () => {
 	it("accepts localhost variants", () => {

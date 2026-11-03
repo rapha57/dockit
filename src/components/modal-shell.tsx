@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -110,6 +110,7 @@ export function ModalShell({
   label,
   labelledBy,
   role = "dialog",
+  className,
 }: {
   children: ReactNode;
   onClose: () => void;
@@ -119,22 +120,28 @@ export function ModalShell({
   label?: string;
   labelledBy?: string;
   role?: string;
+  className?: string;
 }) {
   const resolved = size || (wide ? "wide" : "lg");
   const paddedBox = padded ?? resolved !== "wide";
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const [inBody, setInBody] = useState(false);
 
+  useLayoutEffect(() => {
+    setInBody(true);
+  }, []);
   useEffect(() => {
     const close = () => onCloseRef.current?.();
     return pushLayer(close);
   }, []);
 
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
+  const overlay = (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-bg/75 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className={cn(
+        "fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-bg/75 p-0 backdrop-blur-sm sm:items-center sm:p-4",
+        className,
+      )}
       onClick={onClose}
       onWheel={(e) => {
         if (e.target === e.currentTarget) e.preventDefault();
@@ -157,7 +164,8 @@ export function ModalShell({
       >
         {children}
       </div>
-    </div>,
-    document.body,
+    </div>
   );
+  if (inBody && typeof document !== "undefined") return createPortal(overlay, document.body);
+  return overlay;
 }

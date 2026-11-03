@@ -1,11 +1,11 @@
 import { createError, defineEventHandler, getRequestURL, readBody, setResponseHeader } from "h3";
-import { sessionAlive } from "../../../../src/lib/portal";
-import { sessCookieHeader } from "../../../../src/lib/session-cookie";
+import { acceptSessionToken } from "../../../src/lib/portal/session-mem";
+import { sessCookieHeader } from "../../../src/lib/session-cookie";
 
 export default defineEventHandler(async (event) => {
 	const body = await readBody(event);
-	const token = String(body?.token || "");
-	if (!/^[a-f0-9]{48}$/i.test(token) || !sessionAlive(token)) {
+	const token = acceptSessionToken(body?.token);
+	if (!token) {
 		throw createError({ statusCode: 401, statusMessage: "Jeton invalide" });
 	}
 	const secure = getRequestURL(event).protocol === "https:";

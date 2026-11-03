@@ -80,12 +80,22 @@ import {
   applySessionToken,
   clearSessCookie,
   writeSessionInfo,
+  loginGateCss,
+  loginGateScript,
+  syncLoginGate,
   sessionCanEditSpace,
   sessionCanMoveSpace,
   sessionCanArrange,
   sessionCanManageAcl,
   sessionCanCreateSpaces,
 } from "@/lib/portal-client-session";
+
+function bootModal(initial: PortalData): PortalModal {
+  if (initial.session) return { kind: "none" };
+  if (!initial.settings.requireLogin) return { kind: "none" };
+  if (initial.settings.oidcEnabled && initial.settings.oidcAutoRedirect) return { kind: "none" };
+  return { kind: "lock", next: "session" };
+}
 
 export const Route = createFileRoute("/")({
   loader: async () => {
@@ -137,17 +147,11 @@ function Home() {
       return false;
     }
   });
-  const [token, setToken] = useState(() => readToken());
-  const [session, setSession] = useState<SessionInfo | null>(() => readSessionInfo());
+  const [token, setToken] = useState("");
+  const [session, setSession] = useState<SessionInfo | null>(initial.session ?? null);
   const [hideDevBanner, setHideDevBanner] = useState(false);
   const [hideNoPassBanner, setHideNoPassBanner] = useState(false);
-  const [modal, setModal] = useState<PortalModal>(() => {
-    if (initial.settings.requireLogin && !readToken() && !readSessionInfo()) {
-      if (canKickOidc(initial.settings)) return { kind: "none" };
-      return { kind: "lock", next: "session" };
-    }
-    return { kind: "none" };
-  });
+  const [modal, setModal] = useState<PortalModal>(() => bootModal(initial));
   const adminTabRef = useRef("general");
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
@@ -312,6 +316,17 @@ function Home() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- boot-only session restore
   }, []);
+  useLayoutEffect(() => {
+    const t = readToken();
+    const saved = readSessionInfo();
+    if (t) setToken(t);
+    if (saved) setSession(saved);
+    if (t || saved) setModal((cur) => (cur.kind === "lock" ? { kind: "none" } : cur));
+  }, []);
+  useLayoutEffect(() => {
+    const authed = Boolean(token || session || readToken() || readSessionInfo());
+    syncLoginGate(!data.settings.requireLogin || authed, authed);
+  }, [data.settings.requireLogin, token, session]);
   useLayoutEffect(() => {
     const prefs = readUiPrefs();
     setUi(prefs);
@@ -486,12 +501,21 @@ function Home() {
       // ignore
     }
     writeSessionInfo(null);
+    const locked = Boolean(dataRef.current.settings.requireLogin);
+    syncLoginGate(!locked, false);
     setToken("");
     setSession(null);
     exitEdit();
-    setModal({
-      kind: "none",
-    });
+    setModal(
+      locked
+        ? {
+            kind: "lock",
+            next: "session",
+          }
+        : {
+            kind: "none",
+          },
+    );
     setBusy(false);
   }
   function logoutEdit() {
@@ -1518,327 +1542,333 @@ function Home() {
 
   return (
     <div className="min-h-dvh">
+      <style dangerouslySetInnerHTML={{ __html: loginGateCss }} />
+      {initial.settings.requireLogin && !initial.session ? (
+        <script dangerouslySetInnerHTML={{ __html: loginGateScript() }} />
+      ) : null}
       <ThemeCss light={data.settings.cssLight || ""} dark={data.settings.cssDark || ""} />
-      {data.runtime?.isDev && !hideDevBanner ? (
-        <div className="security-banner is-dev" role="status">
-          <Bug className="size-3.5 shrink-0" />
-          {t("banner.dev")}
-          <button
-            type="button"
-            className="banner-close"
-            aria-label={t("actions.close")}
-            title={t("actions.close")}
-            onClick={() => setHideDevBanner(true)}
-          >
-            <X strokeWidth={2.75} />
-          </button>
-        </div>
-      ) : null}
-      {session?.mustChangePassword ? (
-        <div className="security-banner" role="status">
-          <AlertTriangle className="size-3.5 shrink-0" />
-          {t("banner.weakPassword")}
-        </div>
-      ) : null}
-      {data.runtime?.isDev && data.settings.devAdminNoPassword && !hideNoPassBanner ? (
-        <div className="security-banner" role="status">
-          <AlertTriangle className="size-3.5 shrink-0" />
-          {t("banner.noPassword")}
-          <button
-            type="button"
-            className="banner-close"
-            aria-label={t("actions.close")}
-            title={t("actions.close")}
-            onClick={() => setHideNoPassBanner(true)}
-          >
-            <X strokeWidth={2.75} />
-          </button>
-        </div>
-      ) : null}
-      <header
-        className={`portal-header sticky top-0 z-20 border-b border-border${data.settings.headerGlass ? " is-glass" : " bg-header"}`}
-      >
-        <div className="mx-auto flex min-w-0 max-w-6xl items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <HeaderBrand src={data.settings.logo} />
-            <div className="hidden min-w-0 sm:block sm:max-w-72">
-              <h1 className="truncate text-base font-semibold tracking-tight">
-                {data.settings.title}
-              </h1>
-              <p className="hidden truncate text-xs text-muted sm:block">
-                {data.settings.subtitle || t("settings.defaultTagline")}
-              </p>
-            </div>
+      <div className="portal-shell">
+        {data.runtime?.isDev && !hideDevBanner ? (
+          <div className="security-banner is-dev" role="status">
+            <Bug className="size-3.5 shrink-0" />
+            {t("banner.dev")}
+            <button
+              type="button"
+              className="banner-close"
+              aria-label={t("actions.close")}
+              title={t("actions.close")}
+              onClick={() => setHideDevBanner(true)}
+            >
+              <X strokeWidth={2.75} />
+            </button>
           </div>
-          <div className="search-box relative flex min-h-10 min-w-0 flex-1 items-center gap-1 rounded-lg border border-border bg-surface pl-9">
-            <Search className="pointer-events-none absolute left-3 size-4 text-muted" />
-            {tagFilter.length || downFilter ? (
-              <div className="search-tags">
-                {downFilter ? (
-                  <button
-                    type="button"
-                    className="tag-chip is-on stats-hs-chip"
-                    title={t("info.removeHs")}
-                    onClick={() => setDownFilter(false)}
-                  >
-                    {t("info.hs")}
-                    <X className="ml-0.5 size-2.5" />
-                  </button>
-                ) : null}
-                {tagFilter.map((name) => {
-                  const paint = tagPaint(name, data.settings.tagColors);
-                  return (
+        ) : null}
+        {session?.mustChangePassword ? (
+          <div className="security-banner" role="status">
+            <AlertTriangle className="size-3.5 shrink-0" />
+            {t("banner.weakPassword")}
+          </div>
+        ) : null}
+        {data.runtime?.isDev && data.settings.devAdminNoPassword && !hideNoPassBanner ? (
+          <div className="security-banner" role="status">
+            <AlertTriangle className="size-3.5 shrink-0" />
+            {t("banner.noPassword")}
+            <button
+              type="button"
+              className="banner-close"
+              aria-label={t("actions.close")}
+              title={t("actions.close")}
+              onClick={() => setHideNoPassBanner(true)}
+            >
+              <X strokeWidth={2.75} />
+            </button>
+          </div>
+        ) : null}
+        <header
+          className={`portal-header sticky top-0 z-20 border-b border-border${data.settings.headerGlass ? " is-glass" : " bg-header"}`}
+        >
+          <div className="mx-auto flex min-w-0 max-w-6xl items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <HeaderBrand src={data.settings.logo} />
+              <div className="hidden min-w-0 sm:block sm:max-w-72">
+                <h1 className="truncate text-base font-semibold tracking-tight">
+                  {data.settings.title}
+                </h1>
+                <p className="hidden truncate text-xs text-muted sm:block">
+                  {data.settings.subtitle || t("settings.defaultTagline")}
+                </p>
+              </div>
+            </div>
+            <div className="search-box relative flex min-h-10 min-w-0 flex-1 items-center gap-1 rounded-lg border border-border bg-surface pl-9">
+              <Search className="pointer-events-none absolute left-3 size-4 text-muted" />
+              {tagFilter.length || downFilter ? (
+                <div className="search-tags">
+                  {downFilter ? (
                     <button
-                      key={name}
                       type="button"
-                      data-tone={paint.tone}
-                      style={paint.style}
-                      className="tag-chip is-on"
-                      title={t("nav.removeTag", { name })}
-                      onClick={() => toggleTag(name)}
+                      className="tag-chip is-on stats-hs-chip"
+                      title={t("info.removeHs")}
+                      onClick={() => setDownFilter(false)}
                     >
-                      {name}
+                      {t("info.hs")}
                       <X className="ml-0.5 size-2.5" />
                     </button>
-                  );
-                })}
-              </div>
-            ) : null}
-            <input
-              ref={searchRef}
-              className="h-10 min-w-[6rem] flex-1 bg-transparent text-sm outline-none placeholder:text-subtle"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setTagHi(0);
-              }}
-              onKeyDown={(e) => {
-                const n = tagMatches.length + jumpHits.length;
-                if (e.key === "ArrowDown" && n) {
-                  e.preventDefault();
-                  setTagHi((i) => (i + 1) % n);
-                  return;
-                }
-                if (e.key === "ArrowUp" && n) {
-                  e.preventDefault();
-                  setTagHi((i) => (i - 1 + n) % n);
-                  return;
-                }
-                if (e.key === "Enter" && n) {
-                  e.preventDefault();
-                  const i = tagHi % n;
-                  if (i < tagMatches.length) applyTagFromSearch(tagMatches[i].name);
-                  else jumpTo(jumpHits[i - tagMatches.length]);
-                  return;
-                }
-                if (e.key === "Escape" && (query || tagFilter.length || downFilter)) {
-                  e.preventDefault();
-                  setQuery("");
-                  setDownFilter(false);
-                  return;
-                }
-                if (e.key === "Backspace" && !query && tagFilter.length)
-                  setTagFilter((cur) => cur.slice(0, -1));
-              }}
-              placeholder={tagFilter.length ? t("nav.addTagOrName") : t("nav.search")}
-              title={t("nav.searchTitle", { mod: modKeyLabel() })}
-              type="search"
-              autoComplete="off"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={tagMatches.length + jumpHits.length > 0}
-            />
-            {tagMatches.length + jumpHits.length > 0 ? (
-              <div className="search-suggest" role="listbox">
-                {tagMatches.map((row, i) => {
-                  const paint = tagPaint(row.name, data.settings.tagColors);
-                  const hi = tagHi % (tagMatches.length + jumpHits.length);
-                  return (
-                    <button
-                      key={`tag:${row.name}`}
-                      type="button"
-                      role="option"
-                      aria-selected={i === hi}
-                      className={i === hi ? "is-hi" : ""}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        applyTagFromSearch(row.name);
-                      }}
-                    >
-                      <span data-tone={paint.tone} style={paint.style} className="tag-chip">
-                        {row.name}
-                      </span>
-                      <span className="text-xs text-muted">{row.count}</span>
-                    </button>
-                  );
-                })}
-                {jumpHits.map((row, j) => {
-                  const i = tagMatches.length + j;
-                  const hi = tagHi % (tagMatches.length + jumpHits.length);
-                  return (
-                    <button
-                      key={`jump:${row.cardId}`}
-                      type="button"
-                      role="option"
-                      aria-selected={i === hi}
-                      className={i === hi ? "is-hi" : ""}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        jumpTo(row);
-                      }}
-                    >
-                      <span className="min-w-0 truncate">
-                        {row.title}
-                        <span className="am-dim"> · {row.path}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <ThemeToggle />
-            <AccountMenu
-              loggedIn={Boolean(token || session)}
-              editMode={editMode}
-              canEdit={Boolean(session?.canEdit || session?.canMove)}
-              canOpenSettings={Boolean(session?.canManageSettings)}
-              role={session?.role || ""}
-              username={session?.username || ""}
-              isOwner={session?.isOwner}
-              openFavs={ui.openFavs}
-              hideOpenFavs={Boolean(data.settings.restoreLastSpace)}
-              onLogin={() => requestLogin()}
-              onEdit={() => requestEdit()}
-              onSettings={() => requestAdmin("general")}
-              canManageUsers={Boolean(session?.canManageUsers)}
-              canHistory={Boolean(session?.canAudit || session?.canRestore)}
-              canCuration={Boolean(session?.canCuration)}
-              onHistory={() => requestHistory()}
-              onCuration={() => requestCuration()}
-              onUsers={() => requestUsers()}
-              onOpenFavs={setOpenFavs}
-              onResetLocal={resetLocalPrefs}
-              onLogout={logoutEdit}
-              onExportBookmarks={() => {
-                void getPortal({
-                  data: {
-                    token: token || void 0,
-                    spaceId: data.activeSpaceId,
-                  },
-                })
-                  .then((next) => {
-                    setData(next);
-                    setModal({ kind: "bookmarks" });
+                  ) : null}
+                  {tagFilter.map((name) => {
+                    const paint = tagPaint(name, data.settings.tagColors);
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        data-tone={paint.tone}
+                        style={paint.style}
+                        className="tag-chip is-on"
+                        title={t("nav.removeTag", { name })}
+                        onClick={() => toggleTag(name)}
+                      >
+                        {name}
+                        <X className="ml-0.5 size-2.5" />
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <input
+                ref={searchRef}
+                className="h-10 min-w-[6rem] flex-1 bg-transparent text-sm outline-none placeholder:text-subtle"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setTagHi(0);
+                }}
+                onKeyDown={(e) => {
+                  const n = tagMatches.length + jumpHits.length;
+                  if (e.key === "ArrowDown" && n) {
+                    e.preventDefault();
+                    setTagHi((i) => (i + 1) % n);
+                    return;
+                  }
+                  if (e.key === "ArrowUp" && n) {
+                    e.preventDefault();
+                    setTagHi((i) => (i - 1 + n) % n);
+                    return;
+                  }
+                  if (e.key === "Enter" && n) {
+                    e.preventDefault();
+                    const i = tagHi % n;
+                    if (i < tagMatches.length) applyTagFromSearch(tagMatches[i].name);
+                    else jumpTo(jumpHits[i - tagMatches.length]);
+                    return;
+                  }
+                  if (e.key === "Escape" && (query || tagFilter.length || downFilter)) {
+                    e.preventDefault();
+                    setQuery("");
+                    setDownFilter(false);
+                    return;
+                  }
+                  if (e.key === "Backspace" && !query && tagFilter.length)
+                    setTagFilter((cur) => cur.slice(0, -1));
+                }}
+                placeholder={tagFilter.length ? t("nav.addTagOrName") : t("nav.search")}
+                title={t("nav.searchTitle", { mod: modKeyLabel() })}
+                type="search"
+                autoComplete="off"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={tagMatches.length + jumpHits.length > 0}
+              />
+              {tagMatches.length + jumpHits.length > 0 ? (
+                <div className="search-suggest" role="listbox">
+                  {tagMatches.map((row, i) => {
+                    const paint = tagPaint(row.name, data.settings.tagColors);
+                    const hi = tagHi % (tagMatches.length + jumpHits.length);
+                    return (
+                      <button
+                        key={`tag:${row.name}`}
+                        type="button"
+                        role="option"
+                        aria-selected={i === hi}
+                        className={i === hi ? "is-hi" : ""}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          applyTagFromSearch(row.name);
+                        }}
+                      >
+                        <span data-tone={paint.tone} style={paint.style} className="tag-chip">
+                          {row.name}
+                        </span>
+                        <span className="text-xs text-muted">{row.count}</span>
+                      </button>
+                    );
+                  })}
+                  {jumpHits.map((row, j) => {
+                    const i = tagMatches.length + j;
+                    const hi = tagHi % (tagMatches.length + jumpHits.length);
+                    return (
+                      <button
+                        key={`jump:${row.cardId}`}
+                        type="button"
+                        role="option"
+                        aria-selected={i === hi}
+                        className={i === hi ? "is-hi" : ""}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          jumpTo(row);
+                        }}
+                      >
+                        <span className="min-w-0 truncate">
+                          {row.title}
+                          <span className="am-dim"> · {row.path}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <ThemeToggle />
+              <AccountMenu
+                loggedIn={Boolean(token || session)}
+                editMode={editMode}
+                canEdit={Boolean(session?.canEdit || session?.canMove)}
+                canOpenSettings={Boolean(session?.canManageSettings)}
+                role={session?.role || ""}
+                username={session?.username || ""}
+                isOwner={session?.isOwner}
+                openFavs={ui.openFavs}
+                hideOpenFavs={Boolean(data.settings.restoreLastSpace)}
+                onLogin={() => requestLogin()}
+                onEdit={() => requestEdit()}
+                onSettings={() => requestAdmin("general")}
+                canManageUsers={Boolean(session?.canManageUsers)}
+                canHistory={Boolean(session?.canAudit || session?.canRestore)}
+                canCuration={Boolean(session?.canCuration)}
+                onHistory={() => requestHistory()}
+                onCuration={() => requestCuration()}
+                onUsers={() => requestUsers()}
+                onOpenFavs={setOpenFavs}
+                onResetLocal={resetLocalPrefs}
+                onLogout={logoutEdit}
+                onExportBookmarks={() => {
+                  void getPortal({
+                    data: {
+                      token: token || void 0,
+                      spaceId: data.activeSpaceId,
+                    },
                   })
-                  .catch((err) => {
-                    if (sessionGone(err)) return;
-                    setModal({ kind: "bookmarks" });
-                  });
-              }}
-            />
-            {editMode ? (
-              <Button
-                variant="default"
-                title={t("nav.done")}
-                aria-label={t("nav.done")}
-                onClick={() => requestEdit()}
-              >
-                <Check className="size-4" />
-                <span className="hidden sm:inline">{t("nav.done")}</span>
-              </Button>
-            ) : null}
+                    .then((next) => {
+                      setData(next);
+                      setModal({ kind: "bookmarks" });
+                    })
+                    .catch((err) => {
+                      if (sessionGone(err)) return;
+                      setModal({ kind: "bookmarks" });
+                    });
+                }}
+              />
+              {editMode ? (
+                <Button
+                  variant="default"
+                  title={t("nav.done")}
+                  aria-label={t("nav.done")}
+                  onClick={() => requestEdit()}
+                >
+                  <Check className="size-4" />
+                  <span className="hidden sm:inline">{t("nav.done")}</span>
+                </Button>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <SpaceStrip
-          spaces={displaySpaces}
-          overflowIds={spaceOverflow}
-          moreMenuSpaces={moreMenuSpaces}
-          moreGapAt={moreGapAt}
-          moreOpen={moreOpen}
-          dragSpaceId={drag?.kind === "space" ? drag.id : undefined}
-          carryDestSpaceId={carryDestSpaceId}
-          spaceOverMore={spaceOverMore}
-          onFavs={onFavs}
-          favsPage={page === "favs"}
-          favCount={favCount}
-          favsHideLabel={Boolean(data.settings.favsHideLabel)}
-          editMode={editMode}
-          canReorder={canReorderSpaces}
-          canEditFavs={Boolean(session?.canEdit)}
-          canEditSpace={canEditSpace}
-          canCreateSpaces={sessionCanCreateSpaces(session)}
-          canDeleteSpaces={data.spaces.length > 1}
-          activeSpaceId={data.activeSpaceId}
-          searching={searching}
-          searchHitIds={searchHits.map((h) => h.id)}
-          spaceListRef={spaceListRef}
-          spaceStripRef={spaceStripRef}
-          spaceMoreRef={spaceMoreRef}
-          morePanelRef={morePanelRef}
-          handlers={spaceStripHandlers}
-        />
-      </header>
-      <main
-        className={`mx-auto max-w-6xl px-4 py-10 sm:px-6 ${data.settings.infoBar !== false ? "pb-16" : ""}`}
-      >
-        <CatalogView
-          mode={onFavs ? "favs" : searching ? "search" : "space"}
-          favGroups={favGroups}
-          searchHits={searchHits}
-          categories={displayCategories}
-          activeSpaceId={data.activeSpaceId}
-          query={query}
-          tagFilter={tagFilter}
-          downFilter={downFilter}
-          editMode={editMode}
-          canEditActive={canEditActive}
-          canEditSpace={canEditSpace}
-          canDrag={canDrag}
-          canResize={canResize}
-          collapsed={isCatCollapsed}
-          dragKind={drag?.kind}
-          dropCatId={over?.kind === "card" ? over.catId : undefined}
-          draggingCardId={drag?.kind === "card" ? (liveId ?? undefined) : undefined}
-          liveCatId={drag?.kind === "cat" ? (liveId ?? undefined) : undefined}
-          chrome={catalogChrome}
-          handlers={catalogHandlers}
-          onAddCategory={() =>
-            setModal({
-              kind: "category",
-            })
+          <SpaceStrip
+            spaces={displaySpaces}
+            overflowIds={spaceOverflow}
+            moreMenuSpaces={moreMenuSpaces}
+            moreGapAt={moreGapAt}
+            moreOpen={moreOpen}
+            dragSpaceId={drag?.kind === "space" ? drag.id : undefined}
+            carryDestSpaceId={carryDestSpaceId}
+            spaceOverMore={spaceOverMore}
+            onFavs={onFavs}
+            favsPage={page === "favs"}
+            favCount={favCount}
+            favsHideLabel={Boolean(data.settings.favsHideLabel)}
+            editMode={editMode}
+            canReorder={canReorderSpaces}
+            canEditFavs={Boolean(session?.canEdit)}
+            canEditSpace={canEditSpace}
+            canCreateSpaces={sessionCanCreateSpaces(session)}
+            canDeleteSpaces={data.spaces.length > 1}
+            activeSpaceId={data.activeSpaceId}
+            searching={searching}
+            searchHitIds={searchHits.map((h) => h.id)}
+            spaceListRef={spaceListRef}
+            spaceStripRef={spaceStripRef}
+            spaceMoreRef={spaceMoreRef}
+            morePanelRef={morePanelRef}
+            handlers={spaceStripHandlers}
+          />
+        </header>
+        <main
+          className={`mx-auto max-w-6xl px-4 py-10 sm:px-6 ${data.settings.infoBar !== false ? "pb-16" : ""}`}
+        >
+          <CatalogView
+            mode={onFavs ? "favs" : searching ? "search" : "space"}
+            favGroups={favGroups}
+            searchHits={searchHits}
+            categories={displayCategories}
+            activeSpaceId={data.activeSpaceId}
+            query={query}
+            tagFilter={tagFilter}
+            downFilter={downFilter}
+            editMode={editMode}
+            canEditActive={canEditActive}
+            canEditSpace={canEditSpace}
+            canDrag={canDrag}
+            canResize={canResize}
+            collapsed={isCatCollapsed}
+            dragKind={drag?.kind}
+            dropCatId={over?.kind === "card" ? over.catId : undefined}
+            draggingCardId={drag?.kind === "card" ? (liveId ?? undefined) : undefined}
+            liveCatId={drag?.kind === "cat" ? (liveId ?? undefined) : undefined}
+            chrome={catalogChrome}
+            handlers={catalogHandlers}
+            onAddCategory={() =>
+              setModal({
+                kind: "category",
+              })
+            }
+          />
+        </main>
+        <StatsBar
+          stats={clickStats}
+          infoBar={data.settings.infoBar !== false}
+          downCount={
+            data.settings.infoBar !== false && data.settings.healthChecks !== false
+              ? downIds.length
+              : 0
+          }
+          downOn={downFilter}
+          probeBlink={Boolean(data.settings.probeBlink)}
+          onDown={() => setDownFilter((v) => !v)}
+          onStats={
+            data.settings.infoBar !== false && data.settings.infoStats !== false
+              ? () =>
+                  setModal({
+                    kind: "stats",
+                  })
+              : void 0
+          }
+          onLegend={
+            data.settings.infoBar !== false && data.settings.infoLegend !== false
+              ? () =>
+                  setModal({
+                    kind: "legend",
+                  })
+              : void 0
           }
         />
-      </main>
-      <StatsBar
-        stats={clickStats}
-        infoBar={data.settings.infoBar !== false}
-        downCount={
-          data.settings.infoBar !== false && data.settings.healthChecks !== false
-            ? downIds.length
-            : 0
-        }
-        downOn={downFilter}
-        probeBlink={Boolean(data.settings.probeBlink)}
-        onDown={() => setDownFilter((v) => !v)}
-        onStats={
-          data.settings.infoBar !== false && data.settings.infoStats !== false
-            ? () =>
-                setModal({
-                  kind: "stats",
-                })
-            : void 0
-        }
-        onLegend={
-          data.settings.infoBar !== false && data.settings.infoLegend !== false
-            ? () =>
-                setModal({
-                  kind: "legend",
-                })
-            : void 0
-        }
-      />
+      </div>
       <PortalOverlays
         modal={modal}
         setModal={setModal}

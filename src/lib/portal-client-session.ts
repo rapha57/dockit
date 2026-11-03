@@ -9,6 +9,26 @@ export const OIDC_AUTO_KEY = "oidc-auto";
 export const OIDC_AUTO_MS = 30_000;
 export const OIDC_NEXT_KEY = "portal-oidc-next";
 
+export const loginGateCss =
+  "html.portal-gate:not(.portal-auth) .portal-shell{display:none}html.portal-gate.portal-auth .portal-lock{display:none}";
+
+export function loginGateScript() {
+  return `(function(){try{var t=sessionStorage.getItem(${JSON.stringify(TOKEN_KEY)});var s=sessionStorage.getItem(${JSON.stringify(SESSION_KEY)});var h=document.documentElement;h.classList.add("portal-gate");if(t||s)h.classList.add("portal-auth")}catch(e){document.documentElement.classList.add("portal-gate")}})();`;
+}
+
+// portal-auth is added only by the boot script, for a session already stored in
+// this tab. React must not add it: a password submit writes the same keys.
+export function syncLoginGate(showShell: boolean, authed: boolean) {
+  if (typeof document === "undefined") return;
+  const html = document.documentElement;
+  if (showShell) {
+    html.classList.remove("portal-gate", "portal-auth");
+    return;
+  }
+  html.classList.add("portal-gate");
+  if (!authed) html.classList.remove("portal-auth");
+}
+
 export function copyLabel(raw: unknown, fallback?: string) {
   const text = String(raw || "").trim();
   const fb = fallback || t("copy.fallback");

@@ -102,6 +102,14 @@ html.modal-open body {
   overscroll-behavior: none;
 }
 
+html.portal-gate:not(.portal-auth) .portal-shell {
+  display: none;
+}
+
+html.portal-gate.portal-auth .portal-lock {
+  display: none;
+}
+
 .portal-card {
   box-shadow: var(--shadow-card);
   transition:
@@ -523,7 +531,8 @@ html.is-dragging .empty-well {
   min-width: 1.15rem;
   height: 1.15rem;
   padding: 0 0.38rem;
-  border: 1px solid color-mix(in oklab, var(--tag-fg, var(--color-border)) 18%, var(--tag-bg, var(--color-border)));
+  border: 1px solid
+    color-mix(in oklab, var(--tag-fg, var(--color-border)) 18%, var(--tag-bg, var(--color-border)));
   border-radius: 999px;
   background: color-mix(in oklab, var(--tag-bg, var(--color-elevated)) 72%, white);
   color: var(--tag-fg, var(--color-muted));
@@ -934,7 +943,8 @@ select.field-input {
   align-items: center;
   max-width: 100%;
   cursor: pointer;
-  border: 1px solid color-mix(in oklab, var(--tag-fg, var(--color-border)) 18%, var(--tag-bg, var(--color-border)));
+  border: 1px solid
+    color-mix(in oklab, var(--tag-fg, var(--color-border)) 18%, var(--tag-bg, var(--color-border)));
   border-radius: 999px;
   background: color-mix(in oklab, var(--tag-bg, var(--color-elevated)) 72%, white);
   color: var(--tag-fg, var(--color-fg));
@@ -1026,7 +1036,8 @@ html.dark .tag-chip {
   height: 1.75rem;
   flex-shrink: 0;
   padding: 0;
-  border: 1px solid color-mix(in oklab, var(--tag-fg, var(--color-border)) 18%, var(--tag-bg, var(--color-border)));
+  border: 1px solid
+    color-mix(in oklab, var(--tag-fg, var(--color-border)) 18%, var(--tag-bg, var(--color-border)));
   border-radius: var(--radius-md);
   background: var(--tag-bg, var(--color-elevated));
   cursor: pointer;
@@ -1062,7 +1073,9 @@ html.dark .tag-chip {
 }
 .tag-palette-dot:hover,
 .tag-palette-dot.is-on {
-  box-shadow: 0 0 0 2px var(--color-elevated), 0 0 0 3.5px color-mix(in oklab, var(--tag-fg) 55%, var(--color-primary));
+  box-shadow:
+    0 0 0 2px var(--color-elevated),
+    0 0 0 3.5px color-mix(in oklab, var(--tag-fg) 55%, var(--color-primary));
 }
 
 .card-tags {
@@ -1331,7 +1344,10 @@ html.card-ctx-open .portal-card.is-ctx-open:hover {
   background: color-mix(in oklab, var(--color-elevated) 88%, transparent);
   color: var(--color-muted);
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .card-tool:hover,
 .card-tool.is-open,
@@ -3810,7 +3826,9 @@ button.am-create,
   padding: 0.28rem 0.45rem;
   border-radius: 6px;
   cursor: pointer;
-  transition: color 140ms ease, background-color 140ms ease;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
 }
 .am-filters button:hover {
   color: var(--color-fg);
@@ -3953,7 +3971,9 @@ button.am-create,
 .am-chevron {
   color: var(--color-subtle);
   cursor: pointer;
-  transition: color 140ms ease, background-color 140ms ease;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
 }
 .am-chevron:hover,
 .am-chevron:focus-visible {
@@ -3989,11 +4009,17 @@ button.am-create,
 }
 .am-list.is-typed .am-row-cells,
 .am-list-head.is-typed .am-row-cells {
-  grid-template-columns: minmax(0, 1.3fr) minmax(8rem, 0.9fr) minmax(4.5rem, 0.45fr) minmax(6rem, 0.7fr);
+  grid-template-columns: minmax(0, 1.3fr) minmax(8rem, 0.9fr) minmax(4.5rem, 0.45fr) minmax(
+      6rem,
+      0.7fr
+    );
 }
 .am-list.is-typed.is-actions .am-row-cells,
 .am-list-head.is-typed.is-actions .am-row-cells {
-  grid-template-columns: minmax(0, 1.3fr) minmax(8rem, 0.9fr) minmax(4.5rem, 0.45fr) minmax(6rem, 0.7fr) 1.85rem;
+  grid-template-columns: minmax(0, 1.3fr) minmax(8rem, 0.9fr) minmax(4.5rem, 0.45fr) minmax(
+      6rem,
+      0.7fr
+    ) 1.85rem;
 }
 @media (max-width: 40rem) {
   .am-list.is-typed .am-row-cells,
@@ -4742,7 +4768,6 @@ button.am-perm:hover {
   margin: 0.2rem 0;
   font-size: 0.8125rem;
 }
-
 
 .lock-or {
   display: flex;

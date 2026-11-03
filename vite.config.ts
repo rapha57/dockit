@@ -6,6 +6,8 @@ import { nitro } from "nitro/vite";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { healthPayload } from "./src/lib/health-check.ts";
+import { acceptSessionToken } from "./src/lib/portal/session-mem.ts";
+import { clearSessCookieHeader, sessCookieHeader } from "./src/lib/session-cookie.ts";
 const SECURITY_HEADERS: Record<string, string> = {
 	"X-Content-Type-Options": "nosniff",
 	"Referrer-Policy": "strict-origin-when-cross-origin",
@@ -86,6 +88,66 @@ function dockitAssets(): Plugin {
 	};
 }
 
+function readHttpBody(req: { on: (ev: string, fn: (chunk?: Buffer) => void) => void }, limit = 4096) {
+	return new Promise<string>((resolve, reject) => {
+		const chunks: Buffer[] = [];
+		let size = 0;
+		req.on("data", (chunk) => {
+			const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk ?? "");
+			size += buf.length;
+			if (size > limit) {
+				reject(new Error("body"));
+				return;
+			}
+			chunks.push(buf);
+		});
+		req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+		req.on("error", reject);
+	});
+}
+
+function dockitSession(): Plugin {
+	return {
+		name: "dockit-session",
+		configureServer(server) {
+			server.middlewares.use((req, res, next) => {
+				const path = (req.url || "").split("?")[0];
+				if (path !== "/__dockit/session") return next();
+				if (req.method !== "POST" && req.method !== "DELETE") return next();
+				void (async () => {
+					res.setHeader("Content-Type", "application/json");
+					res.setHeader("Cache-Control", "no-store");
+					if (req.method === "DELETE") {
+						res.setHeader("Set-Cookie", clearSessCookieHeader());
+						res.end(JSON.stringify({ ok: true }));
+						return;
+					}
+					let token = "";
+					try {
+						const raw = await readHttpBody(req);
+						token = acceptSessionToken(raw ? JSON.parse(raw)?.token : "");
+					} catch {
+						token = "";
+					}
+					if (!token) {
+						res.statusCode = 401;
+						res.end(JSON.stringify({ error: "Jeton invalide" }));
+						return;
+					}
+					const secure = Boolean((req.socket as { encrypted?: boolean } | undefined)?.encrypted);
+					res.setHeader("Set-Cookie", sessCookieHeader(token, secure));
+					res.end(JSON.stringify({ ok: true }));
+				})().catch(() => {
+					if (!res.headersSent) {
+						res.statusCode = 500;
+						res.end();
+					}
+				});
+			});
+		},
+	};
+}
+
 function dockitHealth(): Plugin {
 	const handle = (
 		req: { url?: string; method?: string },
@@ -131,6 +193,7 @@ export default defineConfig(({ command, isPreview }) => ({
   plugins: [
     securityHeaders(),
     dockitHealth(),
+    dockitSession(),
     dockitAssets(),
     tailwindcss(),
     tanstackStart(),
@@ -138,6 +201,7 @@ export default defineConfig(({ command, isPreview }) => ({
       ? [
           nitro({
             preset: process.env.NITRO_PRESET || "node-server",
+            serverDir: "server",
             routeRules: {
               "/**": { headers: SECURITY_HEADERS },
             },

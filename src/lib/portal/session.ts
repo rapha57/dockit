@@ -12,10 +12,11 @@ import {
   spaceCanMove,
   spaceCanSee,
 } from "./model";
+import { sessionAlive, sessionMap } from "./session-mem";
 
 const SESSION_MS = 432e5;
-type SessionRow = { userId: string; exp: number };
-export const sessions = /* @__PURE__ */ new Map<string, SessionRow>();
+export { sessionAlive };
+export const sessions = sessionMap();
 type OidcPendingRow = { redirectUri: string; verifier: string; nonce: string; exp: number };
 export const oidcPending = /* @__PURE__ */ new Map<string, OidcPendingRow>();
 export const OIDC_PENDING_MS = 5 * 60 * 1000;
@@ -140,11 +141,6 @@ export function tok(
       typeof request?.headers?.get === "function" ? request.headers.get("cookie") : "",
     ) || String(token || "")
   );
-}
-export function sessionAlive(token: string | null | undefined) {
-  if (!token) return false;
-  const row = sessions.get(token);
-  return Boolean(row && row.exp >= Date.now());
 }
 export function ensureUsers(doc: Doc) {
   if (!Array.isArray(doc.users)) doc.users = [];
