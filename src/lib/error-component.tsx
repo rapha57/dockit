@@ -13,8 +13,21 @@ function isStaleChunk(message: string) {
   );
 }
 
+function errorText(error: unknown) {
+  if (typeof error === "string") return error;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return "";
+}
+
 export function AppErrorComponent({ error }: ErrorComponentProps) {
-  const message = error?.message || t("error.unexpected");
+  const message = errorText(error) || t("error.unexpected");
   const stale = isStaleChunk(message);
 
   useEffect(() => {
